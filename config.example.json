@@ -1,0 +1,97 @@
+{
+  "database": {
+    "url": "sqlite+aiosqlite:///./data/steelclaw.db",
+    "echo": false
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "log_level": "info"
+  },
+  "gateway": {
+    "mention_keywords": ["@steelclaw", "@sc"],
+    "dm_allowlist_enabled": true,
+    "connectors": {
+      "telegram": {
+        "enabled": false,
+        "token": "YOUR_TELEGRAM_BOT_TOKEN"
+      },
+      "discord": {
+        "enabled": false,
+        "token": "YOUR_DISCORD_BOT_TOKEN"
+      },
+      "slack": {
+        "enabled": false,
+        "token": "YOUR_SLACK_BOT_TOKEN",
+        "signing_secret": "YOUR_SLACK_SIGNING_SECRET"
+      },
+      "whatsapp": {
+        "enabled": false,
+        "token": "YOUR_WHATSAPP_TOKEN",
+        "phone_number_id": "YOUR_PHONE_NUMBER_ID"
+      },
+      "signal": {
+        "enabled": false,
+        "phone_number": "+1234567890"
+      },
+      "imessage": {
+        "enabled": false
+      },
+      "mattermost": {
+        "enabled": false,
+        "token": "YOUR_MATTERMOST_TOKEN",
+        "url": "https://your-mattermost.example.com"
+      },
+      "matrix": {
+        "enabled": false,
+        "homeserver": "https://matrix.org",
+        "user_id": "@steelclaw:matrix.org",
+        "token": "YOUR_MATRIX_TOKEN"
+      },
+      "teams": {
+        "enabled": false,
+        "app_id": "YOUR_TEAMS_APP_ID",
+        "app_password": "YOUR_TEAMS_APP_PASSWORD"
+      }
+    }
+  },
+  "agents": {
+    "default_agent": "general",
+    "llm": {
+      "default_model": "gpt-4o-mini",
+      "api_key": null,
+      "api_base": null,
+      "temperature": 0.7,
+      "max_tokens": 4096,
+      "max_context_messages": 50,
+      "system_prompt": "You are SteelClaw, a helpful personal AI assistant. You can execute commands, browse the web, manage tasks, and communicate across platforms. Be concise, accurate, and proactive.",
+      "provider_keys": {},
+      "streaming": true,
+      "timeout": 120
+    },
+    "skills": {
+      "bundled_dir": "steelclaw/skills/bundled",
+      "global_dir": "~/.steelclaw/skills",
+      "workspace_dir": ".steelclaw/skills",
+      "enabled": true
+    },
+    "security": {
+      "approvals_file": "exec-approvals.json",
+      "default_permission": "ask",
+      "sandbox_enabled": true,
+      "max_command_timeout": 30,
+      "blocked_commands": ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"]
+    },
+    "scheduler": {
+      "enabled": true,
+      "timezone": "UTC",
+      "max_concurrent_jobs": 5
+    },
+    "voice": {
+      "transcription_model": "whisper-1",
+      "tts_model": "tts-1",
+      "tts_voice": "alloy",
+      "enabled": false
+    }
+  }
+}

@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SteelClaw — Control UI</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface2: #1c2129;
+  --border: #30363d; --border-light: #3d444d;
+  --text: #e6edf3; --text-muted: #8b949e; --text-dim: #484f58;
+  --accent: #58a6ff; --accent-dim: #1f6feb; --accent-bg: #1f6feb18;
+  --green: #3fb950; --green-dim: #238636; --green-bg: #23863618;
+  --red: #f85149; --red-dim: #da3633; --red-bg: #da363318;
+  --yellow: #d29922; --yellow-bg: #d2992218;
+  --purple: #bc8cff; --purple-bg: #bc8cff18;
+  --radius: 8px; --radius-lg: 12px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; overflow:hidden; }
+
+/* ── Sidebar ──────────────────────────────── */
+#sidebar { width:220px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; }
+#sidebar .logo { padding:16px 18px; border-bottom:1px solid var(--border); }
+#sidebar .logo h1 { font-size:17px; font-weight:700; }
+#sidebar .logo span { font-size:11px; color:var(--text-muted); }
+#sidebar nav { flex:1; padding:8px; display:flex; flex-direction:column; gap:2px; overflow-y:auto; }
+#sidebar nav button { display:flex; align-items:center; gap:10px; padding:9px 12px; background:none; border:none; color:var(--text-muted); font-size:13px; border-radius:var(--radius); cursor:pointer; text-align:left; width:100%; transition:all .15s; }
+#sidebar nav button:hover { background:var(--surface2); color:var(--text); }
+#sidebar nav button.active { background:var(--accent-bg); color:var(--accent); font-weight:600; }
+#sidebar nav button .icon { font-size:16px; width:20px; text-align:center; }
+.nav-separator { height:1px; background:var(--border); margin:6px 12px; }
+.nav-label { font-size:10px; color:var(--text-dim); padding:8px 12px 2px; text-transform:uppercase; letter-spacing:1px; font-weight:600; }
+#sidebar .status-bar { padding:12px 18px; border-top:1px solid var(--border); font-size:12px; }
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+.dot.green { background:var(--green); } .dot.red { background:var(--red); } .dot.yellow { background:var(--yellow); }
+
+/* ── Main ─────────────────────────────────── */
+#main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.page { display:none; flex:1; flex-direction:column; overflow:hidden; }
+.page.active { display:flex; }
+.page-header { padding:16px 24px; border-bottom:1px solid var(--border); background:var(--surface); display:flex; justify-content:space-between; align-items:center; }
+.page-header div { }
+.page-header h2 { font-size:16px; font-weight:600; }
+.page-header p { font-size:12px; color:var(--text-muted); margin-top:2px; }
+.page-body { flex:1; overflow-y:auto; padding:20px 24px; }
+
+/* ── Chat ─────────────────────────────────── */
+#chat-messages { flex:1; overflow-y:auto; padding:16px 24px; display:flex; flex-direction:column; gap:10px; }
+.msg { max-width:72%; padding:10px 14px; border-radius:var(--radius-lg); font-size:13.5px; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
+.msg.user { align-self:flex-end; background:var(--accent-bg); border:1px solid var(--accent-dim); }
+.msg.assistant { align-self:flex-start; background:var(--surface2); border:1px solid var(--border); }
+.msg .lbl { font-size:10px; color:var(--text-muted); margin-bottom:3px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
+.msg.user .lbl { color:var(--accent); }
+.msg.assistant .lbl { color:var(--green); }
+.typing-indicator { color:var(--text-muted); font-size:12px; font-style:italic; padding:4px 0; }
+#chat-input-area { padding:12px 24px; border-top:1px solid var(--border); display:flex; gap:8px; background:var(--surface); }
+#chat-input-area textarea { flex:1; padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-family:inherit; font-size:13px; resize:none; outline:none; min-height:38px; max-height:100px; }
+#chat-input-area textarea:focus { border-color:var(--accent); }
+#chat-input-area button { padding:9px 18px; border:none; border-radius:var(--radius); background:var(--accent-dim); color:#fff; font-size:13px; font-weight:600; cursor:pointer; }
+#chat-input-area button:hover { background:var(--accent); }
+#chat-input-area button:disabled { opacity:.4; cursor:not-allowed; }
+
+/* ── Cards ────────────────────────────────── */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 20px; margin-bottom:16px; }
+.card h3 { font-size:14px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+.card h3 .badge { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:500; }
+.card-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.badge-green { background:var(--green-bg); color:var(--green); }
+.badge-red { background:var(--red-bg); color:var(--red); }
+.badge-yellow { background:var(--yellow-bg); color:var(--yellow); }
+.badge-blue { background:var(--accent-bg); color:var(--accent); }
+.badge-purple { background:var(--purple-bg); color:var(--purple); }
+
+/* ── Forms ────────────────────────────────── */
+.form-group { margin-bottom:14px; }
+.form-group label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:4px; font-weight:500; }
+.form-group input, .form-group select, .form-group textarea { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-size:13px; outline:none; font-family:inherit; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color:var(--accent); }
+.form-group .hint { font-size:11px; color:var(--text-dim); margin-top:2px; }
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.form-row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+.toggle-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.toggle-row label { font-size:13px; color:var(--text); margin:0; cursor:pointer; }
+.toggle-row input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+.btn { padding:8px 16px; border:none; border-radius:var(--radius); font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; }
+.btn-primary { background:var(--accent-dim); color:#fff; } .btn-primary:hover { background:var(--accent); }
+.btn-success { background:var(--green-dim); color:#fff; } .btn-success:hover { background:var(--green); }
+.btn-danger { background:var(--red-dim); color:#fff; } .btn-danger:hover { background:var(--red); }
+.btn-outline { background:none; border:1px solid var(--border); color:var(--text-muted); } .btn-outline:hover { border-color:var(--text-muted); color:var(--text); }
+.btn-sm { padding:5px 10px; font-size:11px; }
+.btn-group { display:flex; gap:8px; margin-top:12px; }
+
+/* ── Table ────────────────────────────────── */
+.tbl { width:100%; border-collapse:collapse; font-size:13px; }
+.tbl th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+.tbl td { padding:8px 10px; border-bottom:1px solid var(--border); }
+.tbl tr:last-child td { border-bottom:none; }
+
+/* ── Inline input ────────────────────────── */
+.inline-input { padding:4px 8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-size:12px; outline:none; width:100%; }
+.inline-input:focus { border-color:var(--accent); }
+
+/* ── Toast ────────────────────────────────── */
+#toast { position:fixed; bottom:20px; right:20px; padding:10px 18px; border-radius:var(--radius); font-size:13px; font-weight:500; z-index:999; transform:translateY(80px); opacity:0; transition:all .3s; }
+#toast.show { transform:translateY(0); opacity:1; }
+#toast.success { background:var(--green-dim); color:#fff; }
+#toast.error { background:var(--red-dim); color:#fff; }
+
+@media(max-width:768px) { #sidebar{width:60px} #sidebar .logo h1,#sidebar .logo span,#sidebar nav button span:not(.icon),.nav-label{display:none} .msg{max-width:90%} .card-row,.form-row,.form-row-3{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div id="sidebar">
+  <div class="logo">
+    <h1>SteelClaw</h1>
+    <span>Control Panel</span>
+  </div>
+  <nav>
+    <button class="active" onclick="showPage('chat',this)"><span class="icon">💬</span><span>Chat</span></button>
+    <div class="nav-separator"></div>
+    <div class="nav-label">Configure</div>
+    <button onclick="showPage('settings',this)"><span class="icon">⚙️</span><span>Settings</span></button>
+    <button onclick="showPage('connectors',this)"><span class="icon">🔌</span><span>Connectors</span></button>
+    <button onclick="showPage('skills',this)"><span class="icon">🧩</span><span>Skills</span></button>
+    <button onclick="showPage('security',this)"><span class="icon">🛡️</span><span>Security</span></button>
+    <div class="nav-separator"></div>
+    <div class="nav-label">Monitor</div>
+    <button onclick="showPage('sessions',this)"><span class="icon">💾</span><span>Sessions</span></button>
+    <button onclick="showPage('scheduler',this)"><span class="icon">⏰</span><span>Scheduler</span></button>
+  </nav>
+  <div class="status-bar">
+    <span class="dot" id="ws-dot"></span>
+    <span id="ws-label">Connecting...</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- Chat Page -->
+  <div class="page active" id="page-chat">
+    <div id="chat-messages"></div>
+    <div id="chat-input-area">
+      <textarea id="chat-input" placeholder="Message SteelClaw..." rows="1"></textarea>
+      <button id="chat-send" disabled>Send</button>
+    </div>
+  </div>
+
+  <!-- Settings Page -->
+  <div class="page" id="page-settings">
+    <div class="page-header"><div><h2>Settings</h2><p>LLM, server, database, voice, and skill configuration</p></div></div>
+    <div class="page-body" id="settings-body"></div>
+  </div>
+
+  <!-- Connectors Page -->
+  <div class="page" id="page-connectors">
+    <div class="page-header"><div><h2>Connectors</h2><p>Messaging platform integrations — enable, configure, and monitor</p></div></div>
+    <div class="page-body" id="connectors-body"></div>
+  </div>
+
+  <!-- Skills Page -->
+  <div class="page" id="page-skills">
+    <div class="page-header">
+      <div><h2>Skills</h2><p>Loaded capabilities, tools, and skill directories</p></div>
+      <button class="btn btn-outline btn-sm" onclick="reloadSkills()">Reload Skills</button>
+    </div>
+    <div class="page-body" id="skills-body"></div>
+  </div>
+
+  <!-- Sessions Page -->
+  <div class="page" id="page-sessions">
+    <div class="page-header"><div><h2>Sessions</h2><p>Active and recent conversations across all platforms</p></div></div>
+    <div class="page-body" id="sessions-body"></div>
+  </div>
+
+  <!-- Security Page -->
+  <div class="page" id="page-security">
+    <div class="page-header"><div><h2>Security</h2><p>Command approvals, permissions, and sandbox settings</p></div></div>
+    <div class="page-body" id="security-body"></div>
+  </div>
+
+  <!-- Scheduler Page -->
+  <div class="page" id="page-scheduler">
+    <div class="page-header"><div><h2>Scheduler</h2><p>Background jobs, reminders, and scheduler configuration</p></div></div>
+    <div class="page-body" id="scheduler-body"></div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Helpers ───────────────────────────────────────────────
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#sidebar nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (name !== 'chat') loaders[name]?.();
+}
+
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = type + ' show';
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function api(path, opts={}) {
+  try {
+    const r = await fetch('/api'+path, {headers:{'Content-Type':'application/json'}, ...opts});
+    return r.json();
+  } catch(e) { toast('API error: '+e.message, 'error'); return {}; }
+}
+
+function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+// ── WebSocket Chat ─────────────────────────────────────────
+const msgEl = document.getElementById('chat-messages');
+const inpEl = document.getElementById('chat-input');
+const sendBtn = document.getElementById('chat-send');
+const wsDot = document.getElementById('ws-dot');
+const wsLabel = document.getElementById('ws-label');
+let ws = null;
+
+function wsConnect() {
+  const proto = location.protocol==='https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/gateway/ws`);
+  ws.onopen = () => { wsDot.className='dot green'; wsLabel.textContent='Connected'; sendBtn.disabled=false; };
+  ws.onclose = () => { wsDot.className='dot red'; wsLabel.textContent='Disconnected'; sendBtn.disabled=true; setTimeout(wsConnect,3000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => { removeTyping(); const d=JSON.parse(e.data); addMsg('assistant',d.content||JSON.stringify(d)); };
+}
+
+function addMsg(role, content) {
+  const d = document.createElement('div'); d.className='msg '+role;
+  const l = document.createElement('div'); l.className='lbl'; l.textContent = role==='user' ? 'You' : 'SteelClaw';
+  const t = document.createElement('div'); t.textContent = content;
+  d.appendChild(l); d.appendChild(t); msgEl.appendChild(d);
+  msgEl.scrollTop = msgEl.scrollHeight;
+}
+
+function showTyping() {
+  if (document.querySelector('.typing-indicator')) return;
+  const d = document.createElement('div'); d.className='typing-indicator'; d.textContent='SteelClaw is thinking...';
+  msgEl.appendChild(d); msgEl.scrollTop = msgEl.scrollHeight;
+}
+function removeTyping() { document.querySelector('.typing-indicator')?.remove(); }
+
+function sendMsg() {
+  const t = inpEl.value.trim(); if (!t || !ws || ws.readyState !== 1) return;
+  addMsg('user', t); ws.send(JSON.stringify({content:t})); inpEl.value=''; inpEl.style.height='auto'; showTyping();
+}
+
+sendBtn.onclick = sendMsg;
+inpEl.onkeydown = (e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } };
+inpEl.oninput = () => { inpEl.style.height='auto'; inpEl.style.height=Math.min(inpEl.scrollHeight,100)+'px'; };
+wsConnect();
+
+// ── Settings Page ──────────────────────────────────────────
+const loaders = {};
+
+loaders.settings = async () => {
+  const body = document.getElementById('settings-body');
+  const [cfg, info] = await Promise.all([api('/config'), fetch('/info').then(r=>r.json()).catch(()=>({}))]);
+  const llm = cfg.agents?.llm || {};
+  const srv = cfg.server || {};
+  const db = cfg.database || {};
+  const voice = cfg.agents?.voice || {};
+  const skills = cfg.agents?.skills || {};
+  const gw = cfg.gateway || {};
+
+  body.innerHTML = `
+    <div class="card">
+      <h3>🤖 LLM Provider</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Model</label><input id="s-model" value="${esc(llm.default_model)}"><div class="hint">e.g. claude-sonnet-4-20250514, gpt-4o, deepseek/deepseek-chat, ollama/llama3</div></div>
+        <div class="form-group"><label>API Key</label><input id="s-apikey" type="password" value="${esc(llm.api_key)}" placeholder="Set via env var or here"></div>
+      </div>
+      <div class="form-row-3">
+        <div class="form-group"><label>Temperature</label><input id="s-temp" type="number" step="0.1" min="0" max="2" value="${llm.temperature??0.7}"></div>
+        <div class="form-group"><label>Max Tokens</label><input id="s-tokens" type="number" value="${llm.max_tokens||4096}"></div>
+        <div class="form-group"><label>Timeout (sec)</label><input id="s-timeout" type="number" value="${llm.timeout||120}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Max Context Messages</label><input id="s-ctx" type="number" value="${llm.max_context_messages||50}"><div class="hint">History messages included in each LLM call</div></div>
+        <div class="form-group"><label>API Base URL</label><input id="s-apibase" value="${esc(llm.api_base)}" placeholder="Leave empty for default"><div class="hint">For self-hosted models (Ollama, vLLM, etc.)</div></div>
+      </div>
+      <div class="toggle-row"><input type="checkbox" id="s-streaming" ${llm.streaming!==false?'checked':''}><label for="s-streaming">Enable streaming responses</label></div>
+      <div class="form-group"><label>System Prompt</label><textarea id="s-prompt" rows="4">${esc(llm.system_prompt)}</textarea></div>
+      <button class="btn btn-primary" onclick="saveLLM()">Save LLM Settings</button>
+    </div>
+
+    <div class="card-row">
+      <div class="card">
+        <h3>🖥️ Server</h3>
+        <div class="form-row">
+          <div class="form-group"><label>Host</label><input id="s-host" value="${esc(srv.host)||'0.0.0.0'}"></div>
+          <div class="form-group"><label>Port</label><input id="s-port" type="number" value="${srv.port||8000}"></div>
+        </div>
+        <div class="form-group"><label>Log Level</label>
+          <select id="s-loglevel">
+            ${['debug','info','warning','error'].map(l=>`<option${srv.log_level===l?' selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="saveServer()">Save</button>
+        <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
+      </div>
+
+      <div class="card">
+        <h3>🗄️ Database</h3>
+        <div class="form-group"><label>Database URL</label><input id="s-dburl" value="${esc(db.url)||'sqlite+aiosqlite:///./data/steelclaw.db'}"><div class="hint">SQLite, PostgreSQL, or MySQL async URL</div></div>
+        <div class="toggle-row"><input type="checkbox" id="s-dbecho" ${db.echo?'checked':''}><label for="s-dbecho">Echo SQL queries (debug)</label></div>
+        <button class="btn btn-primary" onclick="saveDatabase()">Save</button>
+        <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div class="card">
+        <h3>📡 Gateway</h3>
+        <div class="form-group"><label>Mention Keywords</label><input id="s-gw-keywords" value="${esc((gw.mention_keywords||[]).join(', '))}"><div class="hint">Comma-separated. Bot responds in groups when these appear.</div></div>
+        <div class="toggle-row"><input type="checkbox" id="s-gw-allowlist" ${gw.dm_allowlist_enabled?'checked':''}><label for="s-gw-allowlist">Enable DM allowlist (only approved users can DM)</label></div>
+        <button class="btn btn-primary" onclick="saveGateway()">Save</button>
+      </div>
+
+      <div class="card">
+        <h3>🎤 Voice</h3>
+        <div class="toggle-row"><input type="checkbox" id="s-voice-on" ${voice.enabled?'checked':''}><label for="s-voice-on">Enable voice capabilities</label></div>
+        <div class="form-row">
+          <div class="form-group"><label>Transcription Model</label><input id="s-voice-stt" value="${esc(voice.transcription_model)||'whisper-1'}"></div>
+          <div class="form-group"><label>TTS Model</label><input id="s-voice-tts" value="${esc(voice.tts_model)||'tts-1'}"></div>
+        </div>
+        <div class="form-group"><label>TTS Voice</label>
+          <select id="s-voice-voice">
+            ${['alloy','echo','fable','onyx','nova','shimmer'].map(v=>`<option${(voice.tts_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="saveVoice()">Save</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🧩 Skill Directories</h3>
+      <div class="form-row-3">
+        <div class="form-group"><label>Bundled</label><input id="s-sk-bundled" value="${esc(skills.bundled_dir)||'steelclaw/skills/bundled'}"><div class="hint">Ships with SteelClaw</div></div>
+        <div class="form-group"><label>Global</label><input id="s-sk-global" value="${esc(skills.global_dir)||'~/.steelclaw/skills'}"><div class="hint">User-wide skills</div></div>
+        <div class="form-group"><label>Workspace</label><input id="s-sk-workspace" value="${esc(skills.workspace_dir)||'.steelclaw/skills'}"><div class="hint">Project-specific, highest priority</div></div>
+      </div>
+      <div class="toggle-row"><input type="checkbox" id="s-sk-enabled" ${skills.enabled!==false?'checked':''}><label for="s-sk-enabled">Enable skill system</label></div>
+      <button class="btn btn-primary" onclick="saveSkillConfig()">Save Skill Config</button>
+    </div>
+
+    <div class="card">
+      <h3>📊 System Info</h3>
+      <table class="tbl">
+        <tr><td style="color:var(--text-muted);width:160px">Version</td><td>${info.version||'—'}</td></tr>
+        <tr><td style="color:var(--text-muted)">Active Connectors</td><td>${Object.keys(info.connectors||{}).length}</td></tr>
+        <tr><td style="color:var(--text-muted)">Config File</td><td>config.json</td></tr>
+      </table>
+    </div>
+  `;
+};
+
+async function saveLLM() {
+  const d = {
+    default_model: document.getElementById('s-model').value,
+    temperature: parseFloat(document.getElementById('s-temp').value),
+    max_tokens: parseInt(document.getElementById('s-tokens').value),
+    max_context_messages: parseInt(document.getElementById('s-ctx').value),
+    timeout: parseInt(document.getElementById('s-timeout').value),
+    system_prompt: document.getElementById('s-prompt').value,
+    streaming: document.getElementById('s-streaming').checked,
+  };
+  const base = document.getElementById('s-apibase').value.trim();
+  if (base) d.api_base = base;
+  const k = document.getElementById('s-apikey').value;
+  if (k && !k.includes('****')) d.api_key = k;
+  await api('/config/llm', {method:'PUT', body:JSON.stringify(d)});
+  toast('LLM settings saved');
+}
+
+async function saveServer() {
+  await api('/config/server', {method:'PUT', body:JSON.stringify({
+    host: document.getElementById('s-host').value,
+    port: parseInt(document.getElementById('s-port').value),
+    log_level: document.getElementById('s-loglevel').value,
+  })});
+  toast('Server settings saved — restart to apply');
+}
+
+async function saveDatabase() {
+  await api('/config/database', {method:'PUT', body:JSON.stringify({
+    url: document.getElementById('s-dburl').value,
+    echo: document.getElementById('s-dbecho').checked,
+  })});
+  toast('Database settings saved — restart to apply');
+}
+
+async function saveGateway() {
+  const keywords = document.getElementById('s-gw-keywords').value.split(',').map(k=>k.trim()).filter(Boolean);
+  const data = await api('/config/gateway');
+  const gw = data.gateway || {};
+  gw.mention_keywords = keywords;
+  gw.dm_allowlist_enabled = document.getElementById('s-gw-allowlist').checked;
+  await api('/config/gateway', {method:'PUT', body:JSON.stringify(gw)});
+  toast('Gateway settings saved');
+}
+
+async function saveVoice() {
+  await api('/config/voice', {method:'PUT', body:JSON.stringify({
+    enabled: document.getElementById('s-voice-on').checked,
+    transcription_model: document.getElementById('s-voice-stt').value,
+    tts_model: document.getElementById('s-voice-tts').value,
+    tts_voice: document.getElementById('s-voice-voice').value,
+  })});
+  toast('Voice settings saved');
+}
+
+async function saveSkillConfig() {
+  await api('/config/skills', {method:'PUT', body:JSON.stringify({
+    bundled_dir: document.getElementById('s-sk-bundled').value,
+    global_dir: document.getElementById('s-sk-global').value,
+    workspace_dir: document.getElementById('s-sk-workspace').value,
+    enabled: document.getElementById('s-sk-enabled').checked,
+  })});
+  toast('Skill config saved');
+}
+
+// ── Connectors Page ────────────────────────────────────────
+loaders.connectors = async () => {
+  const body = document.getElementById('connectors-body');
+  const [data, gwData] = await Promise.all([api('/config/connectors'), api('/config/gateway')]);
+  const connectors = data.connectors || {};
+  const gw = gwData.gateway || {};
+  const allConnectors = gw.connectors || {};
+  const platforms = ['telegram','discord','slack','whatsapp','signal','imessage','mattermost','matrix','teams'];
+
+  let html = '';
+  for (const p of platforms) {
+    const c = connectors[p] || {enabled:false, status:'disabled', config:{}};
+    const cfg = allConnectors[p] || {};
+    const statusClass = c.status === 'running' ? 'badge-green' : c.enabled ? 'badge-yellow' : 'badge-red';
+    const statusText = c.status === 'running' ? 'Running' : c.enabled ? 'Enabled' : 'Disabled';
+    const pName = p.charAt(0).toUpperCase()+p.slice(1);
+
+    html += `<div class="card">
+      <h3>${pName} <span class="badge ${statusClass}">${statusText}</span></h3>
+      <div class="form-row">
+        <div class="form-group"><label>Bot Token</label><input class="inline-input" id="conn-${p}-token" type="password" value="${esc(c.config?.token)}" placeholder="Enter ${pName} bot token"></div>
+        <div style="display:flex;align-items:end;gap:8px;padding-bottom:14px">
+          <div class="toggle-row" style="margin:0"><input type="checkbox" id="conn-${p}-on" ${c.enabled?'checked':''}><label for="conn-${p}-on">Enabled</label></div>
+        </div>
+      </div>
+      ${p==='matrix' ? `<div class="form-row">
+        <div class="form-group"><label>Homeserver URL</label><input class="inline-input" id="conn-${p}-hs" value="${esc(cfg.homeserver)}" placeholder="https://matrix.org"></div>
+        <div class="form-group"><label>User ID</label><input class="inline-input" id="conn-${p}-uid" value="${esc(cfg.user_id)}" placeholder="@steelclaw:matrix.org"></div>
+      </div>` : ''}
+      <button class="btn btn-primary btn-sm" onclick="saveConnector('${p}')">Save ${pName}</button>
+      <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart to apply</span>
+    </div>`;
+  }
+  body.innerHTML = html;
+};
+
+async function saveConnector(platform) {
+  const d = {
+    enabled: document.getElementById('conn-'+platform+'-on').checked,
+  };
+  const tokenEl = document.getElementById('conn-'+platform+'-token');
+  if (tokenEl.value && !tokenEl.value.includes('****')) d.token = tokenEl.value;
+  if (platform === 'matrix') {
+    const hs = document.getElementById('conn-matrix-hs');
+    const uid = document.getElementById('conn-matrix-uid');
+    if (hs) d.homeserver = hs.value;
+    if (uid) d.user_id = uid.value;
+  }
+  await api('/config/connectors/'+platform, {method:'PUT', body:JSON.stringify(d)});
+  toast(platform.charAt(0).toUpperCase()+platform.slice(1)+' config saved — restart to apply');
+}
+
+// ── Skills Page ────────────────────────────────────────────
+loaders.skills = async () => {
+  const body = document.getElementById('skills-body');
+  const [skills, skillCfg] = await Promise.all([api('/skills'), api('/config/skills')]);
+  const cfg = skillCfg.skills || {};
+
+  let html = `<div class="card">
+    <h3>Skill Directories</h3>
+    <table class="tbl">
+      <tr><td style="color:var(--text-muted);width:100px">Bundled</td><td style="font-family:monospace;font-size:12px">${esc(cfg.bundled_dir)||'steelclaw/skills/bundled'}</td></tr>
+      <tr><td style="color:var(--text-muted)">Global</td><td style="font-family:monospace;font-size:12px">${esc(cfg.global_dir)||'~/.steelclaw/skills'}</td></tr>
+      <tr><td style="color:var(--text-muted)">Workspace</td><td style="font-family:monospace;font-size:12px">${esc(cfg.workspace_dir)||'.steelclaw/skills'}</td></tr>
+      <tr><td style="color:var(--text-muted)">Enabled</td><td>${cfg.enabled!==false?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-red">No</span>'}</td></tr>
+    </table>
+  </div>`;
+
+  if (!skills.length) {
+    html += '<div class="card"><p style="color:var(--text-muted)">No skills loaded.</p></div>';
+  }
+
+  // Count tools
+  let totalTools = 0;
+  for (const s of skills) totalTools += (s.tools||[]).length;
+  html += `<div style="margin-bottom:16px;font-size:13px;color:var(--text-muted)">${skills.length} skill(s) loaded, ${totalTools} tool(s) registered</div>`;
+
+  for (const s of skills) {
+    const scopeMap = {bundled:'badge-blue',global:'badge-yellow',workspace:'badge-green'};
+    html += `<div class="card">
+      <h3>${esc(s.name)} <span class="badge ${scopeMap[s.scope]||'badge-blue'}">${s.scope}</span></h3>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px">${esc(s.description)||'No description'}</p>
+      <div style="font-size:12px;margin-bottom:6px"><strong>Version:</strong> ${esc(s.version)||'—'}</div>
+      ${s.tools?.length ? `<div style="font-size:12px;margin-bottom:4px"><strong>Tools:</strong></div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+        ${s.tools.map(t=>`<span class="badge badge-purple" style="font-size:11px">${esc(t)}</span>`).join('')}
+      </div>` : ''}
+      ${s.triggers?.length ? `<div style="font-size:12px"><strong>Triggers:</strong> ${s.triggers.map(t=>`<span class="badge badge-blue" style="font-size:10px">${esc(t)}</span>`).join(' ')}</div>` : ''}
+    </div>`;
+  }
+  body.innerHTML = html;
+};
+
+async function reloadSkills() {
+  await api('/skills/reload', {method:'POST'});
+  toast('Skills reloaded');
+  loaders.skills();
+}
+
+// ── Sessions Page ──────────────────────────────────────────
+loaders.sessions = async () => {
+  const body = document.getElementById('sessions-body');
+  const sessions = await api('/sessions');
+
+  if (!sessions.length) { body.innerHTML='<p style="color:var(--text-muted)">No sessions yet.</p>'; return; }
+
+  // Summary
+  const platforms = {};
+  let dms=0, groups=0;
+  for (const s of sessions) {
+    platforms[s.platform] = (platforms[s.platform]||0)+1;
+    if (s.session_type==='dm') dms++; else groups++;
+  }
+  let html = `<div class="card"><h3>Summary</h3><table class="tbl">
+    <tr><td style="color:var(--text-muted);width:140px">Total Sessions</td><td>${sessions.length}</td></tr>
+    <tr><td style="color:var(--text-muted)">DMs / Groups</td><td>${dms} / ${groups}</td></tr>
+    <tr><td style="color:var(--text-muted)">Platforms</td><td>${Object.entries(platforms).map(([p,n])=>`${p} (${n})`).join(', ')}</td></tr>
+  </table></div>`;
+
+  html += `<div class="card"><h3>All Sessions</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Chat ID</th><th>User</th><th>Active</th><th>Created</th></tr></thead><tbody>`;
+  for (const s of sessions) {
+    html += `<tr>
+      <td>${esc(s.platform)}</td>
+      <td><span class="badge ${s.session_type==='dm'?'badge-blue':'badge-yellow'}">${s.session_type}</span></td>
+      <td style="font-family:monospace;font-size:12px">${esc((s.platform_chat_id||'').slice(0,16))}${(s.platform_chat_id||'').length>16?'...':''}</td>
+      <td style="font-size:12px">${esc(s.user_id||'—')}</td>
+      <td>${s.is_active ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-red">No</span>'}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${s.created_at ? new Date(s.created_at).toLocaleString() : '—'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  body.innerHTML = html;
+};
+
+// ── Security Page ──────────────────────────────────────────
+loaders.security = async () => {
+  const body = document.getElementById('security-body');
+  const [data, cfg] = await Promise.all([api('/config/approvals'), api('/config/security')]);
+  const rules = data.rules || [];
+  const sec = cfg.security || {};
+
+  let html = `
+    <div class="card">
+      <h3>🛡️ Permission Settings</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Default Permission</label>
+          <select id="sec-default">
+            ${['ask','record','ignore'].map(v=>`<option${(sec.default_permission||'ask')===v?' selected':''}>${v}</option>`).join('')}
+          </select>
+          <div class="hint">ask = prompt user, record = log & allow, ignore = auto-allow</div>
+        </div>
+        <div class="form-group"><label>Command Timeout (sec)</label><input id="sec-timeout" type="number" value="${sec.max_command_timeout||30}"></div>
+      </div>
+      <div class="toggle-row"><input type="checkbox" id="sec-sandbox" ${sec.sandbox_enabled!==false?'checked':''}><label for="sec-sandbox">Enable sandbox (subprocess isolation)</label></div>
+      <div class="form-group"><label>Blocked Commands</label><textarea id="sec-blocked" rows="2" style="font-family:monospace;font-size:12px">${esc((sec.blocked_commands||[]).join('\n'))}</textarea><div class="hint">One per line. These are always blocked regardless of approval rules.</div></div>
+      <button class="btn btn-primary" onclick="saveSecurity()">Save Security Settings</button>
+    </div>
+
+    <div class="card">
+      <h3>📋 Approval Rules</h3>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="sec-pattern" placeholder="Pattern (e.g. git *)" style="flex:2;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:13px;font-family:monospace">
+        <select id="sec-perm" style="flex:0 0 90px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:13px">
+          <option value="ignore">ignore</option><option value="record">record</option><option value="ask">ask</option>
+        </select>
+        <input id="sec-note" placeholder="Note (optional)" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:13px">
+        <button class="btn btn-primary btn-sm" onclick="addApproval()">Add</button>
+      </div>`;
+
+  if (rules.length) {
+    html += `<table class="tbl"><thead><tr><th>Pattern</th><th>Permission</th><th>Note</th><th></th></tr></thead><tbody>`;
+    for (const r of rules) {
+      const permClass = r.permission==='ignore'?'badge-green':r.permission==='record'?'badge-blue':'badge-yellow';
+      html += `<tr>
+        <td style="font-family:monospace">${esc(r.pattern)}</td>
+        <td><span class="badge ${permClass}">${r.permission}</span></td>
+        <td style="font-size:12px;color:var(--text-muted)">${esc(r.note)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="removeApproval('${r.pattern.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">Remove</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--text-muted);font-size:13px">No approval rules configured. Commands will use the default permission level.</p>';
+  }
+  html += '</div>';
+  body.innerHTML = html;
+};
+
+async function saveSecurity() {
+  const blocked = document.getElementById('sec-blocked').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  await api('/config/security', {method:'PUT', body:JSON.stringify({
+    default_permission: document.getElementById('sec-default').value,
+    max_command_timeout: parseInt(document.getElementById('sec-timeout').value),
+    sandbox_enabled: document.getElementById('sec-sandbox').checked,
+    blocked_commands: blocked,
+    approvals_file: 'exec-approvals.json',
+  })});
+  toast('Security settings saved');
+}
+
+async function addApproval() {
+  const pattern = document.getElementById('sec-pattern').value.trim();
+  const permission = document.getElementById('sec-perm').value;
+  const note = document.getElementById('sec-note').value.trim();
+  if (!pattern) return;
+  await api('/config/approvals', {method:'POST', body:JSON.stringify({pattern, permission, note})});
+  document.getElementById('sec-pattern').value = '';
+  document.getElementById('sec-note').value = '';
+  toast('Rule added');
+  loaders.security();
+}
+
+async function removeApproval(pattern) {
+  await fetch('/api/config/approvals/'+encodeURIComponent(pattern), {method:'DELETE'});
+  toast('Rule removed');
+  loaders.security();
+}
+
+// ── Scheduler Page ─────────────────────────────────────────
+loaders.scheduler = async () => {
+  const body = document.getElementById('scheduler-body');
+  const [status, jobs, schedCfg] = await Promise.all([api('/scheduler/status'), api('/scheduler/jobs'), api('/config/scheduler')]);
+  const cfg = schedCfg.scheduler || {};
+
+  let html = `
+    <div class="card-row">
+      <div class="card">
+        <h3>Engine Status <span class="badge ${status.running?'badge-green':'badge-red'}">${status.running?'Running':'Stopped'}</span></h3>
+        <table class="tbl">
+          <tr><td style="color:var(--text-muted)">Active Jobs</td><td>${status.jobs_count||0}</td></tr>
+          <tr><td style="color:var(--text-muted)">Timezone</td><td>${esc(cfg.timezone)||'UTC'}</td></tr>
+          <tr><td style="color:var(--text-muted)">Max Concurrent</td><td>${cfg.max_concurrent_jobs||5}</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>⚙️ Scheduler Config</h3>
+        <div class="toggle-row"><input type="checkbox" id="sched-on" ${cfg.enabled!==false?'checked':''}><label for="sched-on">Enable scheduler</label></div>
+        <div class="form-row">
+          <div class="form-group"><label>Timezone</label><input id="sched-tz" value="${esc(cfg.timezone)||'UTC'}"><div class="hint">e.g. UTC, US/Eastern, Europe/London</div></div>
+          <div class="form-group"><label>Max Concurrent Jobs</label><input id="sched-max" type="number" value="${cfg.max_concurrent_jobs||5}"></div>
+        </div>
+        <button class="btn btn-primary" onclick="saveScheduler()">Save</button>
+        <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
+      </div>
+    </div>`;
+
+  if (jobs.length) {
+    html += `<div class="card"><h3>Scheduled Jobs</h3><table class="tbl"><thead><tr><th>ID</th><th>Type</th><th>Schedule</th><th>Description</th><th>Next Run</th><th></th></tr></thead><tbody>`;
+    for (const j of jobs) {
+      html += `<tr>
+        <td style="font-family:monospace;font-size:12px">${esc(j.id)}</td>
+        <td><span class="badge badge-blue">${j.type}</span></td>
+        <td style="font-size:12px">${j.cron||((j.seconds||'')+'s')||'—'}</td>
+        <td style="font-size:12px">${esc(j.description)}</td>
+        <td style="font-size:12px;color:var(--text-muted)">${j.next_run||'—'}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="removeJob('${esc(j.id)}')">Remove</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+  } else {
+    html += '<div class="card"><p style="color:var(--text-muted)">No scheduled jobs.</p></div>';
+  }
+  body.innerHTML = html;
+};
+
+async function saveScheduler() {
+  await api('/config/scheduler', {method:'PUT', body:JSON.stringify({
+    enabled: document.getElementById('sched-on').checked,
+    timezone: document.getElementById('sched-tz').value,
+    max_concurrent_jobs: parseInt(document.getElementById('sched-max').value),
+  })});
+  toast('Scheduler config saved — restart to apply');
+}
+
+async function removeJob(id) {
+  await fetch('/api/scheduler/jobs/'+id, {method:'DELETE'});
+  toast('Job removed');
+  loaders.scheduler();
+}
+</script>
+</body>
+</html>
