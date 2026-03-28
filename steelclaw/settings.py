@@ -64,6 +64,25 @@ class SkillSettings(BaseModel):
     global_dir: str = "~/.steelclaw/skills"
     workspace_dir: str = ".steelclaw/skills"
     enabled: bool = True
+    disabled_skills: list[str] = []
+    skill_configs: dict[str, dict[str, str]] = {}  # per-skill credentials/settings
+
+
+class MemorySettings(BaseModel):
+    """Persistent memory configuration (ChromaDB vector store)."""
+
+    enabled: bool = True
+    chromadb_path: str = "~/.steelclaw/chromadb"
+    collection_name: str = "steelclaw_memory"
+    top_k: int = 5  # number of relevant memories to inject
+
+
+class SessionLifecycleSettings(BaseModel):
+    """Session heartbeat and lifecycle configuration."""
+
+    idle_timeout_minutes: int = 30
+    close_timeout_minutes: int = 1440  # 24 hours
+    heartbeat_interval_seconds: int = 60
 
 
 class SecuritySettings(BaseModel):
@@ -100,6 +119,8 @@ class AgentSettings(BaseModel):
     security: SecuritySettings = SecuritySettings()
     scheduler: SchedulerSettings = SchedulerSettings()
     voice: VoiceSettings = VoiceSettings()
+    memory: MemorySettings = MemorySettings()
+    session_lifecycle: SessionLifecycleSettings = SessionLifecycleSettings()
 
 
 class Settings(BaseSettings):

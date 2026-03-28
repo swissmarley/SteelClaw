@@ -45,16 +45,33 @@ async def lifespan(app: FastAPI):
     set_permission_manager(permission_manager)
     app.state.permission_manager = permission_manager
 
+    # ── Memory system (ChromaDB) ────────────────────────────────────────
+    from steelclaw.memory.ingestion import MemoryIngestor
+    from steelclaw.memory.retrieval import MemoryRetriever
+    from steelclaw.memory.vector_store import VectorStore
+
+    vector_store = VectorStore(settings.agents.memory)
+    memory_retriever = MemoryRetriever(vector_store)
+    memory_ingestor = MemoryIngestor(vector_store)
+    app.state.vector_store = vector_store
+    app.state.memory_retriever = memory_retriever
+    app.state.memory_ingestor = memory_ingestor
+
     # ── Agent router (LLM-powered) ─────────────────────────────────────
     from steelclaw.agents.router import AgentRouter
-    from steelclaw.gateway.router import set_agent_router
+    from steelclaw.gateway.router import set_agent_router, set_memory_ingestor
 
     agent_router = AgentRouter(
         settings=settings.agents,
         skill_registry=skill_registry,
     )
+    agent_router.set_memory(memory_retriever, memory_ingestor)
     set_agent_router(agent_router)
+    set_memory_ingestor(memory_ingestor)
     app.state.agent_router = agent_router
+
+    # ── Ensure main agent exists ────────────────────────────────────────
+    await _ensure_main_agent(settings)
 
     # ── Task scheduler ──────────────────────────────────────────────────
     from steelclaw.scheduler.engine import TaskEngine
@@ -62,6 +79,17 @@ async def lifespan(app: FastAPI):
     task_engine = TaskEngine(settings.agents.scheduler)
     task_engine.start()
     app.state.task_engine = task_engine
+
+    # ── Session heartbeat ───────────────────────────────────────────────
+    from steelclaw.session_heartbeat import run_heartbeat
+
+    lifecycle = settings.agents.session_lifecycle
+    task_engine.add_interval_job(
+        job_id="session_heartbeat",
+        func=run_heartbeat,
+        seconds=lifecycle.heartbeat_interval_seconds,
+        kwargs={"lifecycle_settings": lifecycle},
+    )
 
     # ── Messaging gateway ───────────────────────────────────────────────
     from steelclaw.gateway.router import process_message
@@ -72,8 +100,12 @@ async def lifespan(app: FastAPI):
         """Handle messages from platform connectors (Telegram, Discord, etc.)."""
         from steelclaw.db.engine import get_async_session
 
-        async for db in get_async_session():
-            outbound = await process_message(inbound, settings.gateway, db)
+        outbound = None
+        try:
+            async for db in get_async_session():
+                outbound = await process_message(inbound, settings.gateway, db)
+        except Exception:
+            logger.exception("Error processing connector message (%s)", inbound.platform)
         if outbound:
             connector = registry.get(inbound.platform)
             if connector:
@@ -93,6 +125,30 @@ async def lifespan(app: FastAPI):
     logger.info("SteelClaw shut down")
 
 
+async def _ensure_main_agent(settings: Settings) -> None:
+    """Create the main agent profile if it doesn't exist yet."""
+    from sqlalchemy import select
+
+    from steelclaw.db.engine import get_async_session
+    from steelclaw.db.models import AgentProfile
+
+    async for db in get_async_session():
+        stmt = select(AgentProfile).where(AgentProfile.is_main.is_(True))
+        result = await db.execute(stmt)
+        if result.scalar_one_or_none() is None:
+            main_agent = AgentProfile(
+                name="main",
+                display_name="SteelClaw",
+                is_main=True,
+                system_prompt=settings.agents.llm.system_prompt,
+                model_override=settings.agents.llm.default_model,
+                memory_namespace="memory_main",
+            )
+            db.add(main_agent)
+            await db.commit()
+            logger.info("Created main agent profile")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = Settings()
@@ -100,11 +156,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="SteelClaw",
         description="Self-hosted personal AI assistant",
-        version="0.2.0",
+        version="0.3.0",
         lifespan=lifespan,
     )
     app.state.settings = settings
 
+    from steelclaw.api.agents import router as agents_router
+    from steelclaw.api.analytics import router as analytics_router
     from steelclaw.api.config import router as config_router
     from steelclaw.api.health import router as health_router
     from steelclaw.api.history import router as history_router
@@ -119,6 +177,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(history_router, prefix="/api/history", tags=["history"])
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(scheduler_router, prefix="/api/scheduler", tags=["scheduler"])
+    app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
+    app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
     app.include_router(gateway_router, prefix="/gateway", tags=["gateway"])
 
     # ── Web Chat UI ─────────────────────────────────────────────────────

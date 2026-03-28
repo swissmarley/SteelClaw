@@ -35,7 +35,12 @@ class SkillRegistry:
         self._skills.clear()
         self._tool_index.clear()
 
+        disabled = set(self._settings.disabled_skills)
+
         for skill in skills:
+            if skill.name in disabled:
+                logger.info("Skill '%s' is disabled — skipping", skill.name)
+                continue
             self._skills[skill.name] = skill
             for tool in skill.tools:
                 if tool.name in self._tool_index:

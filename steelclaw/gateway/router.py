@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from steelclaw.db.engine import get_async_session
-from steelclaw.db.models import Message as DBMessage
+from steelclaw.db.models import Message as DBMessage, Session as DBSession
 from steelclaw.gateway.session_manager import SessionManager
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.settings import GatewaySettings, Settings
@@ -25,12 +26,19 @@ _ws_connections: dict[str, WebSocket] = {}
 # Module-level singletons — initialised via set_agent_router()
 _session_manager: SessionManager | None = None
 _agent_router = None  # Will be set from app lifespan
+_memory_ingestor = None  # Will be set from app lifespan
 
 
 def set_agent_router(agent_router: object) -> None:
     """Called during app startup to inject the LLM-powered agent router."""
     global _agent_router
     _agent_router = agent_router
+
+
+def set_memory_ingestor(ingestor: object) -> None:
+    """Called during app startup to inject the memory ingestor."""
+    global _memory_ingestor
+    _memory_ingestor = ingestor
 
 
 def _get_session_manager(settings: GatewaySettings) -> SessionManager:
@@ -55,6 +63,13 @@ async def process_message(
     if session is None:
         return None
 
+    # Update session activity
+    now = datetime.now(timezone.utc)
+    session.last_activity_at = now
+    session.updated_at = now
+    if session.status == "idle":
+        session.status = "active"
+
     # Persist inbound message
     db_msg = DBMessage(
         session_id=session.id,
@@ -68,7 +83,20 @@ async def process_message(
 
     # Route to agent (pass db so the agent can load conversation history)
     if _agent_router is not None:
-        outbound = await _agent_router.route(inbound, session, db=db)
+        agent_result = await _agent_router.route_with_usage(inbound, session, db=db)
+        outbound = agent_result.outbound
+
+        # Persist outbound message with usage metadata
+        db_reply = DBMessage(
+            session_id=session.id,
+            role="assistant",
+            content=outbound.content,
+            platform=outbound.platform,
+            model=agent_result.model,
+            token_usage_prompt=agent_result.token_usage_prompt,
+            token_usage_completion=agent_result.token_usage_completion,
+            cost_usd=agent_result.cost_usd,
+        )
     else:
         # Fallback echo if agent not initialised
         outbound = OutboundMessage(
@@ -76,16 +104,27 @@ async def process_message(
             platform_chat_id=inbound.platform_chat_id,
             content=f"[echo] {inbound.content}",
         )
+        db_reply = DBMessage(
+            session_id=session.id,
+            role="assistant",
+            content=outbound.content,
+            platform=outbound.platform,
+        )
 
-    # Persist outbound message
-    db_reply = DBMessage(
-        session_id=session.id,
-        role="assistant",
-        content=outbound.content,
-        platform=outbound.platform,
-    )
     db.add(db_reply)
     await db.commit()
+
+    # Ingest into memory (non-blocking, errors swallowed)
+    if _memory_ingestor is not None:
+        try:
+            await _memory_ingestor.ingest_exchange(
+                user_message=inbound.content,
+                assistant_message=outbound.content,
+                session_id=session.id,
+                db=db,
+            )
+        except Exception:
+            logger.debug("Memory ingestion failed (non-critical)", exc_info=True)
 
     return outbound
 
@@ -119,14 +158,36 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             )
 
             # Get a fresh DB session for each message
-            async for db in get_async_session():
-                settings = websocket.app.state.settings
-                outbound = await process_message(inbound, settings.gateway, db)
+            outbound = None
+            try:
+                async for db in get_async_session():
+                    settings = websocket.app.state.settings
+                    outbound = await process_message(inbound, settings.gateway, db)
+            except Exception:
+                logger.exception("Error processing WebSocket message")
+                outbound = OutboundMessage(
+                    platform="websocket",
+                    platform_chat_id=conn_id,
+                    content="I encountered an internal error. Please try again.",
+                )
 
             if outbound:
                 await websocket.send_text(json.dumps({"content": outbound.content}))
     except WebSocketDisconnect:
-        pass
+        # Mark the WebSocket session as closed
+        async for db in get_async_session():
+            from sqlalchemy import select
+            stmt = select(DBSession).where(
+                DBSession.platform == "websocket",
+                DBSession.platform_chat_id == conn_id,
+                DBSession.status == "active",
+            )
+            result = await db.execute(stmt)
+            ws_session = result.scalar_one_or_none()
+            if ws_session:
+                ws_session.status = "closed"
+                ws_session.updated_at = datetime.now(timezone.utc)
+                await db.commit()
     finally:
         _ws_connections.pop(conn_id, None)
         logger.info("WebSocket disconnected: %s", conn_id)

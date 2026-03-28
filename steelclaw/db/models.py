@@ -57,12 +57,23 @@ class Session(SQLModel, table=True):
     session_type: str = Field(default="dm")  # "dm" | "group"
     unified_session_id: Optional[str] = Field(default=None, index=True)
     user_id: Optional[str] = Field(default=None, foreign_key="users.id")
-    is_active: bool = Field(default=True)
+    status: str = Field(default="active", index=True)  # "active" | "idle" | "closed"
+    connector_type: Optional[str] = Field(default=None)  # "telegram" | "discord" | "websocket" | etc.
+    last_activity_at: datetime = Field(default_factory=_now)
+    agent_id: Optional[str] = Field(default=None, foreign_key="agents.id")
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
     messages: List["Message"] = Relationship(back_populates="session")
     user: Optional["User"] = Relationship(back_populates="sessions")
+
+    @property
+    def is_active(self) -> bool:
+        return self.status != "closed"
+
+    @is_active.setter
+    def is_active(self, value: bool) -> None:
+        self.status = "active" if value else "closed"
 
 
 # ── Message ─────────────────────────────────────────────────────────────────
@@ -79,6 +90,10 @@ class Message(SQLModel, table=True):
     platform_message_id: Optional[str] = None
     agent_id: Optional[str] = None
     metadata_json: Optional[str] = None
+    model: Optional[str] = None
+    token_usage_prompt: Optional[int] = None
+    token_usage_completion: Optional[int] = None
+    cost_usd: Optional[float] = None
     created_at: datetime = Field(default_factory=_now)
 
     session: Optional["Session"] = Relationship(back_populates="messages")
@@ -94,3 +109,54 @@ class AllowlistEntry(SQLModel, table=True):
     platform: str = Field(index=True)
     platform_user_id: str = ""
     granted_at: datetime = Field(default_factory=_now)
+
+
+# ── AgentProfile ────────────────────────────────────────────────────────────
+
+
+class AgentProfile(SQLModel, table=True):
+    __tablename__ = "agents"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    display_name: str = ""
+    is_main: bool = Field(default=False)
+    system_prompt: str = ""
+    persona_json: Optional[str] = None  # JSON: {agent_name, user_name, tone, style, goals[]}
+    model_override: Optional[str] = None
+    temperature_override: Optional[float] = None
+    memory_namespace: str = Field(default_factory=lambda: f"memory_{_uuid()[:8]}")
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+# ── UserFact ────────────────────────────────────────────────────────────────
+
+
+class UserFact(SQLModel, table=True):
+    __tablename__ = "user_facts"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    fact_key: str = ""  # e.g. "name", "timezone", "preference_language"
+    fact_value: str = ""
+    source: str = "conversation"  # "conversation" | "manual" | "setup"
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+# ── MemoryEntry ─────────────────────────────────────────────────────────────
+
+
+class MemoryEntry(SQLModel, table=True):
+    __tablename__ = "memory_entries"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    session_id: Optional[str] = Field(default=None, foreign_key="sessions.id")
+    agent_id: Optional[str] = Field(default=None, foreign_key="agents.id")
+    content_hash: str = Field(default="", index=True)
+    content_preview: str = ""  # first 200 chars
+    source_type: str = "message"  # "message" | "summary" | "fact"
+    metadata_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)

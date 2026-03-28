@@ -108,6 +108,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 #toast.error { background:var(--red-dim); color:#fff; }
 
 @media(max-width:768px) { #sidebar{width:60px} #sidebar .logo h1,#sidebar .logo span,#sidebar nav button span:not(.icon),.nav-label{display:none} .msg{max-width:90%} .card-row,.form-row,.form-row-3{grid-template-columns:1fr} }
+@media(max-width:375px) { .page-body{padding:12px} .card{padding:12px 14px} }
 </style>
 </head>
 <body>
@@ -127,8 +128,13 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <button onclick="showPage('skills',this)"><span class="icon">🧩</span><span>Skills</span></button>
     <button onclick="showPage('security',this)"><span class="icon">🛡️</span><span>Security</span></button>
     <div class="nav-separator"></div>
+    <div class="nav-label">Agents</div>
+    <button onclick="showPage('agents',this)"><span class="icon">🤖</span><span>Agents</span></button>
+    <button onclick="showPage('persona',this)"><span class="icon">🎭</span><span>Persona</span></button>
+    <div class="nav-separator"></div>
     <div class="nav-label">Monitor</div>
     <button onclick="showPage('sessions',this)"><span class="icon">💾</span><span>Sessions</span></button>
+    <button onclick="showPage('analytics',this)"><span class="icon">📊</span><span>Analytics</span></button>
     <button onclick="showPage('scheduler',this)"><span class="icon">⏰</span><span>Scheduler</span></button>
   </nav>
   <div class="status-bar">
@@ -180,6 +186,32 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
   <div class="page" id="page-security">
     <div class="page-header"><div><h2>Security</h2><p>Command approvals, permissions, and sandbox settings</p></div></div>
     <div class="page-body" id="security-body"></div>
+  </div>
+
+  <!-- Agents Page -->
+  <div class="page" id="page-agents">
+    <div class="page-header"><div><h2>Agents</h2><p>Create, manage, and configure multiple AI agents</p></div></div>
+    <div class="page-body" id="agents-body"></div>
+  </div>
+
+  <!-- Persona Page -->
+  <div class="page" id="page-persona">
+    <div class="page-header"><div><h2>Persona</h2><p>Configure agent personality, tone, and behavior</p></div></div>
+    <div class="page-body" id="persona-body"></div>
+  </div>
+
+  <!-- Analytics Page -->
+  <div class="page" id="page-analytics">
+    <div class="page-header">
+      <div><h2>Analytics</h2><p>Token usage, costs, and usage patterns</p></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="analytics-range" onchange="loaders.analytics()" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:12px">
+          <option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV()">Export CSV</button>
+      </div>
+    </div>
+    <div class="page-body" id="analytics-body"></div>
   </div>
 
   <!-- Scheduler Page -->
@@ -535,33 +567,52 @@ loaders.sessions = async () => {
 
   if (!sessions.length) { body.innerHTML='<p style="color:var(--text-muted)">No sessions yet.</p>'; return; }
 
-  // Summary
   const platforms = {};
-  let dms=0, groups=0;
+  let active=0, idle=0, closed=0;
   for (const s of sessions) {
     platforms[s.platform] = (platforms[s.platform]||0)+1;
-    if (s.session_type==='dm') dms++; else groups++;
+    if (s.status==='active') active++;
+    else if (s.status==='idle') idle++;
+    else closed++;
   }
   let html = `<div class="card"><h3>Summary</h3><table class="tbl">
     <tr><td style="color:var(--text-muted);width:140px">Total Sessions</td><td>${sessions.length}</td></tr>
-    <tr><td style="color:var(--text-muted)">DMs / Groups</td><td>${dms} / ${groups}</td></tr>
+    <tr><td style="color:var(--text-muted)">Status</td><td><span class="badge badge-green">${active} active</span> <span class="badge badge-yellow">${idle} idle</span> <span class="badge badge-red">${closed} closed</span></td></tr>
     <tr><td style="color:var(--text-muted)">Platforms</td><td>${Object.entries(platforms).map(([p,n])=>`${p} (${n})`).join(', ')}</td></tr>
   </table></div>`;
 
-  html += `<div class="card"><h3>All Sessions</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Chat ID</th><th>User</th><th>Active</th><th>Created</th></tr></thead><tbody>`;
+  html += `<div class="card"><h3>All Sessions</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Connector</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead><tbody>`;
   for (const s of sessions) {
+    const statusClass = s.status==='active'?'badge-green':s.status==='idle'?'badge-yellow':'badge-red';
     html += `<tr>
       <td>${esc(s.platform)}</td>
       <td><span class="badge ${s.session_type==='dm'?'badge-blue':'badge-yellow'}">${s.session_type}</span></td>
-      <td style="font-family:monospace;font-size:12px">${esc((s.platform_chat_id||'').slice(0,16))}${(s.platform_chat_id||'').length>16?'...':''}</td>
-      <td style="font-size:12px">${esc(s.user_id||'—')}</td>
-      <td>${s.is_active ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-red">No</span>'}</td>
-      <td style="font-size:12px;color:var(--text-muted)">${s.created_at ? new Date(s.created_at).toLocaleString() : '—'}</td>
+      <td style="font-size:12px">${esc(s.connector_type||'—')}</td>
+      <td><span class="badge ${statusClass}">${s.status}</span></td>
+      <td style="font-size:12px;color:var(--text-muted)">${s.last_activity_at ? new Date(s.last_activity_at).toLocaleString() : '—'}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="resetSession('${s.id}')">Reset</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.id}')">Delete</button>
+      </td>
     </tr>`;
   }
   html += '</tbody></table></div>';
   body.innerHTML = html;
 };
+
+async function resetSession(id) {
+  if (!confirm('Reset this session? All messages will be cleared.')) return;
+  await api('/sessions/'+id+'/reset', {method:'POST'});
+  toast('Session reset');
+  loaders.sessions();
+}
+
+async function deleteSession(id) {
+  if (!confirm('Delete this session permanently?')) return;
+  await fetch('/api/sessions/'+id, {method:'DELETE'});
+  toast('Session deleted');
+  loaders.sessions();
+}
 
 // ── Security Page ──────────────────────────────────────────
 loaders.security = async () => {
@@ -709,6 +760,212 @@ async function removeJob(id) {
   toast('Job removed');
   loaders.scheduler();
 }
+
+// ── Agents Page ───────────────────────────────────────────
+loaders.agents = async () => {
+  const body = document.getElementById('agents-body');
+  const agents = await fetch('/api/agents').then(r=>r.json()).catch(()=>[]);
+
+  let html = `<div class="card">
+    <h3>Create Agent</h3>
+    <div class="form-row-3">
+      <div class="form-group"><label>Name</label><input id="agent-name" placeholder="e.g. ResearchBot"></div>
+      <div class="form-group"><label>Display Name</label><input id="agent-display" placeholder="e.g. Research Assistant"></div>
+      <div class="form-group"><label>Model Override</label><input id="agent-model" placeholder="e.g. claude-sonnet-4-20250514"></div>
+    </div>
+    <div class="form-group"><label>System Prompt</label><textarea id="agent-prompt" rows="2" placeholder="Custom instructions for this agent..."></textarea></div>
+    <button class="btn btn-success" onclick="createAgent()">Create Agent</button>
+  </div>`;
+
+  if (!agents.length) {
+    html += '<p style="color:var(--text-muted)">No agents configured yet.</p>';
+  } else {
+    html += `<div class="card"><h3>All Agents</h3><table class="tbl"><thead><tr><th>Name</th><th>Display</th><th>Model</th><th>Main</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead><tbody>`;
+    for (const a of agents) {
+      html += `<tr>
+        <td style="font-weight:600">${esc(a.name)}</td>
+        <td>${esc(a.display_name)}</td>
+        <td style="font-size:12px;font-family:monospace">${esc(a.model_override||'default')}</td>
+        <td>${a.is_main?'<span class="badge badge-green">Main</span>':''}</td>
+        <td>${a.is_active?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-red">No</span>'}</td>
+        <td style="font-size:12px;color:var(--text-muted)">${a.created_at?new Date(a.created_at).toLocaleDateString():'—'}</td>
+        <td>${a.is_main?'':'<button class="btn btn-danger btn-sm" onclick="deleteAgent(\''+a.id+'\')">Delete</button>'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+  body.innerHTML = html;
+};
+
+async function createAgent() {
+  const name = document.getElementById('agent-name').value.trim();
+  if (!name) { toast('Agent name is required','error'); return; }
+  const body = { name, display_name: document.getElementById('agent-display').value || name };
+  const model = document.getElementById('agent-model').value.trim();
+  if (model) body.model_override = model;
+  const prompt = document.getElementById('agent-prompt').value.trim();
+  if (prompt) body.system_prompt = prompt;
+  const r = await fetch('/api/agents', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  if (r.ok) { toast('Agent created'); loaders.agents(); }
+  else { const d = await r.json(); toast(d.detail||'Error creating agent','error'); }
+}
+
+async function deleteAgent(id) {
+  if (!confirm('Delete this agent?')) return;
+  await fetch('/api/agents/'+id, {method:'DELETE'});
+  toast('Agent deleted');
+  loaders.agents();
+}
+
+// ── Persona Page ──────────────────────────────────────────
+loaders.persona = async () => {
+  const body = document.getElementById('persona-body');
+  const agents = await fetch('/api/agents').then(r=>r.json()).catch(()=>[]);
+  const main = agents.find(a=>a.is_main) || agents[0];
+  if (!main) { body.innerHTML='<p style="color:var(--text-muted)">No agents configured.</p>'; return; }
+
+  const p = main.persona || {};
+  body.innerHTML = `
+    <div class="card">
+      <h3>Agent Persona</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Agent Name</label><input id="p-agent-name" value="${esc(p.agent_name||main.display_name)}"></div>
+        <div class="form-group"><label>User Name</label><input id="p-user-name" value="${esc(p.user_name||'')}" placeholder="What should the agent call you?"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Tone</label>
+          <select id="p-tone">
+            ${['professional','friendly','casual','concise','technical'].map(t=>`<option${(p.tone||'')==t?' selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Style</label>
+          <select id="p-style">
+            ${['verbose','balanced','concise'].map(s=>`<option${(p.style||'')==s?' selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Goals</label><textarea id="p-goals" rows="2" placeholder="Comma-separated goals...">${esc((p.goals||[]).join(', '))}</textarea><div class="hint">Primary goals or tasks for the agent</div></div>
+      <div class="form-group"><label>Additional Instructions</label><textarea id="p-extension" rows="2" placeholder="Extra system prompt additions...">${esc(p.system_prompt_extension||'')}</textarea></div>
+      <button class="btn btn-primary" onclick="savePersona('${main.id}')">Save Persona</button>
+    </div>
+  `;
+};
+
+async function savePersona(agentId) {
+  const goals = document.getElementById('p-goals').value.split(',').map(g=>g.trim()).filter(Boolean);
+  const persona = {
+    agent_name: document.getElementById('p-agent-name').value,
+    user_name: document.getElementById('p-user-name').value,
+    tone: document.getElementById('p-tone').value,
+    style: document.getElementById('p-style').value,
+    goals: goals,
+    system_prompt_extension: document.getElementById('p-extension').value,
+  };
+  await fetch('/api/agents/'+agentId+'/persona', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(persona)});
+  toast('Persona saved');
+}
+
+// ── Analytics Page ────────────────────────────────────────
+loaders.analytics = async () => {
+  const body = document.getElementById('analytics-body');
+  const days = parseInt(document.getElementById('analytics-range').value) || 30;
+  const from = new Date(Date.now()-days*86400000).toISOString();
+  const to = new Date().toISOString();
+  const q = `?from_date=${from}&to_date=${to}`;
+
+  const [summary, timeline, byModel, byAgent, histogram] = await Promise.all([
+    fetch('/api/analytics/summary'+q).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/analytics/usage-over-time'+q).then(r=>r.json()).catch(()=>[]),
+    fetch('/api/analytics/by-model'+q).then(r=>r.json()).catch(()=>[]),
+    fetch('/api/analytics/by-agent'+q).then(r=>r.json()).catch(()=>[]),
+    fetch('/api/analytics/session-histogram'+q).then(r=>r.json()).catch(()=>[]),
+  ]);
+
+  let html = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--accent)">${(summary.total_tokens||0).toLocaleString()}</div><div style="font-size:12px;color:var(--text-muted)">Total Tokens</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--green)">$${(summary.total_cost_usd||0).toFixed(4)}</div><div style="font-size:12px;color:var(--text-muted)">Total Cost</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--yellow)">${summary.active_sessions||0}</div><div style="font-size:12px;color:var(--text-muted)">Active Sessions</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--purple)">${summary.total_messages||0}</div><div style="font-size:12px;color:var(--text-muted)">Total Messages</div></div>
+    </div>
+
+    <div class="card-row">
+      <div class="card"><h3>Token Usage Over Time</h3><canvas id="chart-tokens" height="200"></canvas></div>
+      <div class="card"><h3>Cost Over Time</h3><canvas id="chart-cost" height="200"></canvas></div>
+    </div>
+    <div class="card-row">
+      <div class="card"><h3>Usage by Model</h3><canvas id="chart-model" height="200"></canvas></div>
+      <div class="card"><h3>Messages per Session</h3><canvas id="chart-histogram" height="200"></canvas></div>
+    </div>
+  `;
+
+  if (byAgent.length) {
+    html += `<div class="card"><h3>Usage by Agent</h3><table class="tbl"><thead><tr><th>Agent</th><th>Tokens</th><th>Cost</th><th>Messages</th></tr></thead><tbody>`;
+    for (const a of byAgent) {
+      html += `<tr><td>${esc(a.agent_id)}</td><td>${a.total_tokens.toLocaleString()}</td><td>$${a.cost.toFixed(4)}</td><td>${a.message_count}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+
+  body.innerHTML = html;
+
+  // Render charts if Chart.js loaded
+  if (typeof Chart === 'undefined') return;
+
+  const chartColors = { prompt: '#58a6ff', completion: '#3fb950', cost: '#d29922' };
+
+  // Token usage over time
+  if (timeline.length) {
+    new Chart(document.getElementById('chart-tokens'), {
+      type:'line', data:{
+        labels: timeline.map(d=>d.date),
+        datasets: [
+          {label:'Prompt',data:timeline.map(d=>d.prompt_tokens),borderColor:chartColors.prompt,tension:.3,fill:false},
+          {label:'Completion',data:timeline.map(d=>d.completion_tokens),borderColor:chartColors.completion,tension:.3,fill:false},
+        ]
+      }, options:{responsive:true,plugins:{legend:{labels:{color:'#8b949e'}}},scales:{x:{ticks:{color:'#484f58'}},y:{ticks:{color:'#484f58'}}}}
+    });
+  }
+
+  // Cost over time
+  if (timeline.length) {
+    new Chart(document.getElementById('chart-cost'), {
+      type:'line', data:{
+        labels: timeline.map(d=>d.date),
+        datasets: [{label:'Cost ($)',data:timeline.map(d=>d.cost),borderColor:chartColors.cost,tension:.3,fill:true,backgroundColor:'rgba(210,153,34,0.1)'}]
+      }, options:{responsive:true,plugins:{legend:{labels:{color:'#8b949e'}}},scales:{x:{ticks:{color:'#484f58'}},y:{ticks:{color:'#484f58'}}}}
+    });
+  }
+
+  // Usage by model
+  if (byModel.length) {
+    const modelColors = ['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#79c0ff','#56d364'];
+    new Chart(document.getElementById('chart-model'), {
+      type:'doughnut', data:{
+        labels: byModel.map(m=>m.model),
+        datasets: [{data:byModel.map(m=>m.total_tokens),backgroundColor:modelColors.slice(0,byModel.length)}]
+      }, options:{responsive:true,plugins:{legend:{labels:{color:'#8b949e'}}}}
+    });
+  }
+
+  // Messages per session histogram
+  if (histogram.length) {
+    new Chart(document.getElementById('chart-histogram'), {
+      type:'bar', data:{
+        labels: histogram.map(h=>h.bucket),
+        datasets: [{label:'Sessions',data:histogram.map(h=>h.count),backgroundColor:'#58a6ff80',borderColor:'#58a6ff',borderWidth:1}]
+      }, options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#484f58'}},y:{ticks:{color:'#484f58'}}}}
+    });
+  }
+};
+
+function exportCSV() {
+  const days = parseInt(document.getElementById('analytics-range').value) || 30;
+  const from = new Date(Date.now()-days*86400000).toISOString();
+  const to = new Date().toISOString();
+  window.open('/api/analytics/export?from_date='+from+'&to_date='+to, '_blank');
+}
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </body>
 </html>

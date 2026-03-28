@@ -26,19 +26,26 @@ class ContextBuilder:
         db: AsyncSession,
         system_prompt: str | None = None,
         skill_context: str | None = None,
+        memory_context: str | None = None,
+        persona_prompt: str | None = None,
         current_message: str | None = None,
     ) -> list[dict[str, str]]:
         """Build the full message list for an LLM call.
 
-        Order: system → skill context (appended to system) → history → current message.
+        Order: persona → system → memory context → skill context → history → current message.
         """
         messages: list[dict[str, str]] = []
 
-        # System prompt
-        base_system = system_prompt or self._settings.system_prompt
+        # System prompt (with persona, memory, and skill context appended)
+        parts = []
+        if persona_prompt:
+            parts.append(persona_prompt)
+        parts.append(system_prompt or self._settings.system_prompt)
+        if memory_context:
+            parts.append(memory_context)
         if skill_context:
-            base_system = f"{base_system}\n\n{skill_context}"
-        messages.append({"role": "system", "content": base_system})
+            parts.append(skill_context)
+        messages.append({"role": "system", "content": "\n\n".join(parts)})
 
         # Load history from unified session (cross-platform DM collapse)
         history = await self._load_history(session, db)
