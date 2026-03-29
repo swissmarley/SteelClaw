@@ -1099,29 +1099,63 @@ async function speakResponse(text) {
       ttsAudio.play();
       return;
     }
-    // Streaming playback via AudioContext
+    // Progressive streaming playback — play each chunk as it arrives
     if (!voiceAudioCtx) voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const reader = resp.body.getReader();
-    const audioChunks = [];
-    let done = false;
-    while (!done) {
-      const {value, done: d} = await reader.read();
-      done = d;
-      if (value) audioChunks.push(value);
+    let chunkBuffer = new Uint8Array(0);
+    let nextPlayTime = voiceAudioCtx.currentTime;
+    let chunksPlayed = 0;
+    let streamDone = false;
+
+    // MP3 frames start with sync word 0xFFE0+ ; accumulate until we have a decodable segment
+    async function tryDecodeAndPlay(data, isLast) {
+      try {
+        const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        const audioBuffer = await voiceAudioCtx.decodeAudioData(ab);
+        const source = voiceAudioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.playbackRate.value = playbackSpeed;
+        source.connect(voiceAudioCtx.destination);
+        // Schedule this chunk right after the previous one ends
+        if (nextPlayTime < voiceAudioCtx.currentTime) nextPlayTime = voiceAudioCtx.currentTime;
+        source.start(nextPlayTime);
+        nextPlayTime += audioBuffer.duration / playbackSpeed;
+        chunksPlayed++;
+        if (isLast) {
+          source.onended = () => {
+            panel.className = 'open';
+            if (voiceChatMode && !voiceRecording) { startRecording(true); }
+          };
+        }
+        return true;
+      } catch(e) { return false; }
     }
-    const fullBuffer = new Uint8Array(audioChunks.reduce((acc,c) => acc+c.length, 0));
-    let offset = 0;
-    for (const chunk of audioChunks) { fullBuffer.set(chunk, offset); offset += chunk.length; }
-    const audioBuffer = await voiceAudioCtx.decodeAudioData(fullBuffer.buffer);
-    const source = voiceAudioCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.playbackRate.value = playbackSpeed;
-    source.connect(voiceAudioCtx.destination);
-    source.onended = () => {
-      panel.className = 'open';
-      if (voiceChatMode && !voiceRecording) { startRecording(true); }
-    };
-    source.start();
+
+    while (!streamDone) {
+      const {value, done: d} = await reader.read();
+      streamDone = d;
+      if (value) {
+        // Append to buffer
+        const merged = new Uint8Array(chunkBuffer.length + value.length);
+        merged.set(chunkBuffer); merged.set(value, chunkBuffer.length);
+        chunkBuffer = merged;
+        // Try to decode what we have so far (each TTS chunk is a complete MP3 segment)
+        if (await tryDecodeAndPlay(chunkBuffer, false)) {
+          chunkBuffer = new Uint8Array(0); // successfully played, clear buffer
+        }
+      }
+    }
+    // Play any remaining buffered data
+    if (chunkBuffer.length > 0) {
+      await tryDecodeAndPlay(chunkBuffer, true);
+    } else if (chunksPlayed > 0) {
+      // Set onended on last source — schedule panel reset after last chunk finishes
+      const remaining = nextPlayTime - voiceAudioCtx.currentTime;
+      setTimeout(() => {
+        panel.className = 'open';
+        if (voiceChatMode && !voiceRecording) { startRecording(true); }
+      }, Math.max(0, remaining * 1000));
+    }
   } catch(e) {
     panel.className = 'open';
     // TTS failed silently
@@ -1165,13 +1199,20 @@ async function openCredentialModal(skillName, description, requiredCreds) {
       const resp = await fetch('/api/skills/'+encodeURIComponent(skillName)+'/credentials');
       if (resp.ok) savedCreds = await resp.json();
     } catch(e) { /* ignore */ }
+    const savedList = (savedCreds.credentials || []);
+    const savedMap = {};
+    for (const sc of savedList) { savedMap[sc.key] = sc; }
     fieldsEl.innerHTML = creds.map(c => {
-      const hasValue = savedCreds[c] ? true : false;
+      const key = c.key || c;
+      const label = c.label || key;
+      const fieldType = c.type || 'password';
+      const saved = savedMap[key];
+      const hasValue = saved && saved.is_set;
       return `
       <div class="cred-field">
-        <div class="form-group"><label>${esc(c)}</label><input type="password" id="cred-${esc(c)}" placeholder="${hasValue ? '(saved) Enter to update' : 'Enter '+esc(c)}" value=""></div>
-        <button class="btn btn-outline btn-sm" onclick="verifyCred('${esc(skillName)}','${esc(c)}')" style="margin-bottom:14px">Verify</button>
-        <span class="verify-status" id="cred-status-${esc(c)}">${hasValue ? '✅' : ''}</span>
+        <div class="form-group"><label>${esc(label)}</label><input type="${fieldType}" id="cred-${esc(key)}" placeholder="${hasValue ? '(saved) Enter to update' : 'Enter '+esc(label)}" value=""></div>
+        <button class="btn btn-outline btn-sm" onclick="verifyCred('${esc(skillName)}','${esc(key)}')" style="margin-bottom:14px">Verify</button>
+        <span class="verify-status" id="cred-status-${esc(key)}">${hasValue ? '✅' : ''}</span>
       </div>`;
     }).join('');
   }

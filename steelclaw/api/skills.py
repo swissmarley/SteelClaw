@@ -28,6 +28,8 @@ async def list_skills(request: Request) -> list[dict]:
             "tools": [t.name for t in skill.tools],
             "triggers": skill.metadata.triggers,
             "enabled": name not in disabled,
+            "default_enabled": skill.default_enabled,
+            "required_credentials": skill.required_credentials,
         })
     return skills
 
