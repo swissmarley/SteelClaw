@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 default_enabled = True
+required_credentials = []
 
 _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "

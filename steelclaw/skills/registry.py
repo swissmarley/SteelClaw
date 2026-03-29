@@ -132,6 +132,40 @@ class SkillRegistry:
         logger.info("Skill '%s' disabled", name)
         return True
 
+    def get_skill_credentials(self, name: str) -> list[dict] | None:
+        """Return the skill's required_credentials with current values masked."""
+        skill = self._all_skills.get(name)
+        if skill is None:
+            return None
+        stored = self._settings.skill_configs.get(name, {})
+        result = []
+        for cred in skill.required_credentials:
+            value = stored.get(cred["key"], "")
+            masked = ""
+            if value:
+                masked = "****" + value[-4:] if len(value) > 4 else "****"
+            result.append({
+                "key": cred["key"],
+                "label": cred.get("label", cred["key"]),
+                "type": cred.get("type", "password"),
+                "test_url": cred.get("test_url"),
+                "value": masked,
+                "is_set": bool(value),
+            })
+        return result
+
+    def set_skill_credentials(self, name: str, credentials: dict[str, str]) -> bool:
+        """Save credentials for a skill into skill_configs."""
+        skill = self._all_skills.get(name)
+        if skill is None:
+            return False
+        if name not in self._settings.skill_configs:
+            self._settings.skill_configs[name] = {}
+        for key, value in credentials.items():
+            if value and not value.startswith("****"):
+                self._settings.skill_configs[name][key] = value
+        return True
+
     def find_skills_by_trigger(self, content: str) -> list[Skill]:
         """Find skills whose triggers match the given content."""
         content_lower = content.lower()

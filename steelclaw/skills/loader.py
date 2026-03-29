@@ -27,12 +27,14 @@ class Skill:
         scope: str,  # "bundled" | "global" | "workspace"
         executors: dict[str, ToolExecutor] | None = None,
         default_enabled: bool = False,
+        required_credentials: list[dict] = [],
     ) -> None:
         self.metadata = metadata
         self.path = path
         self.scope = scope
         self.executors: dict[str, ToolExecutor] = executors or {}
         self.default_enabled = default_enabled
+        self.required_credentials = required_credentials
 
     @property
     def name(self) -> str:
@@ -93,7 +95,8 @@ def load_skill_from_directory(skill_dir: Path, scope: str) -> Skill | None:
         module = sys.modules.get(safe_name)
 
     default_enabled = getattr(module, "default_enabled", False) if module else False
-    skill = Skill(metadata=metadata, path=skill_dir, scope=scope, default_enabled=default_enabled)
+    required_credentials = getattr(module, "required_credentials", []) if module else []
+    skill = Skill(metadata=metadata, path=skill_dir, scope=scope, default_enabled=default_enabled, required_credentials=required_credentials)
     skill.executors.update(executors)
 
     logger.info("Loaded skill: %s (scope=%s, tools=%d)", skill.name, scope, len(skill.tools))
