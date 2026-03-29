@@ -22,6 +22,7 @@ env/
 *~
 .DS_Store
 .claude
+docs
 
 # SteelClaw runtime data
 config.json

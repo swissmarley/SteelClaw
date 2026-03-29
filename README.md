@@ -1,6 +1,8 @@
 # SteelClaw
 
-Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system.
+Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
+
+**Key highlights:** Premium glassmorphism UI, voice chat with streaming TTS, 60+ skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -73,7 +75,7 @@ steelclaw logs -f   # follow logs
 
 **Open the Control UI dashboard:**
 
-Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. The dashboard includes chat, settings, sessions, agents, persona, analytics, connectors, skills, security, and scheduler pages.
+Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. The dashboard features a premium glassmorphism design with 10 pages: Chat, Settings, Sessions, Agents, Persona, Analytics, Connectors, Skills, Security, and Scheduler.
 
 **Or chat from the terminal (TUI):**
 
@@ -109,7 +111,8 @@ The TUI chat uses Rich for styled panels, Markdown rendering, and a spinner whil
 
 | Method | How to Access | Description |
 |--------|--------------|-------------|
-| **Control UI** | `http://localhost:8000/` | Full dashboard with chat, settings, sessions, agents, persona, analytics |
+| **Control UI** | `http://localhost:8000/` | Glassmorphism dashboard with chat, voice, settings, skills, analytics |
+| **Voice Chat** | Dashboard microphone button | Streaming voice conversation with animated waveform |
 | **TUI Chat** | `steelclaw chat` | Rich-powered interactive terminal client |
 | **Onboarding** | `steelclaw onboard` | Arrow-key guided setup wizard |
 | **REST API** | `http://localhost:8000/docs` | Full Swagger/OpenAPI docs |
@@ -184,6 +187,29 @@ Example — enable Telegram:
 - **Session lifecycle** — sessions transition through `active` → `idle` → `closed` with configurable timeouts
 - **Heartbeat** — background job auto-detects idle and stale sessions
 
+## Voice Chat
+
+SteelClaw supports voice interaction via the dashboard. Click the microphone button to speak — your audio is transcribed via OpenAI Whisper, processed by the agent, and spoken back using streaming TTS.
+
+- **Chunked TTS streaming** — audio plays as the first sentence is generated, no waiting for the full response
+- **Progressive playback** — each TTS chunk is decoded and scheduled via Web Audio API for seamless, low-latency output
+- **Voice chat mode** — continuous conversation loop (speak → listen → speak) without clicking buttons
+- **Playback speed control** — adjust from 0.5x to 2.0x
+- **Animated waveform** — visual feedback for listening and speaking states
+
+**Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. Supports configurable STT/TTS models and voice selection (alloy, echo, fable, onyx, nova, shimmer).
+
+## Dashboard UI
+
+The Control UI uses a premium glassmorphism design with:
+
+- Semi-transparent frosted glass panels with `backdrop-filter: blur(20px)`
+- Deep purple/blue gradient color scheme optimized for dark mode
+- Animated sidebar with 10 navigation pages
+- Command palette (Ctrl/Cmd+K) for quick actions
+- Responsive layout with glass-effect cards and soft glow accents
+- Tabbed settings page: Appearance, Voice/Audio, Agent, Skills, Gateway, Scheduler
+
 ## Agent Personality & Multi-Agent
 
 ### Persona System
@@ -254,9 +280,13 @@ curl http://localhost:8000/api/analytics/export?format=csv
 
 ## Skills
 
-Skills are modular capabilities loaded from directories. Each skill has a `SKILL.md` file defining metadata, tools, and a system prompt.
+Skills are modular capabilities loaded from directories. Each skill has a `SKILL.md` file defining metadata, tools, and a system prompt. SteelClaw ships with **61 bundled skills** covering productivity, development, communication, CRM, cloud storage, and more.
+
+Skills that require API credentials declare them via `required_credentials`. Tools from unconfigured skills are automatically hidden from the LLM, so the agent only uses tools it can actually call. Critical skills like Web Search are marked `default_enabled` and cannot be disabled.
 
 ### Bundled Skills
+
+**Core (no credentials needed):**
 
 | Skill | Tools | Description |
 |-------|-------|-------------|
@@ -266,21 +296,48 @@ Skills are modular capabilities loaded from directories. Each skill has a `SKILL
 | System Info | `cpu_info`, `memory_info`, `disk_info` | System monitoring |
 | Notes | `create_note`, `list_notes`, `search_notes`, `delete_note` | Note management |
 | Reminder | `set_reminder`, `list_reminders`, `cancel_reminder` | Reminders |
-| Web Search | `search`, `fetch_url` | Web search and page fetching |
+| Web Search | `search`, `fetch_url` | DuckDuckGo search and page fetching (default-enabled) |
 | Cron Manager | `schedule_task`, `list_scheduled`, `cancel_task` | Scheduled task management |
-| n8n Integration | `trigger_webhook`, `list_workflows`, `execute_workflow` | n8n workflow automation |
-| WordPress | `create_post`, `list_posts`, `upload_media` | WordPress content management |
 | Browser | `browse_url`, `screenshot`, `extract_text` | Playwright-based web browsing |
+| Code Runner | `run_code` | Execute code snippets |
+| CSV Analyst | `analyze_csv` | CSV data analysis |
+| PDF Reader | `read_pdf` | PDF text extraction |
+| Screenshot | `take_screenshot` | Screen capture |
+| Image Analyzer | `analyze_image` | Image description |
+| File Organizer | `organize` | Smart file organization |
+| Markdown Exporter | `export_markdown` | Convert to Markdown |
+| Docker Manager | `docker_run`, `docker_list` | Docker container management |
+| System Monitor | `monitor` | Extended system monitoring |
+| Web Scraper | `scrape` | Structured web scraping |
 
-### Skill Management
+**Integrations (API key required — configure via UI or CLI):**
+
+| Category | Skills |
+|----------|--------|
+| **Communication** | Slack, Discord, Telegram, Twilio, SendGrid, Mailchimp |
+| **Development** | GitHub, GitLab, Jira, Linear, n8n, Zapier, Make (Integromat) |
+| **Productivity** | Notion, Trello, Airtable, Google Calendar, Outlook Calendar, Google Sheets |
+| **Cloud Storage** | Google Drive, Dropbox, OneDrive, AWS S3, Supabase, Firebase |
+| **CRM & Sales** | Salesforce, HubSpot, Pipedrive, Shopify, Stripe |
+| **AI & Search** | OpenAI, Perplexity, Serper, ElevenLabs |
+| **Social & Media** | Twitter/X, LinkedIn, Spotify, YouTube, NewsAPI |
+| **CMS** | WordPress |
+| **Translation** | Google Translate |
+| **Weather** | OpenWeatherMap |
+
+### Skill Credential Management
+
+Configure API keys through the dashboard (Skills page > Configure button) or CLI:
 
 ```bash
-steelclaw skills list                    # List all skills
+steelclaw skills list                    # List all skills with credential status
 steelclaw skills install ./my-skill      # Install from directory
 steelclaw skills enable my-skill         # Enable a disabled skill
 steelclaw skills disable my-skill        # Disable a skill
-steelclaw skills configure my-skill      # Set skill credentials
+steelclaw skills configure my-skill      # Set skill credentials interactively
 ```
+
+The dashboard credential modal shows each skill's required fields with secure input, saved-state indicators, and a Verify button that tests connectivity against the provider's API.
 
 ### Skill Scoping (priority order)
 
@@ -321,13 +378,33 @@ Description of the tool.
 - `param2` (integer): Optional parameter
 ```
 
-**`__init__.py` — register tool executors:**
+**`__init__.py` — register tool executors and declare credentials:**
 
 ```python
+from steelclaw.skills.credential_store import get_all_credentials
+
+# Credentials declared here appear in the dashboard Configure modal
+required_credentials = [
+    {"key": "api_key", "label": "My Service API Key", "type": "password"},
+    {"key": "base_url", "label": "Service URL", "type": "text"},
+]
+
+# Set True to prevent users from disabling this skill
+default_enabled = False
+
+def _config():
+    return get_all_credentials("my_skill")
+
 async def tool_my_tool(param1: str, param2: int = 10) -> str:
     # Functions prefixed with tool_ are auto-discovered
+    config = _config()
+    api_key = config.get("api_key", "")
+    if not api_key:
+        return "Error: API key not configured."
     return f"Result: {param1}, {param2}"
 ```
+
+**Note:** If `required_credentials` are declared but not configured by the user, the skill's tools are automatically hidden from the LLM. This prevents the agent from calling tools that would fail due to missing API keys.
 
 ## Security Model
 
@@ -412,9 +489,21 @@ Full interactive API docs at [http://localhost:8000/docs](http://localhost:8000/
 | `/api/analytics/by-model` | GET | Usage grouped by model |
 | `/api/analytics/by-agent` | GET | Usage grouped by agent |
 | `/api/analytics/export` | GET | CSV export |
-| `/api/skills` | GET | List skills |
-| `/api/skills/reload` | POST | Hot-reload skills |
-| `/api/scheduler/jobs` | GET | List scheduled jobs |
+| `/api/skills` | GET | List skills (with credential status) |
+| `/api/skills/{name}/credentials` | GET/PUT | Read/write skill credentials |
+| `/api/skills/{name}/verify` | POST | Test credential connectivity |
+| `/api/skills/{name}/enable` | POST | Enable a skill |
+| `/api/skills/{name}/disable` | POST | Disable a skill |
+| `/api/skills/reload` | POST | Hot-reload all skills |
+| `/api/persona` | GET/POST | Read/write persona config |
+| `/api/voice/transcribe` | POST | Speech-to-text (Whisper) |
+| `/api/voice/synthesize` | POST | Text-to-speech (single response) |
+| `/api/voice/synthesize-stream` | POST | Chunked TTS streaming |
+| `/api/voice/status` | GET | Voice service status |
+| `/api/config/voice` | GET/PUT | Voice settings |
+| `/api/config/skills` | GET/PUT | Skill settings |
+| `/api/config/scheduler` | GET/PUT | Scheduler settings |
+| `/api/scheduler/jobs` | GET/DELETE | List/remove scheduled jobs |
 | `/api/scheduler/status` | GET | Scheduler engine status |
 
 ## Database & Migrations
@@ -474,15 +563,16 @@ steelclaw/
     retrieval.py      Semantic memory retrieval
     ingestion.py      Memory ingestion pipeline
   skills/
-    loader.py         SKILL.md parser
-    registry.py       Skill registry + tool routing
-    credential_store.py Skill credential management
-    bundled/          Built-in skills
+    loader.py         Skill loader (SKILL.md + __init__.py discovery)
+    parser.py         SKILL.md parser
+    registry.py       Skill registry + tool routing + credential filtering
+    credential_store.py Secure credential storage (config.json)
+    bundled/          61 built-in skills
   security/           Approvals, permissions, sandbox
   scheduler/          APScheduler background tasks
   agents/
-    router.py         LLM agent loop with tool calling
-    persona.py        Persona prompt builder
+    router.py         LLM agent loop with tool calling (max 10 rounds)
+    persona_loader.py Persona prompt builder
   gateway/            Messaging platform connectors
   api/                REST API endpoints
 ```

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from steelclaw.agents.persona_loader import build_persona_system_prompt
 from steelclaw.db.models import Session as DBSession
 from steelclaw.llm.context import ContextBuilder
 from steelclaw.llm.provider import LLMProvider, LLMResponse, ToolCall
@@ -21,6 +22,8 @@ logger = logging.getLogger("steelclaw.agents")
 
 # Maximum tool-call iterations to prevent infinite loops
 MAX_TOOL_ROUNDS = 10
+# OpenAI and most providers cap tools at 128
+MAX_TOOLS = 128
 
 
 @dataclass
@@ -116,6 +119,12 @@ class AgentRouter:
         skill_context = self._skills.get_combined_system_context() if self._skills else None
         tools_schema = self._skills.get_all_tools_schema() if self._skills else []
 
+        # Cap tools at MAX_TOOLS to avoid API errors (OpenAI limit is 128)
+        if len(tools_schema) > MAX_TOOLS:
+            tools_schema = self._select_relevant_tools(
+                message.content, tools_schema,
+            )
+
         # Retrieve relevant memories
         memory_context = None
         if self._memory_retriever and message.content:
@@ -125,17 +134,21 @@ class AgentRouter:
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
 
+        # Build persona prompt fresh every turn (survives context resets)
+        persona_prompt = build_persona_system_prompt()
+
         if db is not None:
             messages = await self._context.build(
                 session=session,
                 db=db,
+                persona_prompt=persona_prompt,
                 skill_context=skill_context,
                 memory_context=memory_context,
                 current_message=message.content,
             )
         else:
-            # Fallback: no DB, just system + current message
-            system = self._settings.llm.system_prompt
+            # Fallback: no DB, just persona + system + current message
+            system = f"{persona_prompt}\n\n{self._settings.llm.system_prompt}"
             if skill_context:
                 system = f"{system}\n\n{skill_context}"
             if memory_context:
@@ -204,6 +217,67 @@ class AgentRouter:
             response.content or "I've been working on this but reached my iteration limit. Here's what I have so far.",
             usage,
         )
+
+    def _select_relevant_tools(
+        self, message_content: str, all_tools: list[dict],
+    ) -> list[dict]:
+        """Select the most relevant tools when total exceeds MAX_TOOLS.
+
+        Strategy:
+        1. Find skills matching message triggers — include all their tools first
+        2. Fill remaining slots with core skills (shell, web_search, notes, etc.)
+        3. Fill any remaining slots from the rest in order
+        """
+        if not self._skills:
+            return all_tools[:MAX_TOOLS]
+
+        # Get names of skills whose triggers match the message
+        matched_skills = self._skills.find_skills_by_trigger(message_content)
+        matched_skill_names = {s.name for s in matched_skills}
+
+        # Core skills that should always be included
+        core_skills = {
+            "shell", "web_search", "notes", "calculator", "file_manager",
+            "reminder", "system_info", "browser", "cron_manager",
+        }
+
+        # Build tool name → skill name index
+        tool_to_skill: dict[str, str] = {}
+        for skill_name, skill in self._skills.skills.items():
+            for tool in skill.tools:
+                tool_to_skill[tool.name] = skill_name
+
+        # Partition tools into priority buckets
+        triggered: list[dict] = []
+        core: list[dict] = []
+        rest: list[dict] = []
+
+        for tool_schema in all_tools:
+            tool_name = tool_schema.get("function", {}).get("name", "")
+            skill_name = tool_to_skill.get(tool_name, "")
+            if skill_name in matched_skill_names:
+                triggered.append(tool_schema)
+            elif skill_name in core_skills:
+                core.append(tool_schema)
+            else:
+                rest.append(tool_schema)
+
+        # Assemble up to MAX_TOOLS
+        selected = triggered[:MAX_TOOLS]
+        remaining = MAX_TOOLS - len(selected)
+        if remaining > 0:
+            selected.extend(core[:remaining])
+            remaining = MAX_TOOLS - len(selected)
+        if remaining > 0:
+            selected.extend(rest[:remaining])
+
+        logger.info(
+            "Tool selection: %d triggered, %d core, %d other → %d total (from %d)",
+            len(triggered), min(len(core), MAX_TOOLS - len(triggered)),
+            max(0, len(selected) - len(triggered) - len(core)),
+            len(selected), len(all_tools),
+        )
+        return selected
 
     async def _execute_tool_call(self, tc: ToolCall) -> str:
         """Execute a single tool call via the skill registry."""
