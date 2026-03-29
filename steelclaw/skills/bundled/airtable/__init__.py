@@ -8,6 +8,12 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "api_key", "label": "Airtable API Key", "type": "password"},
+    {"key": "base_id", "label": "Airtable Base ID", "type": "text"},
+    {"key": "table_name", "label": "Airtable Table Name", "type": "text"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("airtable")

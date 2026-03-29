@@ -8,6 +8,11 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 API_VERSION = "2024-01"
 
+required_credentials = [
+    {"key": "access_token", "label": "Shopify Access Token", "type": "password"},
+    {"key": "store", "label": "Shopify Store Name", "type": "text"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("shopify")

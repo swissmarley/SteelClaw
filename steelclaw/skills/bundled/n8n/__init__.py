@@ -8,6 +8,11 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "base_url", "label": "n8n Base URL", "type": "text"},
+    {"key": "api_key", "label": "n8n API Key", "type": "password"},
+]
+
 
 def _get_config() -> dict:
     return get_all_credentials("n8n")

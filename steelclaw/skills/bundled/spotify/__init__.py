@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://api.spotify.com/v1"
 
+required_credentials = [
+    {"key": "api_key", "label": "Spotify Access Token", "type": "password", "test_url": "https://api.spotify.com/v1/me"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("spotify")

@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 API_URL = "https://api.perplexity.ai/chat/completions"
 
+required_credentials = [
+    {"key": "api_key", "label": "Perplexity API Key", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("perplexity")

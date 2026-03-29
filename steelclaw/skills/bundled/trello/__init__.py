@@ -8,6 +8,11 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://api.trello.com/1"
 
+required_credentials = [
+    {"key": "api_key", "label": "Trello API Key", "type": "password"},
+    {"key": "token", "label": "Trello Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("trello")

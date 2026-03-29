@@ -8,6 +8,12 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "email", "label": "Jira Email", "type": "text"},
+    {"key": "api_token", "label": "Jira API Token", "type": "password"},
+    {"key": "domain", "label": "Jira Domain", "type": "text"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("jira")

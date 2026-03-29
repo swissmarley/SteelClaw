@@ -10,6 +10,12 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "site_url", "label": "WordPress Site URL", "type": "text"},
+    {"key": "username", "label": "WordPress Username", "type": "text"},
+    {"key": "app_password", "label": "WordPress App Password", "type": "password"},
+]
+
 
 def _get_config() -> dict:
     return get_all_credentials("wordpress")

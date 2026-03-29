@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://gitlab.com/api/v4"
 
+required_credentials = [
+    {"key": "api_key", "label": "GitLab Personal Access Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("gitlab")

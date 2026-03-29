@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://translation.googleapis.com/language/translate/v2"
 
+required_credentials = [
+    {"key": "api_key", "label": "Google Translate API Key", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("google_translate")

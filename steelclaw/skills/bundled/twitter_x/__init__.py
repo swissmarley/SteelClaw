@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://api.twitter.com/2"
 
+required_credentials = [
+    {"key": "bearer_token", "label": "Twitter/X Bearer Token", "type": "password", "test_url": "https://api.twitter.com/2/users/me"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("twitter_x")

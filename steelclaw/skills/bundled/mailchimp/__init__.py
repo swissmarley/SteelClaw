@@ -6,6 +6,10 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "api_key", "label": "Mailchimp API Key", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("mailchimp")

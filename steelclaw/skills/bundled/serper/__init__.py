@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://google.serper.dev"
 
+required_credentials = [
+    {"key": "api_key", "label": "Serper API Key", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("serper")

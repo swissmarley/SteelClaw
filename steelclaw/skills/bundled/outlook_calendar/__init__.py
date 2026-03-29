@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://graph.microsoft.com/v1.0/me/events"
 
+required_credentials = [
+    {"key": "access_token", "label": "Microsoft Outlook Access Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("outlook_calendar")

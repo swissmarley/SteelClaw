@@ -12,6 +12,10 @@ BASE_URL = "https://api.elevenlabs.io/v1"
 
 DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 
+required_credentials = [
+    {"key": "api_key", "label": "ElevenLabs API Key", "type": "password", "test_url": "https://api.elevenlabs.io/v1/voices"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("elevenlabs")

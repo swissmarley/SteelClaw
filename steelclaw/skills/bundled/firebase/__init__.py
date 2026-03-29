@@ -7,6 +7,11 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "project_id", "label": "Firebase Project ID", "type": "text"},
+    {"key": "access_token", "label": "Firebase Access Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("firebase")

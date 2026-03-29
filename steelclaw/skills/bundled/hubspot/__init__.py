@@ -10,6 +10,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://api.hubapi.com/crm/v3/objects/contacts"
 
+required_credentials = [
+    {"key": "api_key", "label": "HubSpot API Key", "type": "password", "test_url": "https://api.hubapi.com/crm/v3/objects/contacts?limit=1"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("hubspot")

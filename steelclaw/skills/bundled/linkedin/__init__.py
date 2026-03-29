@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://api.linkedin.com/v2"
 
+required_credentials = [
+    {"key": "access_token", "label": "LinkedIn Access Token", "type": "password", "test_url": "https://api.linkedin.com/v2/me"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("linkedin")

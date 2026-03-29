@@ -11,6 +11,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 API_URL = "https://api.dropboxapi.com/2"
 CONTENT_URL = "https://content.dropboxapi.com/2"
 
+required_credentials = [
+    {"key": "access_token", "label": "Dropbox Access Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("dropbox")

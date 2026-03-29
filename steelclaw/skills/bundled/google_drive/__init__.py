@@ -10,6 +10,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 BASE_URL = "https://www.googleapis.com/drive/v3/files"
 UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
 
+required_credentials = [
+    {"key": "access_token", "label": "Google Drive Access Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("google_drive")

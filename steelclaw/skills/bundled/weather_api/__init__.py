@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://api.openweathermap.org/data/2.5"
 
+required_credentials = [
+    {"key": "api_key", "label": "OpenWeatherMap API Key", "type": "password", "test_url": "https://api.openweathermap.org/data/2.5/weather?q=London&appid=TEST"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("weather_api")

@@ -8,6 +8,10 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "webhook_url", "label": "Make (Integromat) Webhook URL", "type": "text"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("make_integromat")

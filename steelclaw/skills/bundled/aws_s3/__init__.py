@@ -8,6 +8,12 @@ from pathlib import Path
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "access_key_id", "label": "AWS Access Key ID", "type": "password"},
+    {"key": "secret_key", "label": "AWS Secret Access Key", "type": "password"},
+    {"key": "region", "label": "AWS Region", "type": "text"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("aws_s3")

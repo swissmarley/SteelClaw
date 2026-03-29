@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://api.pipedrive.com/v1"
 
+required_credentials = [
+    {"key": "api_token", "label": "Pipedrive API Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("pipedrive")

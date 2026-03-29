@@ -67,20 +67,32 @@ class SkillRegistry:
     def get_skill_for_tool(self, tool_name: str) -> Skill | None:
         return self._tool_index.get(tool_name)
 
+    def _is_skill_configured(self, skill: "Skill") -> bool:
+        """Check if a skill's required credentials are all set."""
+        if not skill.required_credentials:
+            return True  # no credentials needed
+        stored = self._settings.skill_configs.get(skill.name, {})
+        for cred in skill.required_credentials:
+            if not stored.get(cred["key"]):
+                return False
+        return True
+
     def get_all_tools_schema(self) -> list[dict]:
-        """Return all tool schemas across all skills in OpenAI format."""
+        """Return tool schemas only from skills whose credentials are configured."""
         tools = []
         for skill in self._skills.values():
-            tools.extend(skill.get_openai_tools())
+            if self._is_skill_configured(skill):
+                tools.extend(skill.get_openai_tools())
         return tools
 
     def get_combined_system_context(self) -> str:
-        """Return combined system context from all loaded skills."""
+        """Return combined system context from configured skills only."""
         contexts = []
         for skill in self._skills.values():
-            ctx = skill.get_system_context()
-            if ctx:
-                contexts.append(ctx)
+            if self._is_skill_configured(skill):
+                ctx = skill.get_system_context()
+                if ctx:
+                    contexts.append(ctx)
         return "\n\n---\n\n".join(contexts) if contexts else ""
 
     async def execute_tool(self, tool_name: str, arguments: dict) -> str:
@@ -88,6 +100,11 @@ class SkillRegistry:
         skill = self._tool_index.get(tool_name)
         if skill is None:
             return f"Error: Unknown tool '{tool_name}'. Available: {list(self._tool_index.keys())}"
+        if not self._is_skill_configured(skill):
+            return (
+                f"Error: Skill '{skill.name}' requires API credentials that are not configured. "
+                f"Use web_search instead, or configure credentials in Settings > Skills."
+            )
         return await skill.execute_tool(tool_name, arguments)
 
     @property

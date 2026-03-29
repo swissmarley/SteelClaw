@@ -8,6 +8,11 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "api_key", "label": "Salesforce Access Token", "type": "password"},
+    {"key": "instance_url", "label": "Salesforce Instance URL", "type": "text"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("salesforce")

@@ -6,6 +6,12 @@ import httpx
 
 from steelclaw.skills.credential_store import get_all_credentials
 
+required_credentials = [
+    {"key": "account_sid", "label": "Twilio Account SID", "type": "text"},
+    {"key": "auth_token", "label": "Twilio Auth Token", "type": "password"},
+    {"key": "from_number", "label": "Twilio Phone Number", "type": "text"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("twilio")

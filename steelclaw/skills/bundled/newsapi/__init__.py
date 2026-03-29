@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://newsapi.org/v2"
 
+required_credentials = [
+    {"key": "api_key", "label": "NewsAPI Key", "type": "password", "test_url": "https://newsapi.org/v2/top-headlines?country=us&pageSize=1"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("newsapi")

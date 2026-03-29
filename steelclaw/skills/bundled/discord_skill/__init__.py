@@ -8,6 +8,10 @@ from steelclaw.skills.credential_store import get_all_credentials
 
 BASE_URL = "https://discord.com/api/v10"
 
+required_credentials = [
+    {"key": "api_key", "label": "Discord Bot Token", "type": "password"},
+]
+
 
 def _config() -> dict:
     return get_all_credentials("discord_skill")
