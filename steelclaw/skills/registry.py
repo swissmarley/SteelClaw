@@ -16,7 +16,9 @@ class SkillRegistry:
 
     def __init__(self, settings: SkillSettings) -> None:
         self._settings = settings
-        self._skills: Dict[str, Skill] = {}
+        self._skills: Dict[str, Skill] = {}  # active skills only
+        self._all_skills: Dict[str, Skill] = {}  # all discovered skills
+        self._disabled: set[str] = set(settings.disabled_skills)
         # Map tool_name → skill for fast lookup during tool call routing
         self._tool_index: Dict[str, Skill] = {}
 
@@ -33,12 +35,15 @@ class SkillRegistry:
         )
 
         self._skills.clear()
+        self._all_skills.clear()
         self._tool_index.clear()
 
-        disabled = set(self._settings.disabled_skills)
-
         for skill in skills:
-            if skill.name in disabled:
+            self._all_skills[skill.name] = skill
+            if skill.default_enabled and skill.name in self._disabled:
+                self._disabled.discard(skill.name)
+                logger.info("Skill '%s' is default-enabled — overriding disabled state", skill.name)
+            if skill.name in self._disabled:
                 logger.info("Skill '%s' is disabled — skipping", skill.name)
                 continue
             self._skills[skill.name] = skill
@@ -52,8 +57,8 @@ class SkillRegistry:
                 self._tool_index[tool.name] = skill
 
         logger.info(
-            "Skill registry loaded: %d skills, %d tools",
-            len(self._skills), len(self._tool_index),
+            "Skill registry loaded: %d active / %d total skills, %d tools",
+            len(self._skills), len(self._all_skills), len(self._tool_index),
         )
 
     def get_skill(self, name: str) -> Skill | None:
@@ -88,6 +93,41 @@ class SkillRegistry:
     @property
     def skills(self) -> Dict[str, Skill]:
         return dict(self._skills)
+
+    @property
+    def all_skills(self) -> Dict[str, Skill]:
+        """All discovered skills including disabled ones."""
+        return dict(self._all_skills)
+
+    @property
+    def disabled_skills(self) -> list[str]:
+        return list(self._disabled)
+
+    def enable_skill(self, name: str) -> bool:
+        """Enable a disabled skill at runtime."""
+        skill = self._all_skills.get(name)
+        if skill is None:
+            return False
+        self._disabled.discard(name)
+        if name not in self._skills:
+            self._skills[name] = skill
+            for tool in skill.tools:
+                self._tool_index[tool.name] = skill
+        logger.info("Skill '%s' enabled", name)
+        return True
+
+    def disable_skill(self, name: str) -> bool:
+        """Disable a skill at runtime."""
+        skill = self._all_skills.get(name)
+        if skill is None:
+            return False
+        self._disabled.add(name)
+        self._skills.pop(name, None)
+        for tool in skill.tools:
+            if self._tool_index.get(tool.name) is skill:
+                del self._tool_index[tool.name]
+        logger.info("Skill '%s' disabled", name)
+        return True
 
     def find_skills_by_trigger(self, content: str) -> list[Skill]:
         """Find skills whose triggers match the given content."""

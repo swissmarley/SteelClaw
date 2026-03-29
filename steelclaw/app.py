@@ -35,6 +35,14 @@ async def lifespan(app: FastAPI):
 
     skill_registry = SkillRegistry(settings.agents.skills)
     skill_registry.load_all()
+
+    # Verify critical skills loaded
+    for critical in ("web_search",):
+        if skill_registry.get_skill(critical) is None:
+            logger.warning("Critical skill '%s' failed to load — agent may lack web access", critical)
+        else:
+            logger.info("Critical skill '%s' loaded OK", critical)
+
     app.state.skill_registry = skill_registry
 
     # ── Security ────────────────────────────────────────────────────────
@@ -166,10 +174,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from steelclaw.api.config import router as config_router
     from steelclaw.api.health import router as health_router
     from steelclaw.api.history import router as history_router
+    from steelclaw.api.persona import router as persona_router
     from steelclaw.api.sessions import router as sessions_router
     from steelclaw.api.skills import router as skills_router
     from steelclaw.api.scheduler import router as scheduler_router
+    from steelclaw.api.voice import router as voice_router
     from steelclaw.gateway.router import router as gateway_router
+    from steelclaw.scheduler.webhook_server import router as webhook_router
 
     app.include_router(health_router, tags=["health"])
     app.include_router(config_router, prefix="/api/config", tags=["config"])
@@ -179,6 +190,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(scheduler_router, prefix="/api/scheduler", tags=["scheduler"])
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
     app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
+    app.include_router(persona_router, prefix="/api/persona", tags=["persona"])
+    app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
+    app.include_router(webhook_router, prefix="/webhooks", tags=["webhooks"])
     app.include_router(gateway_router, prefix="/gateway", tags=["gateway"])
 
     # ── Web Chat UI ─────────────────────────────────────────────────────

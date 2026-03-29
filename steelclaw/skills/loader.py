@@ -26,11 +26,13 @@ class Skill:
         path: Path,
         scope: str,  # "bundled" | "global" | "workspace"
         executors: dict[str, ToolExecutor] | None = None,
+        default_enabled: bool = False,
     ) -> None:
         self.metadata = metadata
         self.path = path
         self.scope = scope
         self.executors: dict[str, ToolExecutor] = executors or {}
+        self.default_enabled = default_enabled
 
     @property
     def name(self) -> str:
@@ -80,13 +82,19 @@ def load_skill_from_directory(skill_dir: Path, scope: str) -> Skill | None:
         return None
 
     metadata = parse_skill_file(skill_md)
-    skill = Skill(metadata=metadata, path=skill_dir, scope=scope)
 
     # Try to load Python executors from __init__.py
     init_py = skill_dir / "__init__.py"
+    module = None
+    executors: dict[str, ToolExecutor] = {}
     if init_py.exists():
         executors = _load_executors(init_py, skill_dir.name)
-        skill.executors.update(executors)
+        safe_name = f"steelclaw_skill_{skill_dir.name}"
+        module = sys.modules.get(safe_name)
+
+    default_enabled = getattr(module, "default_enabled", False) if module else False
+    skill = Skill(metadata=metadata, path=skill_dir, scope=scope, default_enabled=default_enabled)
+    skill.executors.update(executors)
 
     logger.info("Loaded skill: %s (scope=%s, tools=%d)", skill.name, scope, len(skill.tools))
     return skill
