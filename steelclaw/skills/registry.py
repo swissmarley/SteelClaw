@@ -121,6 +121,9 @@ class SkillRegistry:
         skill = self._all_skills.get(name)
         if skill is None:
             return False
+        if skill.default_enabled:
+            logger.warning("Cannot disable default-enabled skill '%s'", name)
+            return False
         self._disabled.add(name)
         self._skills.pop(name, None)
         for tool in skill.tools:
