@@ -66,8 +66,13 @@ async def update_skill_credentials(
     return {"status": "saved", "skill": skill_name}
 
 
+class CredentialVerify(BaseModel):
+    credential: str
+    value: str
+
+
 @router.post("/{skill_name}/verify")
-async def verify_skill_credentials(skill_name: str, request: Request) -> dict:
+async def verify_skill_credentials(skill_name: str, body: CredentialVerify, request: Request) -> dict:
     import httpx
     from steelclaw.skills.registry import SkillRegistry
 
@@ -76,36 +81,44 @@ async def verify_skill_credentials(skill_name: str, request: Request) -> dict:
     if skill is None:
         raise HTTPException(404, f"Skill '{skill_name}' not found")
 
-    stored = request.app.state.settings.agents.skills.skill_configs.get(skill_name, {})
-    results = []
+    # Find the requested credential spec
+    cred_spec = None
     for cred in skill.required_credentials:
-        key = cred["key"]
-        test_url = cred.get("test_url")
-        value = stored.get(key, "")
+        if cred["key"] == body.credential:
+            cred_spec = cred
+            break
 
-        if not value:
-            results.append({"key": key, "status": "error", "message": "Not set"})
-            continue
-        if not test_url:
-            results.append({"key": key, "status": "ok", "message": "Saved (no test URL)"})
-            continue
+    if cred_spec is None:
+        return {"valid": False, "message": f"Unknown credential '{body.credential}'"}
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    test_url,
-                    headers={"Authorization": f"Bearer {value}"},
-                )
-                if resp.status_code < 400:
-                    results.append({"key": key, "status": "ok", "message": f"OK ({resp.status_code})"})
-                elif resp.status_code == 401:
-                    results.append({"key": key, "status": "error", "message": "Invalid API key (401)"})
-                else:
-                    results.append({"key": key, "status": "error", "message": f"HTTP {resp.status_code}"})
-        except Exception as e:
-            results.append({"key": key, "status": "error", "message": str(e)})
+    # Use the value from the request (allows verify before save)
+    value = body.value
+    if not value:
+        # Fall back to stored value
+        stored = request.app.state.settings.agents.skills.skill_configs.get(skill_name, {})
+        value = stored.get(body.credential, "")
 
-    return {"skill": skill_name, "results": results}
+    if not value:
+        return {"valid": False, "message": "Not set"}
+
+    test_url = cred_spec.get("test_url")
+    if not test_url:
+        return {"valid": True, "message": "Value provided (no test URL available)"}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                test_url,
+                headers={"Authorization": f"Bearer {value}"},
+            )
+            if resp.status_code < 400:
+                return {"valid": True, "message": f"OK ({resp.status_code})"}
+            elif resp.status_code == 401:
+                return {"valid": False, "message": "Invalid API key (401)"}
+            else:
+                return {"valid": False, "message": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"valid": False, "message": str(e)}
 
 
 @router.get("/{skill_name}")

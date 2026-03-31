@@ -1220,19 +1220,31 @@ async function openCredentialModal(skillName, description, requiredCreds) {
 }
 function closeCredentialModal() { document.getElementById('credential-modal').classList.remove('open'); }
 
+async function configureSkill(name) {
+  // Look up skill data from whichever page loaded it
+  let skill = (window._allSkills||[]).find(s=>s.name===name);
+  if (!skill) {
+    // Fetch directly from API if not cached
+    try { skill = await api('/skills/'+encodeURIComponent(name)); } catch(e) {}
+  }
+  if (!skill) { toast('Skill not found','error'); return; }
+  openCredentialModal(skill.name, skill.description||'', skill.required_credentials||[]);
+}
+
 async function verifyCred(skillName, credName) {
   const val = document.getElementById('cred-'+credName)?.value;
   const statusEl = document.getElementById('cred-status-'+credName);
-  if (!val) { if (statusEl) statusEl.textContent = ''; return; }
+  if (!val) { if (statusEl) statusEl.textContent = '⚠️ Enter a value first'; return; }
+  if (statusEl) statusEl.textContent = '⏳';
   try {
     const r = await fetch('/api/skills/'+encodeURIComponent(skillName)+'/verify', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({credential: credName, value: val})
     });
     const d = await r.json();
-    if (statusEl) statusEl.textContent = d.valid ? '✅' : '❌';
+    if (statusEl) statusEl.textContent = d.valid ? '✅' : '❌ ' + (d.message || 'Failed');
   } catch(e) {
-    if (statusEl) statusEl.textContent = '❌';
+    if (statusEl) statusEl.textContent = '❌ Network error';
   }
 }
 
@@ -1244,12 +1256,14 @@ async function saveCredentials() {
     if (inp.value) creds[name] = inp.value;
   });
   try {
-    await fetch('/api/skills/'+encodeURIComponent(_credSkillName)+'/credentials', {
+    const r = await fetch('/api/skills/'+encodeURIComponent(_credSkillName)+'/credentials', {
       method:'PUT', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(creds)
+      body:JSON.stringify({credentials: creds})
     });
+    if (!r.ok) { toast('Error saving credentials ('+r.status+')', 'error'); return; }
     toast('Credentials saved');
     closeCredentialModal();
+    if (loaders.skills) loaders.skills();
   } catch(e) { toast('Error saving credentials', 'error'); }
 }
 
@@ -1266,6 +1280,7 @@ function showSettingsTab(tab) {
 loaders.settings = async () => {
   const body = document.getElementById('settings-body');
   const [cfg, info, skillsData] = await Promise.all([api('/config'), fetch('/info').then(r=>r.json()).catch(()=>({})), api('/skills')]);
+  if (!window._allSkills && Array.isArray(skillsData)) window._allSkills = skillsData;
   const llm = cfg.agents?.llm || {};
   const srv = cfg.server || {};
   const db = cfg.database || {};
@@ -1410,7 +1425,7 @@ loaders.settings = async () => {
                 </label>
                 <span style="flex:1;font-weight:500;font-size:13px">${esc(s.name)}</span>
                 ${s.default_enabled ? '<span class="badge badge-blue">default</span>' : ''}
-                <button class="btn btn-outline btn-sm" onclick="openCredentialModal('${esc(s.name)}','${esc(s.description||'')}',${JSON.stringify(s.required_credentials||[]).replace(/'/g,'&#39;')})">Configure</button>
+                <button class="btn btn-outline btn-sm" onclick="configureSkill('${esc(s.name)}')">Configure</button>
               </div>
             `).join('')}
           </div>
@@ -1641,14 +1656,14 @@ loaders.connectors = async () => {
     html += `<div class="card">
       <h3>${pName} <span class="badge ${statusClass}">${statusText}</span></h3>
       <div class="form-row">
-        <div class="form-group"><label>Bot Token</label><input class="inline-input" id="conn-${p}-token" type="password" value="${esc(c.config?.token)}" placeholder="Enter ${pName} bot token"></div>
+        <div class="form-group"><label>Bot Token</label><input class="inline-input" id="conn-${p}-token" type="password" value="${esc(c.config?.token||'')}" placeholder="Enter ${pName} bot token"></div>
         <div style="display:flex;align-items:end;gap:8px;padding-bottom:14px">
           <div class="toggle-row" style="margin:0"><input type="checkbox" id="conn-${p}-on" ${c.enabled?'checked':''}><label for="conn-${p}-on">Enabled</label></div>
         </div>
       </div>
       ${p==='matrix' ? `<div class="form-row">
-        <div class="form-group"><label>Homeserver URL</label><input class="inline-input" id="conn-${p}-hs" value="${esc(cfg.homeserver)}" placeholder="https://matrix.org"></div>
-        <div class="form-group"><label>User ID</label><input class="inline-input" id="conn-${p}-uid" value="${esc(cfg.user_id)}" placeholder="@steelclaw:matrix.org"></div>
+        <div class="form-group"><label>Homeserver URL</label><input class="inline-input" id="conn-${p}-hs" value="${esc(cfg.homeserver||'')}" placeholder="https://matrix.org"></div>
+        <div class="form-group"><label>User ID</label><input class="inline-input" id="conn-${p}-uid" value="${esc(cfg.user_id||'')}" placeholder="@steelclaw:matrix.org"></div>
       </div>` : ''}
       <button class="btn btn-primary btn-sm" onclick="saveConnector('${p}')">Save ${pName}</button>
       <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
@@ -1739,7 +1754,7 @@ function filterSkillGrid() {
       <div class="tool-tags">
         ${(s.tools||[]).map(t=>`<span class="badge badge-purple" style="font-size:10px">${esc(t)}</span>`).join('')}
       </div>
-      <button class="configure-btn" onclick="openCredentialModal('${esc(s.name)}','${esc(s.description||'')}',${JSON.stringify(s.required_credentials||[]).replace(/'/g,'&#39;')})">Configure</button>
+      <button class="configure-btn" onclick="configureSkill('${esc(s.name)}')">Configure</button>
     </div>
   `).join('');
 }
