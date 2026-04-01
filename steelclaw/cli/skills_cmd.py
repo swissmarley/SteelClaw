@@ -95,7 +95,8 @@ def _disable_skill(name: str) -> None:
 
 
 def _update_config_disabled(name: str, enable: bool) -> None:
-    config_path = Path("config.json")
+    from steelclaw.paths import PROJECT_ROOT
+    config_path = PROJECT_ROOT / "config.json"
     config = {}
     if config_path.exists():
         config = json.loads(config_path.read_text())
@@ -115,7 +116,8 @@ def _update_config_disabled(name: str, enable: bool) -> None:
 
 
 def _configure_skill(name: str) -> None:
-    config_path = Path("config.json")
+    from steelclaw.paths import PROJECT_ROOT
+    config_path = PROJECT_ROOT / "config.json"
     config = {}
     if config_path.exists():
         config = json.loads(config_path.read_text())

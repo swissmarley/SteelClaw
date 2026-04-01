@@ -11,7 +11,8 @@ logger = logging.getLogger("steelclaw.skills.credentials")
 
 def get_credential(skill_name: str, key: str) -> str | None:
     """Read a credential from config.json skill_configs section."""
-    config_path = Path("config.json")
+    from steelclaw.paths import PROJECT_ROOT
+    config_path = PROJECT_ROOT / "config.json"
     if not config_path.exists():
         return None
     try:
@@ -23,7 +24,8 @@ def get_credential(skill_name: str, key: str) -> str | None:
 
 def set_credential(skill_name: str, key: str, value: str) -> None:
     """Store a credential in config.json skill_configs section."""
-    config_path = Path("config.json")
+    from steelclaw.paths import PROJECT_ROOT
+    config_path = PROJECT_ROOT / "config.json"
     config = {}
     if config_path.exists():
         try:
@@ -43,7 +45,8 @@ def set_credential(skill_name: str, key: str, value: str) -> None:
 
 def get_all_credentials(skill_name: str) -> dict[str, str]:
     """Read all credentials for a given skill."""
-    config_path = Path("config.json")
+    from steelclaw.paths import PROJECT_ROOT
+    config_path = PROJECT_ROOT / "config.json"
     if not config_path.exists():
         return {}
     try:

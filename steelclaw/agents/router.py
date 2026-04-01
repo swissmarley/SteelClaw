@@ -125,11 +125,13 @@ class AgentRouter:
                 message.content, tools_schema,
             )
 
-        # Retrieve relevant memories
+        # Retrieve relevant memories scoped to this session's namespace
         memory_context = None
         if self._memory_retriever and message.content:
+            namespace = getattr(session, "unified_session_id", None) or session.id
             memories = self._memory_retriever.retrieve_relevant(
                 query_text=message.content,
+                namespace=namespace,
                 limit=self._settings.memory.top_k,
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
@@ -145,6 +147,7 @@ class AgentRouter:
                 skill_context=skill_context,
                 memory_context=memory_context,
                 current_message=message.content,
+                attachments=message.attachments,
             )
         else:
             # Fallback: no DB, just persona + system + current message
@@ -155,7 +158,7 @@ class AgentRouter:
                 system = f"{system}\n\n{memory_context}"
             messages = [
                 {"role": "system", "content": system},
-                {"role": "user", "content": message.content},
+                self._context._build_user_message(message.content, message.attachments),
             ]
 
         # Accumulate token usage across all rounds

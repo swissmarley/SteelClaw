@@ -70,13 +70,22 @@ async def process_message(
     if session.status == "idle":
         session.status = "active"
 
-    # Persist inbound message
+    # Persist inbound message (with attachment metadata if present)
+    msg_metadata = None
+    if inbound.attachments:
+        msg_metadata = json.dumps({
+            "attachments": [
+                {"filename": a.get("filename"), "category": a.get("category"), "mime": a.get("mime")}
+                for a in inbound.attachments
+            ]
+        })
     db_msg = DBMessage(
         session_id=session.id,
         role="user",
         content=inbound.content,
         platform=inbound.platform,
         platform_message_id=inbound.platform_message_id,
+        metadata_json=msg_metadata,
     )
     db.add(db_msg)
     await db.commit()
@@ -114,13 +123,15 @@ async def process_message(
     db.add(db_reply)
     await db.commit()
 
-    # Ingest into memory (non-blocking, errors swallowed)
+    # Ingest into memory scoped to unified session (non-blocking, errors swallowed)
     if _memory_ingestor is not None:
         try:
+            namespace = session.unified_session_id or session.id
             await _memory_ingestor.ingest_exchange(
                 user_message=inbound.content,
                 assistant_message=outbound.content,
                 session_id=session.id,
+                namespace=namespace,
                 db=db,
             )
         except Exception:
@@ -147,12 +158,27 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             except json.JSONDecodeError:
                 data = {"content": raw}
 
+            # Resolve file attachments from upload IDs
+            attachments = None
+            raw_attachments = data.get("attachments")
+            if raw_attachments:
+                from steelclaw.api.files import get_upload, cleanup_upload
+
+                attachments = []
+                for att in raw_attachments:
+                    file_id = att.get("id") if isinstance(att, dict) else att
+                    upload = get_upload(file_id) if file_id else None
+                    if upload:
+                        attachments.append(upload)
+                        cleanup_upload(file_id)
+
             inbound = InboundMessage(
                 platform="websocket",
                 platform_chat_id=conn_id,
                 platform_user_id=data.get("user_id", conn_id),
                 platform_username=data.get("username"),
                 content=data.get("content", ""),
+                attachments=attachments if attachments else None,
                 is_group=False,
                 is_mention=False,
             )

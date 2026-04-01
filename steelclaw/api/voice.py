@@ -51,6 +51,8 @@ async def synthesize_speech(request: Request, body: TTSRequest) -> FileResponse:
     if not settings.enabled:
         raise HTTPException(400, "Voice mode is not enabled in settings")
 
+    from starlette.background import BackgroundTask
+
     from steelclaw.voice.tts import TextToSpeech
 
     tts = TextToSpeech(settings)
@@ -59,9 +61,16 @@ async def synthesize_speech(request: Request, body: TTSRequest) -> FileResponse:
     result = await tts.synthesize(body.text, str(output), voice=body.voice or None)
 
     if not result.ok:
+        output.unlink(missing_ok=True)
         raise HTTPException(500, result.error)
 
-    return FileResponse(str(output), media_type="audio/mpeg", filename="speech.mp3")
+    # Clean up temp file after the response has been sent
+    return FileResponse(
+        str(output),
+        media_type="audio/mpeg",
+        filename="speech.mp3",
+        background=BackgroundTask(lambda: output.unlink(missing_ok=True)),
+    )
 
 
 def split_into_chunks(text: str, min_length: int = 10) -> list[str]:

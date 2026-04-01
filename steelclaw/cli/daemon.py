@@ -55,11 +55,14 @@ def start_daemon(host: str | None = None, port: int | None = None) -> None:
     if port:
         cmd.extend(["--port", str(port)])
 
+    from steelclaw.paths import PROJECT_ROOT
+
     with open(log_file, "a") as log_fh:
         proc = subprocess.Popen(
             cmd,
             stdout=log_fh,
             stderr=log_fh,
+            cwd=str(PROJECT_ROOT),
             start_new_session=True,
         )
 

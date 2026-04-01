@@ -10,7 +10,9 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-CONFIG_PATH = Path("config.json")
+from steelclaw.paths import PROJECT_ROOT
+
+CONFIG_PATH = PROJECT_ROOT / "config.json"
 
 
 def _read_config() -> dict:

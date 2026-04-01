@@ -79,9 +79,65 @@ async def receive_webhook(webhook_id: str, request: Request) -> dict:
         webhook_id, entry["trigger_id"], entry["fire_count"],
     )
 
+    # Dispatch the callback — send the webhook payload to the agent pipeline
+    callback_prompt = entry.get("callback_prompt", "")
+    if callback_prompt or body_data:
+        try:
+            await _dispatch_webhook_action(
+                request=request,
+                trigger_id=entry["trigger_id"],
+                webhook_id=webhook_id,
+                callback_prompt=callback_prompt,
+                payload=body_data,
+            )
+        except Exception:
+            logger.exception("Webhook dispatch failed for %s", webhook_id)
+            return {
+                "status": "dispatch_error",
+                "webhook_id": webhook_id,
+                "trigger_id": entry["trigger_id"],
+                "fire_count": entry["fire_count"],
+            }
+
     return {
         "status": "triggered",
         "webhook_id": webhook_id,
         "trigger_id": entry["trigger_id"],
         "fire_count": entry["fire_count"],
     }
+
+
+async def _dispatch_webhook_action(
+    request: Request,
+    trigger_id: str,
+    webhook_id: str,
+    callback_prompt: str,
+    payload: dict,
+) -> None:
+    """Route the webhook payload through the agent pipeline as an inbound message."""
+    import json as _json
+
+    from steelclaw.db.engine import get_async_session
+    from steelclaw.gateway.router import process_message
+    from steelclaw.schemas.messages import InboundMessage
+
+    # Build a synthetic inbound message with the webhook context
+    content_parts = []
+    if callback_prompt:
+        content_parts.append(callback_prompt)
+    content_parts.append(
+        f"[Webhook triggered: {trigger_id}]\nPayload: {_json.dumps(payload, default=str)[:2000]}"
+    )
+
+    inbound = InboundMessage(
+        platform="webhook",
+        platform_chat_id=f"webhook-{webhook_id}",
+        platform_user_id="system",
+        content="\n\n".join(content_parts),
+        is_group=False,
+        is_mention=False,
+    )
+
+    settings = request.app.state.settings
+    async for db in get_async_session():
+        await process_message(inbound, settings.gateway, db)

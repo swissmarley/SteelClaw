@@ -30,7 +30,7 @@ class LLMProvider:
 
     async def complete(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         model: str | None = None,
         tools: list[dict] | None = None,
         temperature: float | None = None,
@@ -64,7 +64,7 @@ class LLMProvider:
 
     async def stream(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         model: str | None = None,
         tools: list[dict] | None = None,
         temperature: float | None = None,

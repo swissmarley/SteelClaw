@@ -2,7 +2,7 @@
 
 Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
 
-**Key highlights:** Premium glassmorphism UI, voice chat with streaming TTS, 60+ skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
+**Key highlights:** Premium glassmorphism UI, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), 60+ skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -72,6 +72,8 @@ steelclaw stop      # stop the daemon
 steelclaw restart   # restart
 steelclaw logs -f   # follow logs
 ```
+
+SteelClaw resolves all paths relative to its installation directory, so you can run `python3 -m steelclaw start` from any working directory.
 
 **Open the Control UI dashboard:**
 
@@ -156,13 +158,13 @@ Connect SteelClaw to your messaging apps by enabling connectors in `config.json`
 | WebSocket (built-in) | Ready | Always active |
 | Telegram | Ready | `gateway.connectors.telegram` |
 | Discord | Ready | `gateway.connectors.discord` |
-| Slack | Stub | `gateway.connectors.slack` |
-| WhatsApp | Stub | `gateway.connectors.whatsapp` |
-| Signal | Stub | `gateway.connectors.signal` |
-| iMessage | Stub | `gateway.connectors.imessage` |
-| Mattermost | Stub | `gateway.connectors.mattermost` |
-| Matrix | Stub | `gateway.connectors.matrix` |
-| Microsoft Teams | Stub | `gateway.connectors.teams` |
+| Slack | Ready | `gateway.connectors.slack` |
+| WhatsApp | Ready | `gateway.connectors.whatsapp` |
+| Signal | Ready | `gateway.connectors.signal` |
+| iMessage | Ready | `gateway.connectors.imessage` |
+| Mattermost | Ready | `gateway.connectors.mattermost` |
+| Matrix | Ready | `gateway.connectors.matrix` |
+| Microsoft Teams | Ready | `gateway.connectors.teams` |
 
 Example — enable Telegram:
 
@@ -198,6 +200,21 @@ SteelClaw supports voice interaction via the dashboard. Click the microphone but
 - **Animated waveform** — visual feedback for listening and speaking states
 
 **Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. Supports configurable STT/TTS models and voice selection (alloy, echo, fable, onyx, nova, shimmer).
+
+## File Uploads in Chat
+
+Attach files directly in the chat to have SteelClaw analyze their content:
+
+- **Images** (JPEG, PNG, GIF, WebP) — sent as inline vision to the LLM for visual analysis
+- **Documents** (PDF, TXT, CSV, JSON, Markdown, HTML, XML) — text extracted and included in the message context
+- **Audio** (MP3, WAV, WebM, OGG) — automatically transcribed via the voice system and included as text
+
+**How to attach files:**
+- Click the paperclip button next to the text input
+- Drag and drop files onto the chat area
+- Paste images from your clipboard (Ctrl/Cmd+V)
+
+Files are uploaded to the server, processed, and sent alongside your message. Attachment previews appear above the input before sending, and image thumbnails are displayed inline in sent messages.
 
 ## Dashboard UI
 
@@ -282,7 +299,7 @@ curl http://localhost:8000/api/analytics/export?format=csv
 
 Skills are modular capabilities loaded from directories. Each skill has a `SKILL.md` file defining metadata, tools, and a system prompt. SteelClaw ships with **61 bundled skills** covering productivity, development, communication, CRM, cloud storage, and more.
 
-Skills that require API credentials declare them via `required_credentials`. Tools from unconfigured skills are automatically hidden from the LLM, so the agent only uses tools it can actually call. Critical skills like Web Search are marked `default_enabled` and cannot be disabled.
+**Default behaviour:** Core skills (no credentials needed) are enabled out of the box. Integration skills that require API keys are disabled by default — enable them from the Skills page once you've configured their credentials. Enable/disable state persists across restarts. Tools from unconfigured skills are automatically hidden from the LLM, so the agent only uses tools it can actually call.
 
 ### Bundled Skills
 
@@ -496,6 +513,7 @@ Full interactive API docs at [http://localhost:8000/docs](http://localhost:8000/
 | `/api/skills/{name}/disable` | POST | Disable a skill |
 | `/api/skills/reload` | POST | Hot-reload all skills |
 | `/api/persona` | GET/POST | Read/write persona config |
+| `/api/files/upload` | POST | Upload file attachment for chat (images, docs, audio) |
 | `/api/voice/transcribe` | POST | Speech-to-text (Whisper) |
 | `/api/voice/synthesize` | POST | Text-to-speech (single response) |
 | `/api/voice/synthesize-stream` | POST | Chunked TTS streaming |
@@ -536,6 +554,7 @@ steelclaw/
   __main__.py         CLI entry point (full subcommand tree)
   app.py              FastAPI app factory + lifespan
   settings.py         Pydantic configuration
+  paths.py            Central path resolution (CWD-independent)
   pricing.py          Model pricing constants
   session_heartbeat.py Session idle/close detection
   cli/

@@ -68,8 +68,10 @@ def run_setup(reset: bool = False) -> None:
     from rich.table import Table
     from rich.text import Text
 
+    from steelclaw.paths import PROJECT_ROOT
+
     console = Console()
-    config_path = Path("config.json")
+    config_path = PROJECT_ROOT / "config.json"
 
     if reset and config_path.exists():
         config_path.unlink()

@@ -70,6 +70,7 @@ class SkillSettings(BaseModel):
     workspace_dir: str = ".steelclaw/skills"
     enabled: bool = True
     disabled_skills: list[str] = []
+    enabled_skills: list[str] = []  # skills user explicitly enabled (overrides auto-disable)
     skill_configs: dict[str, dict[str, str]] = {}  # per-skill credentials/settings
 
 
@@ -150,11 +151,13 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        from steelclaw.paths import PROJECT_ROOT
+
         sources = [init_settings, env_settings]
         try:
             from pydantic_settings import JsonConfigSettingsSource
 
-            json_path = Path("config.json")
+            json_path = PROJECT_ROOT / "config.json"
             if json_path.exists():
                 sources.append(JsonConfigSettingsSource(settings_cls, json_file=json_path))
         except ImportError:

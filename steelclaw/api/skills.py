@@ -17,7 +17,7 @@ async def list_skills(request: Request) -> list[dict]:
     from steelclaw.skills.registry import SkillRegistry
 
     registry: SkillRegistry = request.app.state.skill_registry
-    disabled = set(registry.disabled_skills)
+    active_skills = set(registry.skills.keys())
     skills = []
     for name, skill in registry.all_skills.items():
         skills.append({
@@ -27,7 +27,7 @@ async def list_skills(request: Request) -> list[dict]:
             "scope": skill.scope,
             "tools": [t.name for t in skill.tools],
             "triggers": skill.metadata.triggers,
-            "enabled": name not in disabled,
+            "enabled": name in active_skills,
             "default_enabled": skill.default_enabled,
             "required_credentials": skill.required_credentials,
         })
@@ -142,6 +142,7 @@ async def get_skill(skill_name: str, request: Request) -> dict:
         "triggers": skill.metadata.triggers,
         "path": str(skill.path),
         "enabled": skill.name not in disabled,
+        "required_credentials": skill.required_credentials,
     }
 
 
@@ -169,6 +170,7 @@ async def enable_skill(skill_name: str, request: Request) -> dict:
     registry: SkillRegistry = request.app.state.skill_registry
     if not registry.enable_skill(skill_name):
         raise HTTPException(404, f"Skill '{skill_name}' not found")
+    _persist_skill_toggle(skill_name, enable=True)
     return {"status": "enabled", "skill": skill_name}
 
 
@@ -179,4 +181,28 @@ async def disable_skill(skill_name: str, request: Request) -> dict:
     registry: SkillRegistry = request.app.state.skill_registry
     if not registry.disable_skill(skill_name):
         raise HTTPException(404, f"Skill '{skill_name}' not found")
+    _persist_skill_toggle(skill_name, enable=False)
     return {"status": "disabled", "skill": skill_name}
+
+
+def _persist_skill_toggle(name: str, enable: bool) -> None:
+    """Save skill enable/disable state to config.json so it survives restarts."""
+    from steelclaw.api.config import _read_config, _write_config
+
+    cfg = _read_config()
+    skills = cfg.setdefault("agents", {}).setdefault("skills", {})
+    disabled = skills.setdefault("disabled_skills", [])
+    enabled = skills.setdefault("enabled_skills", [])
+
+    if enable:
+        if name in disabled:
+            disabled.remove(name)
+        if name not in enabled:
+            enabled.append(name)
+    else:
+        if name in enabled:
+            enabled.remove(name)
+        if name not in disabled:
+            disabled.append(name)
+
+    _write_config(cfg)

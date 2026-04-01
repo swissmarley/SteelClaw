@@ -19,11 +19,18 @@ class SkillRegistry:
         self._skills: Dict[str, Skill] = {}  # active skills only
         self._all_skills: Dict[str, Skill] = {}  # all discovered skills
         self._disabled: set[str] = set(settings.disabled_skills)
+        self._explicitly_enabled: set[str] = set(settings.enabled_skills)
         # Map tool_name → skill for fast lookup during tool call routing
         self._tool_index: Dict[str, Skill] = {}
 
     def load_all(self) -> None:
-        """Discover and load all skills from configured directories."""
+        """Discover and load all skills from configured directories.
+
+        Default behaviour:
+        - Skills WITHOUT required_credentials → enabled by default
+        - Skills WITH required_credentials → disabled by default (user must enable)
+        - Skills the user explicitly enabled/disabled override the defaults
+        """
         if not self._settings.enabled:
             logger.info("Skill system disabled")
             return
@@ -40,12 +47,23 @@ class SkillRegistry:
 
         for skill in skills:
             self._all_skills[skill.name] = skill
-            if skill.default_enabled and skill.name in self._disabled:
-                self._disabled.discard(skill.name)
-                logger.info("Skill '%s' is default-enabled — overriding disabled state", skill.name)
+
+            # Determine if skill should be active
             if skill.name in self._disabled:
-                logger.info("Skill '%s' is disabled — skipping", skill.name)
+                logger.info("Skill '%s' is explicitly disabled — skipping", skill.name)
                 continue
+
+            if skill.name in self._explicitly_enabled:
+                # User explicitly enabled this skill
+                pass
+            elif skill.required_credentials and not skill.default_enabled:
+                # Skills needing API keys are disabled by default
+                logger.info(
+                    "Skill '%s' requires credentials — disabled by default (enable in Skills page)",
+                    skill.name,
+                )
+                continue
+
             self._skills[skill.name] = skill
             for tool in skill.tools:
                 if tool.name in self._tool_index:
@@ -126,6 +144,7 @@ class SkillRegistry:
         if skill is None:
             return False
         self._disabled.discard(name)
+        self._explicitly_enabled.add(name)
         if name not in self._skills:
             self._skills[name] = skill
             for tool in skill.tools:
@@ -138,10 +157,8 @@ class SkillRegistry:
         skill = self._all_skills.get(name)
         if skill is None:
             return False
-        if skill.default_enabled:
-            logger.warning("Cannot disable default-enabled skill '%s'", name)
-            return False
         self._disabled.add(name)
+        self._explicitly_enabled.discard(name)
         self._skills.pop(name, None)
         for tool in skill.tools:
             if self._tool_index.get(tool.name) is skill:
