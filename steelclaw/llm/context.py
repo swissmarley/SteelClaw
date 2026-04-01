@@ -26,29 +26,79 @@ class ContextBuilder:
         db: AsyncSession,
         system_prompt: str | None = None,
         skill_context: str | None = None,
+        memory_context: str | None = None,
+        persona_prompt: str | None = None,
         current_message: str | None = None,
-    ) -> list[dict[str, str]]:
+        attachments: list[dict] | None = None,
+    ) -> list[dict[str, Any]]:
         """Build the full message list for an LLM call.
 
-        Order: system → skill context (appended to system) → history → current message.
+        Order: persona → system → memory context → skill context → history → current message.
         """
-        messages: list[dict[str, str]] = []
+        messages: list[dict[str, Any]] = []
 
-        # System prompt
-        base_system = system_prompt or self._settings.system_prompt
+        # System prompt (with persona, memory, and skill context appended)
+        parts = []
+        if persona_prompt:
+            parts.append(persona_prompt)
+        parts.append(system_prompt or self._settings.system_prompt)
+        if memory_context:
+            parts.append(memory_context)
         if skill_context:
-            base_system = f"{base_system}\n\n{skill_context}"
-        messages.append({"role": "system", "content": base_system})
+            parts.append(skill_context)
+        messages.append({"role": "system", "content": "\n\n".join(parts)})
 
         # Load history from unified session (cross-platform DM collapse)
         history = await self._load_history(session, db)
         messages.extend(history)
 
-        # Current user message (if not already in history)
-        if current_message:
-            messages.append({"role": "user", "content": current_message})
+        # Current user message with optional multimodal attachments
+        if current_message or attachments:
+            messages.append(self._build_user_message(current_message or "", attachments))
 
         return messages
+
+    def _build_user_message(
+        self, text: str, attachments: list[dict] | None = None,
+    ) -> dict[str, Any]:
+        """Build a user message, optionally with multimodal content (images, docs)."""
+        if not attachments:
+            return {"role": "user", "content": text}
+
+        # Build multimodal content array for the LLM
+        content_parts: list[dict[str, Any]] = []
+
+        for att in attachments:
+            category = att.get("category", "unknown")
+            filename = att.get("filename", "file")
+
+            if category == "image" and att.get("base64"):
+                # Send images as base64 inline (Claude/OpenAI vision)
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{att['mime']};base64,{att['base64']}",
+                    },
+                })
+            elif category in ("document", "audio"):
+                # Send extracted text as a text block
+                file_text = att.get("text_content", "")
+                if file_text:
+                    content_parts.append({
+                        "type": "text",
+                        "text": f"[Attached file: {filename}]\n{file_text}",
+                    })
+                else:
+                    content_parts.append({
+                        "type": "text",
+                        "text": f"[Attached file: {filename} — content could not be extracted]",
+                    })
+
+        # Add the user's text message
+        if text:
+            content_parts.append({"type": "text", "text": text})
+
+        return {"role": "user", "content": content_parts}
 
     async def _load_history(
         self,

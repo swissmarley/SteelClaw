@@ -11,6 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from steelclaw.scheduler.persistence import add_schedule, load_schedules, remove_schedule as remove_persisted
 from steelclaw.settings import SchedulerSettings
 
 logger = logging.getLogger("steelclaw.scheduler")
@@ -25,6 +26,7 @@ class TaskEngine:
         self._settings = settings
         self._scheduler: AsyncIOScheduler | None = None
         self._task_registry: Dict[str, Dict[str, Any]] = {}
+        self._active_triggers: Dict[str, Any] = {}  # event-based triggers
 
     def start(self) -> None:
         if not self._settings.enabled:
@@ -81,11 +83,13 @@ class TaskEngine:
             replace_existing=True,
             kwargs=kwargs or {},
         )
-        self._task_registry[job_id] = {
+        meta = {
             "type": "cron",
             "cron": cron_expression,
             "description": description,
         }
+        self._task_registry[job_id] = meta
+        add_schedule({"id": job_id, **meta})
         logger.info("Added cron job: %s (%s) — %s", job_id, cron_expression, description)
         return job_id
 
@@ -111,11 +115,13 @@ class TaskEngine:
             replace_existing=True,
             kwargs=kwargs or {},
         )
-        self._task_registry[job_id] = {
+        meta = {
             "type": "interval",
             "seconds": seconds + minutes * 60 + hours * 3600,
             "description": description,
         }
+        self._task_registry[job_id] = meta
+        add_schedule({"id": job_id, **meta})
         logger.info("Added interval job: %s — %s", job_id, description)
         return job_id
 
@@ -139,11 +145,13 @@ class TaskEngine:
             replace_existing=True,
             kwargs=kwargs or {},
         )
-        self._task_registry[job_id] = {
+        meta = {
             "type": "once",
             "run_at": run_at.isoformat(),
             "description": description,
         }
+        self._task_registry[job_id] = meta
+        add_schedule({"id": job_id, **meta})
         logger.info("Added one-time job: %s at %s — %s", job_id, run_at, description)
         return job_id
 
@@ -153,9 +161,58 @@ class TaskEngine:
         try:
             self._scheduler.remove_job(job_id)
             self._task_registry.pop(job_id, None)
+            remove_persisted(job_id)
             return True
         except Exception:
             return False
+
+    async def start_event_trigger(
+        self,
+        trigger_id: str,
+        trigger_type: str,
+        config: dict,
+        callback: TaskCallback,
+    ) -> None:
+        """Start an event-based trigger (file watcher, RSS, API poll)."""
+        from steelclaw.scheduler.triggers import (
+            APIPollingTrigger,
+            FileWatcherTrigger,
+            RSSPollingTrigger,
+        )
+
+        trigger = None
+        if trigger_type == "file_watcher":
+            trigger = FileWatcherTrigger(
+                watch_path=config.get("path", "."),
+                callback=callback,
+                poll_seconds=config.get("poll_seconds", 10),
+            )
+        elif trigger_type == "rss":
+            trigger = RSSPollingTrigger(
+                feed_url=config.get("feed_url", ""),
+                callback=callback,
+                poll_seconds=config.get("poll_seconds", 300),
+            )
+        elif trigger_type == "api_poll":
+            trigger = APIPollingTrigger(
+                url=config.get("url", ""),
+                callback=callback,
+                poll_seconds=config.get("poll_seconds", 60),
+                match_pattern=config.get("match_pattern", ""),
+            )
+
+        if trigger:
+            await trigger.start()
+            self._active_triggers[trigger_id] = trigger
+            logger.info("Started %s trigger: %s", trigger_type, trigger_id)
+
+    async def stop_event_trigger(self, trigger_id: str) -> bool:
+        """Stop an event-based trigger."""
+        trigger = self._active_triggers.pop(trigger_id, None)
+        if trigger:
+            await trigger.stop()
+            return True
+        return False
 
     def list_jobs(self) -> list[dict]:
         jobs = []

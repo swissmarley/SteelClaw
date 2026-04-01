@@ -1,116 +1,580 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-accent="violet">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SteelClaw — Control UI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg: #0d1117; --surface: #161b22; --surface2: #1c2129;
-  --border: #30363d; --border-light: #3d444d;
-  --text: #e6edf3; --text-muted: #8b949e; --text-dim: #484f58;
-  --accent: #58a6ff; --accent-dim: #1f6feb; --accent-bg: #1f6feb18;
-  --green: #3fb950; --green-dim: #238636; --green-bg: #23863618;
-  --red: #f85149; --red-dim: #da3633; --red-bg: #da363318;
-  --yellow: #d29922; --yellow-bg: #d2992218;
-  --purple: #bc8cff; --purple-bg: #bc8cff18;
-  --radius: 8px; --radius-lg: 12px;
+/* ── Accent Color System ─────────────────── */
+[data-accent="violet"] { --accent: #8b5cf6; --accent-dim: #7c3aed; --accent-glow: rgba(139,92,246,0.3); --accent-gradient: linear-gradient(135deg,#8b5cf6,#6366f1); }
+[data-accent="cyan"] { --accent: #06b6d4; --accent-dim: #0891b2; --accent-glow: rgba(6,182,212,0.3); --accent-gradient: linear-gradient(135deg,#06b6d4,#0ea5e9); }
+[data-accent="emerald"] { --accent: #10b981; --accent-dim: #059669; --accent-glow: rgba(16,185,129,0.3); --accent-gradient: linear-gradient(135deg,#10b981,#34d399); }
+[data-accent="amber"] { --accent: #f59e0b; --accent-dim: #d97706; --accent-glow: rgba(245,158,11,0.3); --accent-gradient: linear-gradient(135deg,#f59e0b,#fbbf24); }
+[data-accent="rose"] { --accent: #f43f5e; --accent-dim: #e11d48; --accent-glow: rgba(244,63,94,0.3); --accent-gradient: linear-gradient(135deg,#f43f5e,#fb7185); }
+
+/* ── Dark Theme ──────────────────────────── */
+[data-theme="dark"] {
+  --bg-base: #0a0a1a;
+  --glass: rgba(255,255,255,0.05);
+  --glass-elevated: rgba(255,255,255,0.08);
+  --glass-border: rgba(255,255,255,0.08);
+  --glass-border-hover: rgba(255,255,255,0.15);
+  --text: rgba(255,255,255,0.9);
+  --text-secondary: rgba(255,255,255,0.5);
+  --text-dim: rgba(255,255,255,0.25);
+  --green: #10b981; --red: #ef4444; --yellow: #f59e0b;
+  --green-bg: rgba(16,185,129,0.15); --red-bg: rgba(239,68,68,0.15); --yellow-bg: rgba(245,158,11,0.15);
+  --accent-bg: rgba(139,92,246,0.12);
+  --scrollbar-thumb: rgba(255,255,255,0.15);
+  --scrollbar-hover: rgba(255,255,255,0.25);
+  --overlay-bg: rgba(0,0,0,0.6);
+  --input-bg: rgba(0,0,0,0.3);
 }
+
+/* ── Light Theme ─────────────────────────── */
+[data-theme="light"] {
+  --bg-base: #e8e0f0;
+  --glass: rgba(255,255,255,0.6);
+  --glass-elevated: rgba(255,255,255,0.75);
+  --glass-border: rgba(255,255,255,0.3);
+  --glass-border-hover: rgba(255,255,255,0.5);
+  --text: rgba(15,15,35,0.9);
+  --text-secondary: rgba(15,15,35,0.5);
+  --text-dim: rgba(15,15,35,0.25);
+  --green: #059669; --red: #dc2626; --yellow: #d97706;
+  --green-bg: rgba(16,185,129,0.15); --red-bg: rgba(239,68,68,0.15); --yellow-bg: rgba(245,158,11,0.15);
+  --accent-bg: rgba(139,92,246,0.1);
+  --scrollbar-thumb: rgba(0,0,0,0.15);
+  --scrollbar-hover: rgba(0,0,0,0.25);
+  --overlay-bg: rgba(0,0,0,0.3);
+  --input-bg: rgba(255,255,255,0.5);
+}
+
+/* ── Font Size System ────────────────────── */
+[data-fontsize="small"] { --base-fs: 12px; }
+[data-fontsize="medium"], :root { --base-fs: 13.5px; }
+[data-fontsize="large"] { --base-fs: 15px; }
+
+/* ── Reset & Base ────────────────────────── */
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; overflow:hidden; }
+html, body { height:100%; overflow:hidden; }
+body {
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  font-size: var(--base-fs);
+  font-weight: 400;
+  color: var(--text);
+  display: flex;
+  position: relative;
+  background: var(--bg-base);
+}
 
-/* ── Sidebar ──────────────────────────────── */
-#sidebar { width:220px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; }
-#sidebar .logo { padding:16px 18px; border-bottom:1px solid var(--border); }
-#sidebar .logo h1 { font-size:17px; font-weight:700; }
-#sidebar .logo span { font-size:11px; color:var(--text-muted); }
-#sidebar nav { flex:1; padding:8px; display:flex; flex-direction:column; gap:2px; overflow-y:auto; }
-#sidebar nav button { display:flex; align-items:center; gap:10px; padding:9px 12px; background:none; border:none; color:var(--text-muted); font-size:13px; border-radius:var(--radius); cursor:pointer; text-align:left; width:100%; transition:all .15s; }
-#sidebar nav button:hover { background:var(--surface2); color:var(--text); }
-#sidebar nav button.active { background:var(--accent-bg); color:var(--accent); font-weight:600; }
-#sidebar nav button .icon { font-size:16px; width:20px; text-align:center; }
-.nav-separator { height:1px; background:var(--border); margin:6px 12px; }
-.nav-label { font-size:10px; color:var(--text-dim); padding:8px 12px 2px; text-transform:uppercase; letter-spacing:1px; font-weight:600; }
-#sidebar .status-bar { padding:12px 18px; border-top:1px solid var(--border); font-size:12px; }
-.dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
-.dot.green { background:var(--green); } .dot.red { background:var(--red); } .dot.yellow { background:var(--yellow); }
+/* ── Animated Gradient Background ────────── */
+.bg-mesh {
+  position: fixed; top:0; left:0; right:0; bottom:0; z-index:0; overflow:hidden;
+}
+[data-theme="dark"] .bg-mesh { background: #0a0a1a; }
+[data-theme="light"] .bg-mesh { background: #e8e0f0; }
 
-/* ── Main ─────────────────────────────────── */
-#main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-.page { display:none; flex:1; flex-direction:column; overflow:hidden; }
-.page.active { display:flex; }
-.page-header { padding:16px 24px; border-bottom:1px solid var(--border); background:var(--surface); display:flex; justify-content:space-between; align-items:center; }
-.page-header div { }
-.page-header h2 { font-size:16px; font-weight:600; }
-.page-header p { font-size:12px; color:var(--text-muted); margin-top:2px; }
-.page-body { flex:1; overflow-y:auto; padding:20px 24px; }
+.bg-mesh::before, .bg-mesh::after, .bg-mesh .bg-orb {
+  content: ''; position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.4;
+  will-change: transform;
+}
+.bg-mesh::before {
+  width: 600px; height: 600px; top: -10%; left: -5%;
+  background: radial-gradient(circle, #1a0a2e 0%, transparent 70%);
+  animation: drift1 20s ease-in-out infinite;
+}
+.bg-mesh::after {
+  width: 500px; height: 500px; bottom: -10%; right: -5%;
+  background: radial-gradient(circle, #0a1628 0%, transparent 70%);
+  animation: drift2 25s ease-in-out infinite;
+}
+.bg-mesh .bg-orb {
+  width: 400px; height: 400px; top: 40%; left: 40%;
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+  animation: drift3 22s ease-in-out infinite;
+  opacity: 0.2;
+}
+[data-theme="light"] .bg-mesh::before { background: radial-gradient(circle, #d5e5f5 0%, transparent 70%); opacity:0.6; }
+[data-theme="light"] .bg-mesh::after { background: radial-gradient(circle, #e0d8f0 0%, transparent 70%); opacity:0.6; }
 
-/* ── Chat ─────────────────────────────────── */
-#chat-messages { flex:1; overflow-y:auto; padding:16px 24px; display:flex; flex-direction:column; gap:10px; }
-.msg { max-width:72%; padding:10px 14px; border-radius:var(--radius-lg); font-size:13.5px; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
-.msg.user { align-self:flex-end; background:var(--accent-bg); border:1px solid var(--accent-dim); }
-.msg.assistant { align-self:flex-start; background:var(--surface2); border:1px solid var(--border); }
-.msg .lbl { font-size:10px; color:var(--text-muted); margin-bottom:3px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
-.msg.user .lbl { color:var(--accent); }
-.msg.assistant .lbl { color:var(--green); }
-.typing-indicator { color:var(--text-muted); font-size:12px; font-style:italic; padding:4px 0; }
-#chat-input-area { padding:12px 24px; border-top:1px solid var(--border); display:flex; gap:8px; background:var(--surface); }
-#chat-input-area textarea { flex:1; padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-family:inherit; font-size:13px; resize:none; outline:none; min-height:38px; max-height:100px; }
-#chat-input-area textarea:focus { border-color:var(--accent); }
-#chat-input-area button { padding:9px 18px; border:none; border-radius:var(--radius); background:var(--accent-dim); color:#fff; font-size:13px; font-weight:600; cursor:pointer; }
-#chat-input-area button:hover { background:var(--accent); }
-#chat-input-area button:disabled { opacity:.4; cursor:not-allowed; }
+@keyframes drift1 { 0%,100%{transform:translate(0,0)} 33%{transform:translate(60px,40px)} 66%{transform:translate(-30px,70px)} }
+@keyframes drift2 { 0%,100%{transform:translate(0,0)} 33%{transform:translate(-50px,-30px)} 66%{transform:translate(40px,-60px)} }
+@keyframes drift3 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-70px,50px)} }
 
-/* ── Cards ────────────────────────────────── */
-.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:16px 20px; margin-bottom:16px; }
-.card h3 { font-size:14px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
-.card h3 .badge { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:500; }
-.card-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.badge-green { background:var(--green-bg); color:var(--green); }
-.badge-red { background:var(--red-bg); color:var(--red); }
-.badge-yellow { background:var(--yellow-bg); color:var(--yellow); }
-.badge-blue { background:var(--accent-bg); color:var(--accent); }
-.badge-purple { background:var(--purple-bg); color:var(--purple); }
+/* ── Custom Scrollbar ────────────────────── */
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:var(--scrollbar-hover); }
 
-/* ── Forms ────────────────────────────────── */
-.form-group { margin-bottom:14px; }
-.form-group label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:4px; font-weight:500; }
-.form-group input, .form-group select, .form-group textarea { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-size:13px; outline:none; font-family:inherit; }
-.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color:var(--accent); }
-.form-group .hint { font-size:11px; color:var(--text-dim); margin-top:2px; }
-.form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.form-row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
-.toggle-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-.toggle-row label { font-size:13px; color:var(--text); margin:0; cursor:pointer; }
-.toggle-row input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
-.btn { padding:8px 16px; border:none; border-radius:var(--radius); font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; }
-.btn-primary { background:var(--accent-dim); color:#fff; } .btn-primary:hover { background:var(--accent); }
-.btn-success { background:var(--green-dim); color:#fff; } .btn-success:hover { background:var(--green); }
-.btn-danger { background:var(--red-dim); color:#fff; } .btn-danger:hover { background:var(--red); }
-.btn-outline { background:none; border:1px solid var(--border); color:var(--text-muted); } .btn-outline:hover { border-color:var(--text-muted); color:var(--text); }
-.btn-sm { padding:5px 10px; font-size:11px; }
-.btn-group { display:flex; gap:8px; margin-top:12px; }
+/* ── Glass Surfaces ──────────────────────── */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+}
+.glass-elevated {
+  background: var(--glass-elevated);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+}
 
-/* ── Table ────────────────────────────────── */
-.tbl { width:100%; border-collapse:collapse; font-size:13px; }
-.tbl th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
-.tbl td { padding:8px 10px; border-bottom:1px solid var(--border); }
-.tbl tr:last-child td { border-bottom:none; }
+/* ── Animations ──────────────────────────── */
+@keyframes fadeInUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideInRight { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+@keyframes orbPulse { 0%,100%{transform:scale(1);opacity:0.8} 50%{transform:scale(1.08);opacity:1} }
+@keyframes orbListen { 0%,100%{transform:scale(1)} 25%{transform:scale(1.15)} 50%{transform:scale(0.95)} 75%{transform:scale(1.1)} }
+@keyframes orbSpeak { 0%{transform:scale(1) rotate(0deg)} 50%{transform:scale(1.05) rotate(180deg)} 100%{transform:scale(1) rotate(360deg)} }
+@keyframes toastSlide { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
 
-/* ── Inline input ────────────────────────── */
-.inline-input { padding:4px 8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); color:var(--text); font-size:12px; outline:none; width:100%; }
-.inline-input:focus { border-color:var(--accent); }
+.skeleton { background:linear-gradient(90deg,var(--glass) 25%,var(--glass-elevated) 50%,var(--glass) 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; border-radius:8px; height:18px; margin-bottom:8px; }
+.skeleton-lg { height:120px; }
+.skeleton-card { padding:20px; border-radius:16px; background:linear-gradient(90deg,var(--glass) 25%,var(--glass-elevated) 50%,var(--glass) 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; margin-bottom:16px; }
 
-/* ── Toast ────────────────────────────────── */
-#toast { position:fixed; bottom:20px; right:20px; padding:10px 18px; border-radius:var(--radius); font-size:13px; font-weight:500; z-index:999; transform:translateY(80px); opacity:0; transition:all .3s; }
-#toast.show { transform:translateY(0); opacity:1; }
-#toast.success { background:var(--green-dim); color:#fff; }
-#toast.error { background:var(--red-dim); color:#fff; }
+.fade-in-up { animation: fadeInUp 0.3s ease-out both; }
 
-@media(max-width:768px) { #sidebar{width:60px} #sidebar .logo h1,#sidebar .logo span,#sidebar nav button span:not(.icon),.nav-label{display:none} .msg{max-width:90%} .card-row,.form-row,.form-row-3{grid-template-columns:1fr} }
+/* ── Sidebar ─────────────────────────────── */
+#sidebar {
+  width: 240px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: var(--glass); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+  border-right: 1px solid var(--glass-border);
+  z-index: 10; position: relative;
+}
+#sidebar .logo { padding: 20px; border-bottom: 1px solid var(--glass-border); }
+#sidebar .logo h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+#sidebar .logo span { font-size: 11px; color: var(--text-secondary); font-weight: 500; }
+#sidebar nav { flex: 1; padding: 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+#sidebar nav button {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  background: none; border: none; color: var(--text-secondary); font-size: var(--base-fs);
+  border-radius: 12px; cursor: pointer; text-align: left; width: 100%;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+#sidebar nav button:hover { background: var(--glass-elevated); color: var(--text); }
+#sidebar nav button.active {
+  background: var(--accent-gradient); color: #fff; font-weight: 600;
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+#sidebar nav button .icon { font-size: 16px; width: 22px; text-align: center; }
+.nav-separator { height: 1px; background: var(--glass-border); margin: 6px 14px; }
+.nav-label { font-size: 10px; color: var(--text-dim); padding: 10px 14px 4px; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; }
+#sidebar .status-bar {
+  padding: 14px 20px; border-top: 1px solid var(--glass-border);
+  font-size: 12px; display: flex; align-items: center; justify-content: space-between;
+}
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.dot.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot.red { background: var(--red); }
+.dot.yellow { background: var(--yellow); }
+
+/* ── Main Area ───────────────────────────── */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; z-index: 5; position: relative; }
+.page { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.page.active { display: flex; animation: fadeInUp 0.3s ease-out; }
+.page-header {
+  padding: 18px 28px; display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+.page-header h2 { font-size: 17px; font-weight: 600; }
+.page-header p { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.page-body { flex: 1; overflow-y: auto; padding: 24px 28px; }
+
+/* ── Chat ────────────────────────────────── */
+#chat-messages { flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 12px; }
+.msg {
+  max-width: 70%; padding: 12px 16px; border-radius: 16px; font-size: var(--base-fs);
+  line-height: 1.6; white-space: pre-wrap; word-break: break-word; position: relative;
+  animation: fadeInUp 0.25s ease-out;
+}
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent-gradient); color: #fff;
+  border-radius: 16px 16px 4px 16px;
+}
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-left: 3px solid var(--accent);
+  border-radius: 16px 16px 16px 4px;
+}
+.msg .lbl { font-size: 10px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.msg.user .lbl { color: rgba(255,255,255,0.7); }
+.msg.assistant .lbl { color: var(--accent); }
+.typing-indicator { color: var(--text-secondary); font-size: 12px; font-style: italic; padding: 4px 0; }
+.typing-dots { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
+.typing-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.4s infinite ease-in-out; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+
+#chat-input-area {
+  padding: 14px 28px; border-top: 1px solid var(--glass-border);
+  display: flex; gap: 8px; align-items: flex-end;
+  background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+#chat-input-area textarea {
+  flex: 1; padding: 10px 14px;
+  border: 1px solid var(--glass-border); border-radius: 12px;
+  background: var(--input-bg); color: var(--text);
+  font-family: inherit; font-size: var(--base-fs); resize: none; outline: none;
+  min-height: 40px; max-height: 120px;
+  transition: border-color 0.2s;
+}
+#chat-input-area textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+#chat-input-area button#chat-send {
+  padding: 10px 20px; border: none; border-radius: 12px;
+  background: var(--accent-gradient); color: #fff; font-size: var(--base-fs);
+  font-weight: 600; cursor: pointer; font-family: inherit;
+  transition: all 0.2s; box-shadow: 0 4px 12px var(--accent-glow);
+}
+#chat-input-area button#chat-send:hover { transform: translateY(-2px); box-shadow: 0 6px 20px var(--accent-glow); }
+#chat-input-area button#chat-send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ── Attach Button ──────────────────────── */
+.attach-btn {
+  background: none; border: 1px solid var(--glass-border); border-radius: 10px;
+  color: var(--text-secondary); cursor: pointer; padding: 8px; display: flex;
+  align-items: center; justify-content: center; transition: all 0.2s;
+}
+.attach-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Chat Attachments Preview ───────────── */
+#chat-attachments {
+  display: none; padding: 8px 28px 0; gap: 8px; flex-wrap: wrap;
+}
+#chat-attachments.has-files { display: flex; }
+.attachment-chip {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px;
+  background: var(--glass-elevated); border: 1px solid var(--glass-border);
+  border-radius: 10px; font-size: 12px; color: var(--text-secondary);
+  max-width: 200px; position: relative;
+}
+.attachment-chip .att-icon { font-size: 14px; flex-shrink: 0; }
+.attachment-chip .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip .att-remove {
+  background: none; border: none; color: var(--text-secondary); cursor: pointer;
+  font-size: 14px; padding: 0 2px; opacity: 0.6; transition: opacity 0.2s;
+}
+.attachment-chip .att-remove:hover { opacity: 1; color: var(--danger, #ef4444); }
+.attachment-chip.uploading { opacity: 0.6; }
+.attachment-chip.uploading .att-name::after { content: ' ...'; }
+
+/* ── Drag-Drop Overlay ──────────────────── */
+#page-chat { position: relative; }
+#page-chat.drag-over::after {
+  content: 'Drop files here'; position: absolute; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--accent-rgb, 139, 92, 246), 0.15);
+  border: 2px dashed var(--accent); border-radius: 16px; margin: 12px;
+  font-size: 18px; font-weight: 600; color: var(--accent);
+  pointer-events: none; backdrop-filter: blur(4px);
+}
+
+/* ── Message Attachments ────────────────── */
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.msg-attachments img {
+  max-width: 280px; max-height: 200px; border-radius: 10px;
+  border: 1px solid var(--glass-border); cursor: pointer; transition: transform 0.2s;
+}
+.msg-attachments img:hover { transform: scale(1.02); }
+.msg-attachment-file {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 8px; font-size: 11px; color: var(--text-secondary);
+}
+
+/* ── Message Actions ─────────────────────── */
+.msg-actions { display:none; position:absolute; top:-10px; right:10px; background:var(--glass-elevated); backdrop-filter:blur(20px); border:1px solid var(--glass-border); border-radius:10px; padding:3px; gap:2px; z-index:10; }
+.msg:hover .msg-actions { display:flex; }
+.msg-actions button { background:none; border:none; cursor:pointer; padding:4px 7px; font-size:12px; color:var(--text-secondary); border-radius:6px; }
+.msg-actions button:hover { background:var(--glass); color:var(--text); }
+
+/* ── Code Blocks ─────────────────────────── */
+.msg pre { background:var(--input-bg); border:1px solid var(--glass-border); border-radius:10px; padding:12px; margin:8px 0; overflow-x:auto; font-size:12px; font-family:'JetBrains Mono',monospace; position:relative; }
+.msg code { font-family:'JetBrains Mono',monospace; font-size:12px; background:var(--glass-elevated); padding:2px 5px; border-radius:4px; }
+.msg pre code { background:none; padding:0; }
+.copy-code-btn { position:absolute; top:6px; right:6px; font-size:10px; padding:3px 8px; background:var(--glass-elevated); border:1px solid var(--glass-border); border-radius:6px; cursor:pointer; color:var(--text-secondary); }
+.copy-code-btn:hover { color:var(--text); }
+
+/* ── Voice Button ────────────────────────── */
+.voice-btn {
+  background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px;
+  padding: 9px 14px; cursor: pointer; color: var(--text-secondary); font-size: 16px;
+  backdrop-filter: blur(10px); transition: all 0.2s;
+}
+.voice-btn:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+.voice-btn.recording { color: var(--red); border-color: var(--red); animation: pulse 1.5s infinite; box-shadow: 0 0 12px rgba(239,68,68,0.3); }
+.voice-btn.voice-chat-active { color: var(--green); border-color: var(--green); box-shadow: 0 0 12px rgba(16,185,129,0.3); }
+
+/* ── Voice Chat Bar ──────────────────────── */
+#voice-chat-bar { display:none; align-items:center; gap:8px; padding:8px 20px; background:var(--glass); backdrop-filter:blur(20px); border-bottom:1px solid var(--glass-border); font-size:12px; color:var(--text-secondary); }
+#voice-chat-bar.active { display:flex; }
+#voice-chat-bar .vc-indicator { width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 1.5s infinite; box-shadow:0 0 8px var(--green); }
+#voice-chat-bar button { background:var(--glass-elevated); border:1px solid var(--glass-border); border-radius:8px; padding:4px 12px; cursor:pointer; color:var(--text-secondary); font-size:11px; margin-left:auto; font-family:inherit; }
+#voice-chat-bar button:hover { color:var(--red); border-color:var(--red); }
+
+/* ── Voice Chat Panel (Overlay) ──────────── */
+#voice-panel {
+  display:none; position:fixed; bottom:0; left:0; right:0; z-index:200;
+  height:50vh; min-height:360px;
+  background:var(--glass-elevated); backdrop-filter:blur(40px); -webkit-backdrop-filter:blur(40px);
+  border-top:1px solid var(--glass-border);
+  border-radius:24px 24px 0 0;
+  flex-direction:column; align-items:center; justify-content:center; gap:20px;
+  transition:transform 0.4s cubic-bezier(0.16,1,0.3,1);
+  transform:translateY(100%);
+}
+#voice-panel.open { display:flex; transform:translateY(0); }
+#voice-panel .orb {
+  width:140px; height:140px; border-radius:50%;
+  background:var(--accent-gradient);
+  box-shadow:0 0 60px var(--accent-glow), 0 0 120px var(--accent-glow);
+  animation:orbPulse 3s ease-in-out infinite;
+}
+#voice-panel.listening .orb { animation:orbListen 1s ease-in-out infinite; }
+#voice-panel.speaking .orb { animation:orbSpeak 2s linear infinite; }
+#voice-panel canvas { width:200px; height:60px; }
+#voice-panel .transcript { max-width:600px; text-align:center; color:var(--text-secondary); font-size:14px; max-height:80px; overflow-y:auto; padding:0 20px; }
+#voice-panel .close-voice { position:absolute; top:16px; right:20px; background:var(--glass); border:1px solid var(--glass-border); border-radius:10px; padding:6px 14px; cursor:pointer; color:var(--text-secondary); font-size:12px; font-family:inherit; }
+#voice-panel .close-voice:hover { color:var(--red); border-color:var(--red); }
+
+/* ── Cards ───────────────────────────────── */
+.card {
+  background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border); border-radius: 16px;
+  padding: 20px 24px; margin-bottom: 16px;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.card:hover { border-color: var(--glass-border-hover); }
+.card h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.card h3 .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* ── Badges ──────────────────────────────── */
+.badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500; display: inline-block; }
+.badge-green { background: var(--green-bg); color: var(--green); }
+.badge-red { background: var(--red-bg); color: var(--red); }
+.badge-yellow { background: var(--yellow-bg); color: var(--yellow); }
+.badge-blue { background: var(--accent-bg); color: var(--accent); }
+.badge-purple { background: rgba(139,92,246,0.15); color: #a78bfa; }
+
+/* ── Forms ───────────────────────────────── */
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 500; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid var(--glass-border); border-radius: 10px;
+  background: var(--input-bg); color: var(--text);
+  font-size: var(--base-fs); outline: none; font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  backdrop-filter: blur(10px);
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.form-group .hint { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.toggle-row label { font-size: var(--base-fs); color: var(--text); margin: 0; cursor: pointer; }
+.toggle-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
+/* ── Buttons ─────────────────────────────── */
+.btn {
+  padding: 8px 18px; border: none; border-radius: 10px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; font-family: inherit;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-primary { background: var(--accent-gradient); color: #fff; box-shadow: 0 4px 12px var(--accent-glow); }
+.btn-primary:hover { box-shadow: 0 6px 20px var(--accent-glow); }
+.btn-success { background: linear-gradient(135deg,var(--green),#34d399); color: #fff; }
+.btn-danger { background: linear-gradient(135deg,var(--red),#f87171); color: #fff; }
+.btn-outline { background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-secondary); backdrop-filter:blur(10px); }
+.btn-outline:hover { border-color: var(--accent); color: var(--text); }
+.btn-sm { padding: 5px 12px; font-size: 11px; }
+.btn-group { display: flex; gap: 8px; margin-top: 12px; }
+
+/* ── Table ───────────────────────────────── */
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--base-fs); }
+.tbl th { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--glass-border); color: var(--text-secondary); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--glass-border); }
+.tbl tr:last-child td { border-bottom: none; }
+
+.inline-input {
+  padding: 5px 10px; border: 1px solid var(--glass-border); border-radius: 8px;
+  background: var(--input-bg); color: var(--text); font-size: 12px; outline: none; width: 100%;
+  font-family: inherit; transition: border-color 0.2s;
+}
+.inline-input:focus { border-color: var(--accent); }
+
+/* ── Toast ───────────────────────────────── */
+#toast {
+  position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 12px;
+  font-size: 13px; font-weight: 500; z-index: 999;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  transform: translateX(120%); opacity: 0; transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+}
+#toast.show { transform: translateX(0); opacity: 1; }
+#toast.success { background: rgba(16,185,129,0.2); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+#toast.error { background: rgba(239,68,68,0.2); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+/* ── Skill Toggle Switch ─────────────────── */
+.skill-toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+.skill-toggle input { opacity: 0; width: 0; height: 0; }
+.skill-toggle .slider { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--glass-border); border-radius: 20px; cursor: pointer; transition: background 0.2s; }
+.skill-toggle .slider:before { content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: var(--text-secondary); border-radius: 50%; transition: transform 0.2s, background 0.2s; }
+.skill-toggle input:checked + .slider { background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.4); }
+.skill-toggle input:checked + .slider:before { transform: translateX(16px); background: white; }
+.skill-card.disabled { opacity: 0.5; }
+.skill-card .skill-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+
+/* ── Skills Grid ─────────────────────────── */
+.skills-filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.skills-filter-bar input {
+  flex: 1; min-width: 200px; padding: 9px 14px;
+  border: 1px solid var(--glass-border); border-radius: 10px;
+  background: var(--input-bg); color: var(--text); font-size: var(--base-fs);
+  outline: none; font-family: inherit; backdrop-filter:blur(10px);
+}
+.skills-filter-bar input:focus { border-color: var(--accent); }
+.cat-tab {
+  padding: 6px 14px; border: 1px solid var(--glass-border); border-radius: 20px;
+  background: var(--glass); color: var(--text-secondary); font-size: 12px;
+  cursor: pointer; font-weight: 500; font-family: inherit; backdrop-filter:blur(10px);
+  transition: all 0.2s;
+}
+.cat-tab:hover { border-color: var(--accent); color: var(--text); }
+.cat-tab.active { background: var(--accent-gradient); color: #fff; border-color: transparent; box-shadow: 0 0 12px var(--accent-glow); }
+.skills-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.skill-card {
+  background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border); border-radius: 14px; padding: 16px 18px;
+  cursor: default; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.skill-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); border-color: var(--glass-border-hover); }
+.skill-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.skill-card p { font-size: 12px; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px; }
+.skill-card .tool-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.skill-card .configure-btn { margin-top:8px; padding:4px 10px; font-size:11px; background:var(--glass-elevated); border:1px solid var(--glass-border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-family:inherit; transition:all 0.2s; }
+.skill-card .configure-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ── Command Palette ─────────────────────── */
+#cmd-palette { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:var(--overlay-bg); z-index:1000; align-items:flex-start; justify-content:center; padding-top:20vh; }
+#cmd-palette.open { display:flex; }
+#cmd-palette-box {
+  width:520px; max-width:90vw;
+  background:var(--glass-elevated); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px);
+  border:1px solid var(--glass-border); border-radius:16px; overflow:hidden;
+  box-shadow:0 24px 64px rgba(0,0,0,0.4);
+}
+#cmd-palette-input { width:100%; padding:16px 20px; border:none; border-bottom:1px solid var(--glass-border); background:transparent; color:var(--text); font-size:15px; outline:none; font-family:inherit; }
+#cmd-palette-results { max-height:300px; overflow-y:auto; }
+.cmd-item { padding:12px 20px; cursor:pointer; display:flex; align-items:center; gap:12px; font-size:var(--base-fs); color:var(--text-secondary); transition:all 0.15s; }
+.cmd-item:hover, .cmd-item.selected { background:var(--accent-bg); color:var(--accent); }
+.cmd-item .cmd-icon { font-size:16px; width:24px; text-align:center; }
+.cmd-item .cmd-shortcut { margin-left:auto; font-size:11px; color:var(--text-dim); background:var(--glass); padding:3px 8px; border-radius:6px; font-family:'JetBrains Mono',monospace; }
+
+/* ── Shortcuts Panel ─────────────────────── */
+#shortcuts-panel {
+  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  background:var(--glass-elevated); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px);
+  border:1px solid var(--glass-border); border-radius:16px; padding:28px; z-index:1001;
+  min-width:340px; box-shadow:0 24px 64px rgba(0,0,0,0.4);
+}
+#shortcuts-panel.open { display:block; }
+#shortcuts-panel h3 { margin-bottom:14px; font-size:16px; }
+.shortcut-row { display:flex; justify-content:space-between; padding:7px 0; font-size:13px; }
+.shortcut-row kbd { background:var(--glass); border:1px solid var(--glass-border); padding:3px 9px; border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:11px; }
+
+/* ── Credential Modal ────────────────────── */
+#credential-modal {
+  display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:var(--overlay-bg); z-index:1000; align-items:center; justify-content:center;
+}
+#credential-modal.open { display:flex; }
+#credential-modal-box {
+  width:500px; max-width:90vw;
+  background:var(--glass-elevated); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px);
+  border:1px solid var(--glass-border); border-radius:16px;
+  padding:28px; box-shadow:0 24px 64px rgba(0,0,0,0.4);
+}
+#credential-modal-box h3 { font-size:16px; margin-bottom:4px; }
+#credential-modal-box .modal-desc { font-size:12px; color:var(--text-secondary); margin-bottom:16px; }
+.cred-field { display:flex; gap:8px; align-items:flex-end; margin-bottom:12px; }
+.cred-field .form-group { flex:1; margin-bottom:0; }
+.cred-field .verify-status { font-size:14px; padding:6px; }
+#credential-modal-box .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+
+/* ── Settings Tabbed Layout ──────────────── */
+.settings-layout { display:flex; gap:20px; min-height:100%; }
+.settings-tabs { width:180px; flex-shrink:0; display:flex; flex-direction:column; gap:4px; position:sticky; top:0; }
+.settings-tab {
+  padding:10px 14px; border-radius:12px; border:none; background:none;
+  color:var(--text-secondary); font-size:13px; cursor:pointer; text-align:left;
+  font-family:inherit; transition:all 0.2s;
+}
+.settings-tab:hover { background:var(--glass); color:var(--text); }
+.settings-tab.active { background:var(--accent-gradient); color:#fff; font-weight:600; box-shadow:0 0 16px var(--accent-glow); }
+.settings-content { flex:1; min-width:0; }
+.settings-section { display:none; }
+.settings-section.active { display:block; animation:fadeInUp 0.25s ease-out; }
+
+/* ── Appearance Settings ─────────────────── */
+.accent-swatches { display:flex; gap:8px; margin-top:6px; }
+.accent-swatch {
+  width:32px; height:32px; border-radius:10px; cursor:pointer; border:2px solid transparent;
+  transition:all 0.2s; position:relative;
+}
+.accent-swatch:hover { transform:scale(1.1); }
+.accent-swatch.active { border-color:var(--text); box-shadow:0 0 12px var(--accent-glow); }
+.accent-swatch[data-color="violet"] { background:linear-gradient(135deg,#8b5cf6,#6366f1); }
+.accent-swatch[data-color="cyan"] { background:linear-gradient(135deg,#06b6d4,#0ea5e9); }
+.accent-swatch[data-color="emerald"] { background:linear-gradient(135deg,#10b981,#34d399); }
+.accent-swatch[data-color="amber"] { background:linear-gradient(135deg,#f59e0b,#fbbf24); }
+.accent-swatch[data-color="rose"] { background:linear-gradient(135deg,#f43f5e,#fb7185); }
+
+/* ── Range Slider ────────────────────────── */
+.range-group { margin-bottom:14px; }
+.range-group label { display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary); margin-bottom:6px; font-weight:500; }
+.range-group input[type=range] {
+  width:100%; height:4px; -webkit-appearance:none; appearance:none;
+  background:var(--glass-border); border-radius:2px; outline:none;
+}
+.range-group input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+  background:var(--accent); cursor:pointer; box-shadow:0 0 8px var(--accent-glow);
+}
+
+/* ── Theme Toggle ────────────────────────── */
+.theme-toggle { cursor:pointer; background:none; border:none; font-size:16px; padding:4px 8px; border-radius:8px; color:var(--text-secondary); transition:all 0.2s; }
+.theme-toggle:hover { background:var(--glass-elevated); color:var(--text); }
+
+/* ── Density ─────────────────────────────── */
+[data-density="compact"] .msg { padding:8px 12px; }
+[data-density="compact"] #chat-messages { gap:6px; }
+[data-density="compact"] .card { padding:14px 18px; margin-bottom:12px; }
+
+/* ── Responsive ──────────────────────────── */
+@media(max-width:768px) {
+  #sidebar { width:60px; } #sidebar .logo h1, #sidebar .logo span, #sidebar nav button span:not(.icon), .nav-label { display:none; }
+  .msg { max-width:90%; } .card-row, .form-row, .form-row-3 { grid-template-columns:1fr; }
+  .skills-grid { grid-template-columns:1fr; } #cmd-palette-box { width:95vw; }
+  .settings-layout { flex-direction:column; } .settings-tabs { width:100%; flex-direction:row; overflow-x:auto; position:static; }
+}
+@media(max-width:375px) { .page-body { padding:14px; } .card { padding:14px 16px; } }
 </style>
 </head>
 <body>
+
+<div class="bg-mesh"><div class="bg-orb"></div></div>
 
 <!-- Sidebar -->
 <div id="sidebar">
@@ -127,13 +591,18 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <button onclick="showPage('skills',this)"><span class="icon">🧩</span><span>Skills</span></button>
     <button onclick="showPage('security',this)"><span class="icon">🛡️</span><span>Security</span></button>
     <div class="nav-separator"></div>
+    <div class="nav-label">Agents</div>
+    <button onclick="showPage('agents',this)"><span class="icon">🤖</span><span>Agents</span></button>
+    <button onclick="showPage('persona',this)"><span class="icon">🎭</span><span>Persona</span></button>
+    <div class="nav-separator"></div>
     <div class="nav-label">Monitor</div>
     <button onclick="showPage('sessions',this)"><span class="icon">💾</span><span>Sessions</span></button>
+    <button onclick="showPage('analytics',this)"><span class="icon">📊</span><span>Analytics</span></button>
     <button onclick="showPage('scheduler',this)"><span class="icon">⏰</span><span>Scheduler</span></button>
   </nav>
   <div class="status-bar">
-    <span class="dot" id="ws-dot"></span>
-    <span id="ws-label">Connecting...</span>
+    <span><span class="dot" id="ws-dot"></span><span id="ws-label">Connecting...</span></span>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" id="theme-btn">🌙</button>
   </div>
 </div>
 
@@ -142,16 +611,28 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
   <!-- Chat Page -->
   <div class="page active" id="page-chat">
+    <div id="voice-chat-bar">
+      <span class="vc-indicator"></span>
+      <span>Voice Chat active — responses will be spoken aloud</span>
+      <button onclick="toggleVoiceChatMode()">End Voice Chat</button>
+    </div>
     <div id="chat-messages"></div>
+    <div id="chat-attachments"></div>
     <div id="chat-input-area">
-      <textarea id="chat-input" placeholder="Message SteelClaw..." rows="1"></textarea>
+      <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Push to talk (single message)">🎙</button>
+      <button class="voice-btn" id="voice-chat-btn" onclick="openVoicePanel()" title="Voice Chat mode (continuous)">🎧</button>
+      <button class="attach-btn" id="attach-btn" onclick="document.getElementById('file-upload').click()" title="Attach files (images, documents, audio)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+      </button>
+      <input type="file" id="file-upload" multiple accept="image/*,application/pdf,text/*,audio/*,.csv,.json,.md,.xml" style="display:none" onchange="handleFileSelect(this.files)">
+      <textarea id="chat-input" placeholder="Message SteelClaw... (Ctrl+K for commands)" rows="1"></textarea>
       <button id="chat-send" disabled>Send</button>
     </div>
   </div>
 
   <!-- Settings Page -->
   <div class="page" id="page-settings">
-    <div class="page-header"><div><h2>Settings</h2><p>LLM, server, database, voice, and skill configuration</p></div></div>
+    <div class="page-header"><div><h2>Settings</h2><p>Appearance, voice, agent, tools, and server configuration</p></div></div>
     <div class="page-body" id="settings-body"></div>
   </div>
 
@@ -182,12 +663,78 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div class="page-body" id="security-body"></div>
   </div>
 
+  <!-- Agents Page -->
+  <div class="page" id="page-agents">
+    <div class="page-header"><div><h2>Agents</h2><p>Create, manage, and configure multiple AI agents</p></div></div>
+    <div class="page-body" id="agents-body"></div>
+  </div>
+
+  <!-- Persona Page -->
+  <div class="page" id="page-persona">
+    <div class="page-header"><div><h2>Persona</h2><p>Configure agent personality, tone, and behavior</p></div></div>
+    <div class="page-body" id="persona-body"></div>
+  </div>
+
+  <!-- Analytics Page -->
+  <div class="page" id="page-analytics">
+    <div class="page-header">
+      <div><h2>Analytics</h2><p>Token usage, costs, and usage patterns</p></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="analytics-range" onchange="loaders.analytics()" style="padding:7px 12px;border:1px solid var(--glass-border);border-radius:10px;background:var(--input-bg);color:var(--text);font-size:12px;font-family:inherit;backdrop-filter:blur(10px)">
+          <option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV()">Export CSV</button>
+      </div>
+    </div>
+    <div class="page-body" id="analytics-body"></div>
+  </div>
+
   <!-- Scheduler Page -->
   <div class="page" id="page-scheduler">
     <div class="page-header"><div><h2>Scheduler</h2><p>Background jobs, reminders, and scheduler configuration</p></div></div>
     <div class="page-body" id="scheduler-body"></div>
   </div>
 
+</div>
+
+<!-- Voice Chat Panel -->
+<div id="voice-panel">
+  <button class="close-voice" onclick="closeVoicePanel()">Close</button>
+  <div class="orb" onclick="toggleVoicePanelRecording()" style="cursor:pointer" title="Click to start/stop recording"></div>
+  <canvas id="voice-canvas" width="200" height="60"></canvas>
+  <div class="transcript" id="voice-transcript">Tap orb to start speaking...</div>
+</div>
+
+<!-- Command Palette -->
+<div id="cmd-palette" onclick="if(event.target===this)closePalette()">
+  <div id="cmd-palette-box">
+    <input id="cmd-palette-input" placeholder="Type a command..." oninput="filterCommands()" onkeydown="handlePaletteKey(event)">
+    <div id="cmd-palette-results"></div>
+  </div>
+</div>
+
+<!-- Keyboard Shortcuts -->
+<div id="shortcuts-panel">
+  <h3>Keyboard Shortcuts</h3>
+  <div class="shortcut-row"><span>Command palette</span><kbd>Ctrl+K</kbd></div>
+  <div class="shortcut-row"><span>Send message</span><kbd>Enter</kbd></div>
+  <div class="shortcut-row"><span>New line in chat</span><kbd>Shift+Enter</kbd></div>
+  <div class="shortcut-row"><span>Toggle theme</span><kbd>Ctrl+Shift+T</kbd></div>
+  <div class="shortcut-row"><span>Show shortcuts</span><kbd>?</kbd></div>
+  <div style="margin-top:14px;text-align:right"><button class="btn btn-outline btn-sm" onclick="document.getElementById('shortcuts-panel').classList.remove('open')">Close</button></div>
+</div>
+
+<!-- Credential Modal -->
+<div id="credential-modal" onclick="if(event.target===this)closeCredentialModal()">
+  <div id="credential-modal-box">
+    <h3 id="cred-modal-title">Configure Skill</h3>
+    <div class="modal-desc" id="cred-modal-desc"></div>
+    <div id="cred-modal-fields"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-sm" onclick="closeCredentialModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="cred-modal-save" onclick="saveCredentials()">Save</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -217,6 +764,40 @@ async function api(path, opts={}) {
 
 function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
+// ── Preferences (localStorage) ───────────────────────────
+function loadPrefs() {
+  const theme = localStorage.getItem('steelclaw-theme') || 'dark';
+  const accent = localStorage.getItem('steelclaw-accent') || 'violet';
+  const fontSize = localStorage.getItem('steelclaw-fontsize') || 'medium';
+  const density = localStorage.getItem('steelclaw-density') || 'comfortable';
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.accent = accent;
+  document.documentElement.dataset.fontsize = fontSize;
+  document.documentElement.dataset.density = density;
+  document.getElementById('theme-btn').textContent = theme === 'dark' ? '🌙' : '☀️';
+}
+function toggleTheme() {
+  const current = document.documentElement.dataset.theme;
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('steelclaw-theme', next);
+  document.getElementById('theme-btn').textContent = next === 'dark' ? '🌙' : '☀️';
+}
+function setAccent(color) {
+  document.documentElement.dataset.accent = color;
+  localStorage.setItem('steelclaw-accent', color);
+  document.querySelectorAll('.accent-swatch').forEach(s => s.classList.toggle('active', s.dataset.color === color));
+}
+function setFontSize(size) {
+  document.documentElement.dataset.fontsize = size;
+  localStorage.setItem('steelclaw-fontsize', size);
+}
+function setDensity(d) {
+  document.documentElement.dataset.density = d;
+  localStorage.setItem('steelclaw-density', d);
+}
+loadPrefs();
+
 // ── WebSocket Chat ─────────────────────────────────────────
 const msgEl = document.getElementById('chat-messages');
 const inpEl = document.getElementById('chat-input');
@@ -231,139 +812,972 @@ function wsConnect() {
   ws.onopen = () => { wsDot.className='dot green'; wsLabel.textContent='Connected'; sendBtn.disabled=false; };
   ws.onclose = () => { wsDot.className='dot red'; wsLabel.textContent='Disconnected'; sendBtn.disabled=true; setTimeout(wsConnect,3000); };
   ws.onerror = () => ws.close();
-  ws.onmessage = (e) => { removeTyping(); const d=JSON.parse(e.data); addMsg('assistant',d.content||JSON.stringify(d)); };
+  ws.onmessage = (e) => { removeTyping(); const d=JSON.parse(e.data); const txt=d.content||JSON.stringify(d); addMsg('assistant',txt); if(voiceChatMode) speakResponse(txt); };
 }
 
-function addMsg(role, content) {
+function addMsg(role, content, attachments) {
   const d = document.createElement('div'); d.className='msg '+role;
   const l = document.createElement('div'); l.className='lbl'; l.textContent = role==='user' ? 'You' : 'SteelClaw';
-  const t = document.createElement('div'); t.textContent = content;
-  d.appendChild(l); d.appendChild(t); msgEl.appendChild(d);
+
+  // Render attachments if present
+  if (attachments && attachments.length) {
+    const attDiv = document.createElement('div'); attDiv.className = 'msg-attachments';
+    for (const att of attachments) {
+      if (att.category === 'image' && att.localPreviewUrl) {
+        const img = document.createElement('img');
+        img.src = att.localPreviewUrl;
+        img.alt = att.filename;
+        img.title = att.filename;
+        img.onclick = () => window.open(img.src, '_blank');
+        attDiv.appendChild(img);
+      } else {
+        const icons = { document: '📄', audio: '🎵', image: '🖼️' };
+        const chip = document.createElement('span'); chip.className = 'msg-attachment-file';
+        chip.textContent = `${icons[att.category] || '📎'} ${att.filename}`;
+        attDiv.appendChild(chip);
+      }
+    }
+    d.appendChild(l); d.appendChild(attDiv);
+  } else {
+    d.appendChild(l);
+  }
+
+  const t = document.createElement('div');
+  if (role === 'assistant') {
+    t.innerHTML = renderMarkdown(content);
+  } else {
+    t.textContent = content;
+  }
+  const actions = document.createElement('div'); actions.className='msg-actions';
+  const copyBtn = document.createElement('button'); copyBtn.textContent='📋'; copyBtn.title='Copy';
+  copyBtn.onclick = () => { navigator.clipboard.writeText(content).then(()=>toast('Copied!')); };
+  actions.appendChild(copyBtn);
+  if (role === 'assistant') {
+    ['👍','👎'].forEach(emoji => {
+      const rb = document.createElement('button'); rb.textContent=emoji; rb.title='React';
+      rb.onclick = () => { rb.style.opacity = rb.style.opacity==='0.4'?'1':'0.4'; };
+      actions.appendChild(rb);
+    });
+  }
+  d.appendChild(t); d.appendChild(actions); msgEl.appendChild(d);
   msgEl.scrollTop = msgEl.scrollHeight;
 }
 
 function showTyping() {
   if (document.querySelector('.typing-indicator')) return;
-  const d = document.createElement('div'); d.className='typing-indicator'; d.textContent='SteelClaw is thinking...';
+  const d = document.createElement('div'); d.className='typing-indicator';
+  d.innerHTML = 'SteelClaw is thinking <span class="typing-dots"><span></span><span></span><span></span></span>';
   msgEl.appendChild(d); msgEl.scrollTop = msgEl.scrollHeight;
 }
 function removeTyping() { document.querySelector('.typing-indicator')?.remove(); }
 
 function sendMsg() {
-  const t = inpEl.value.trim(); if (!t || !ws || ws.readyState !== 1) return;
-  addMsg('user', t); ws.send(JSON.stringify({content:t})); inpEl.value=''; inpEl.style.height='auto'; showTyping();
+  const t = inpEl.value.trim();
+  const readyAttachments = (typeof pendingAttachments !== 'undefined') ? pendingAttachments.filter(a => !a.uploading) : [];
+  const stillUploading = (typeof pendingAttachments !== 'undefined') && pendingAttachments.some(a => a.uploading);
+
+  if (stillUploading) { toast('Files still uploading...', 'error'); return; }
+  if (!t && !readyAttachments.length) return;
+  if (!ws || ws.readyState !== 1) return;
+
+  // Build display message with attachment indicators
+  let displayParts = [];
+  if (readyAttachments.length) {
+    const icons = { image: '🖼️', document: '📄', audio: '🎵' };
+    displayParts.push(readyAttachments.map(a => `${icons[a.category] || '📎'} ${a.filename}`).join(', '));
+  }
+  if (t) displayParts.push(t);
+
+  addMsg('user', displayParts.join('\n'), readyAttachments);
+
+  // Send via WebSocket with attachment IDs
+  const payload = { content: t };
+  if (readyAttachments.length) {
+    payload.attachments = readyAttachments.map(a => ({ id: a.id, filename: a.filename, category: a.category }));
+  }
+  ws.send(JSON.stringify(payload));
+
+  // Clear state
+  inpEl.value = '';
+  inpEl.style.height = 'auto';
+  if (typeof pendingAttachments !== 'undefined') {
+    pendingAttachments.forEach(a => { if (a.localPreviewUrl) URL.revokeObjectURL(a.localPreviewUrl); });
+    pendingAttachments = [];
+    renderAttachments();
+  }
+  showTyping();
 }
 
 sendBtn.onclick = sendMsg;
 inpEl.onkeydown = (e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } };
-inpEl.oninput = () => { inpEl.style.height='auto'; inpEl.style.height=Math.min(inpEl.scrollHeight,100)+'px'; };
+inpEl.oninput = () => { inpEl.style.height='auto'; inpEl.style.height=Math.min(inpEl.scrollHeight,120)+'px'; };
 wsConnect();
 
-// ── Settings Page ──────────────────────────────────────────
+// ── File Attachments ─────────────────────────────────────
+let pendingAttachments = []; // {id, filename, mime, category, preview, uploading}
+
+function handleFileSelect(files) {
+  if (!files || !files.length) return;
+  for (const file of files) { uploadFile(file); }
+  document.getElementById('file-upload').value = '';
+}
+
+async function uploadFile(file) {
+  const tempId = 'tmp-' + Math.random().toString(36).slice(2,8);
+  const att = { id: tempId, filename: file.name, mime: file.type, category: 'unknown', preview: '', uploading: true };
+
+  // Classify locally for icon display
+  if (file.type.startsWith('image/')) att.category = 'image';
+  else if (file.type.startsWith('audio/')) att.category = 'audio';
+  else att.category = 'document';
+
+  // Add local image preview for images
+  if (att.category === 'image') {
+    att.localPreviewUrl = URL.createObjectURL(file);
+  }
+
+  pendingAttachments.push(att);
+  renderAttachments();
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const resp = await fetch('/api/files/upload', { method: 'POST', body: form });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      toast(err.detail || 'Upload failed', 'error');
+      pendingAttachments = pendingAttachments.filter(a => a.id !== tempId);
+      renderAttachments();
+      return;
+    }
+    const data = await resp.json();
+    // Replace temp entry with server data
+    const idx = pendingAttachments.findIndex(a => a.id === tempId);
+    if (idx !== -1) {
+      pendingAttachments[idx] = { ...pendingAttachments[idx], ...data, uploading: false };
+    }
+    renderAttachments();
+  } catch(e) {
+    toast('Upload error: ' + e.message, 'error');
+    pendingAttachments = pendingAttachments.filter(a => a.id !== tempId);
+    renderAttachments();
+  }
+}
+
+function removeAttachment(id) {
+  const att = pendingAttachments.find(a => a.id === id);
+  if (att && att.localPreviewUrl) URL.revokeObjectURL(att.localPreviewUrl);
+  pendingAttachments = pendingAttachments.filter(a => a.id !== id);
+  renderAttachments();
+}
+
+function renderAttachments() {
+  const container = document.getElementById('chat-attachments');
+  if (!pendingAttachments.length) {
+    container.classList.remove('has-files');
+    container.innerHTML = '';
+    return;
+  }
+  container.classList.add('has-files');
+  const icons = { image: '🖼️', document: '📄', audio: '🎵', unknown: '📎' };
+  container.innerHTML = pendingAttachments.map(a => `
+    <div class="attachment-chip${a.uploading ? ' uploading' : ''}">
+      <span class="att-icon">${icons[a.category] || '📎'}</span>
+      <span class="att-name">${esc(a.filename)}</span>
+      <button class="att-remove" onclick="removeAttachment('${a.id}')" title="Remove">&times;</button>
+    </div>
+  `).join('');
+}
+
+// Drag and drop support on the chat page
+const chatPage = document.getElementById('page-chat');
+let dragCounter = 0;
+
+chatPage.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragCounter++;
+  chatPage.classList.add('drag-over');
+});
+
+chatPage.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter <= 0) { dragCounter = 0; chatPage.classList.remove('drag-over'); }
+});
+
+chatPage.addEventListener('dragover', (e) => { e.preventDefault(); });
+
+chatPage.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  chatPage.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) handleFileSelect(e.dataTransfer.files);
+});
+
+// Paste images from clipboard
+inpEl.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const files = [];
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  if (files.length) { handleFileSelect(files); }
+});
+
+// sendMsg already handles attachments (defined above)
+
+// ── Markdown Rendering ────────────────────────────────────
+function renderMarkdown(text) {
+  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const id = 'cb-' + Math.random().toString(36).slice(2,8);
+    return `<pre><code class="lang-${lang||'text'}">${esc(code.trim())}</code><button class="copy-code-btn" onclick="copyCode('${id}')">Copy</button><span id="${id}" style="display:none">${esc(code.trim())}</span></pre>`;
+  });
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--accent)">$1</a>');
+  text = text.replace(/\n/g, '<br>');
+  return text;
+}
+
+function copyCode(id) {
+  const el = document.getElementById(id);
+  if (el) navigator.clipboard.writeText(el.textContent).then(()=>toast('Copied!'));
+}
+
+// ── Command Palette ───────────────────────────────────────
+const cmdCommands = [
+  {icon:'💬',name:'Go to Chat',action:()=>showPage('chat',document.querySelector('#sidebar nav button'))},
+  {icon:'⚙️',name:'Open Settings',action:()=>showPage('settings',null)},
+  {icon:'🔌',name:'Connectors',action:()=>showPage('connectors',null)},
+  {icon:'🧩',name:'Skills',action:()=>showPage('skills',null)},
+  {icon:'🛡️',name:'Security',action:()=>showPage('security',null)},
+  {icon:'🤖',name:'Agents',action:()=>showPage('agents',null)},
+  {icon:'🎭',name:'Persona',action:()=>showPage('persona',null)},
+  {icon:'💾',name:'Sessions',action:()=>showPage('sessions',null)},
+  {icon:'📊',name:'Analytics',action:()=>showPage('analytics',null)},
+  {icon:'⏰',name:'Scheduler',action:()=>showPage('scheduler',null)},
+  {icon:'🔄',name:'Reload Skills',action:()=>{reloadSkills();closePalette();}},
+  {icon:'🌓',name:'Toggle Theme',action:()=>{toggleTheme();closePalette();}},
+];
+let cmdSelected = 0;
+
+function openPalette() {
+  document.getElementById('cmd-palette').classList.add('open');
+  const input = document.getElementById('cmd-palette-input');
+  input.value = ''; input.focus();
+  cmdSelected = 0;
+  filterCommands();
+}
+function closePalette() { document.getElementById('cmd-palette').classList.remove('open'); }
+
+function filterCommands() {
+  const q = document.getElementById('cmd-palette-input').value.toLowerCase();
+  const results = document.getElementById('cmd-palette-results');
+  const filtered = cmdCommands.filter(c => c.name.toLowerCase().includes(q));
+  cmdSelected = 0;
+  results.innerHTML = filtered.map((c,i) =>
+    `<div class="cmd-item${i===0?' selected':''}" onclick="cmdCommands.find(x=>x.name==='${c.name}').action();closePalette()" onmouseenter="cmdSelected=${i};highlightCmd()">
+      <span class="cmd-icon">${c.icon}</span>${c.name}
+    </div>`
+  ).join('');
+}
+
+function highlightCmd() {
+  const items = document.querySelectorAll('.cmd-item');
+  items.forEach((it,i) => it.classList.toggle('selected', i===cmdSelected));
+}
+
+function handlePaletteKey(e) {
+  const items = document.querySelectorAll('.cmd-item');
+  if (e.key==='ArrowDown') { e.preventDefault(); cmdSelected=Math.min(cmdSelected+1,items.length-1); highlightCmd(); }
+  else if (e.key==='ArrowUp') { e.preventDefault(); cmdSelected=Math.max(cmdSelected-1,0); highlightCmd(); }
+  else if (e.key==='Enter') { e.preventDefault(); items[cmdSelected]?.click(); }
+  else if (e.key==='Escape') { closePalette(); }
+}
+
+// ── Voice Mode ────────────────────────────────────────────
+let voiceRecording = false;
+let mediaRecorder = null;
+let voiceChatMode = false;
+let ttsAudio = null;
+let voiceAudioCtx = null;
+let voiceAnalyser = null;
+let voiceStream = null;
+let silenceTimer = null;
+let voiceAutoSubmit = true;
+let silenceThreshold = 500;
+let playbackSpeed = 1.0;
+
+function loadVoicePrefs() {
+  voiceAutoSubmit = localStorage.getItem('steelclaw-voice-autosubmit') !== 'false';
+  silenceThreshold = parseInt(localStorage.getItem('steelclaw-silence-threshold')) || 500;
+  playbackSpeed = parseFloat(localStorage.getItem('steelclaw-playback-speed')) || 1.0;
+}
+loadVoicePrefs();
+
+async function checkVoiceEnabled() {
+  try {
+    const status = await fetch('/api/voice/status').then(r=>r.json());
+    if (!status.enabled) {
+      toast('Voice mode is disabled. Enable it in Settings.', 'error');
+      return false;
+    }
+    return true;
+  } catch(e) { return true; }
+}
+
+async function toggleVoice() {
+  const btn = document.getElementById('voice-btn');
+  if (voiceRecording) {
+    voiceRecording = false;
+    btn.classList.remove('recording');
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    return;
+  }
+  if (!(await checkVoiceEnabled())) return;
+  await startRecording(false);
+}
+
+async function startRecording(continuous) {
+  const btn = document.getElementById('voice-btn');
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({audio:true});
+    mediaRecorder = new MediaRecorder(voiceStream);
+    const chunks = [];
+
+    // Set up analyser for silence detection and visualization
+    if (!voiceAudioCtx) voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = voiceAudioCtx.createMediaStreamSource(voiceStream);
+    voiceAnalyser = voiceAudioCtx.createAnalyser();
+    voiceAnalyser.fftSize = 256;
+    source.connect(voiceAnalyser);
+
+    if (voiceChatMode) drawVoiceWaveform();
+    if (voiceChatMode && voiceAutoSubmit) startSilenceDetection();
+
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = async () => {
+      stopSilenceDetection();
+      voiceStream.getTracks().forEach(t=>t.stop());
+      voiceStream = null;
+      const blob = new Blob(chunks, {type:'audio/webm'});
+      const form = new FormData();
+      form.append('file', blob, 'recording.webm');
+      try {
+        const resp = await fetch('/api/voice/transcribe', {method:'POST', body:form});
+        const data = await resp.json();
+        if (data.text) {
+          if (voiceChatMode) document.getElementById('voice-transcript').textContent = data.text;
+          addMsg('user', data.text);
+          ws.send(JSON.stringify({content:data.text}));
+          showTyping();
+        } else if (data.error) {
+          toast('Transcription: '+data.error, 'error');
+        }
+      } catch(e) { toast('Voice error: '+e.message, 'error'); }
+    };
+    mediaRecorder.start();
+    voiceRecording = true;
+    btn.classList.add('recording');
+    if (voiceChatMode) document.getElementById('voice-panel').className = 'open listening';
+    if (!continuous) toast('Recording... click mic again to stop');
+  } catch(e) { toast('Microphone access denied', 'error'); }
+}
+
+function startSilenceDetection() {
+  if (!voiceAnalyser) return;
+  const bufferLength = voiceAnalyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  let silentSince = null;
+
+  function check() {
+    if (!voiceRecording || !voiceAnalyser) return;
+    voiceAnalyser.getByteFrequencyData(dataArray);
+    const avg = dataArray.reduce((a,b)=>a+b,0) / bufferLength;
+    if (avg < 10) {
+      if (!silentSince) silentSince = Date.now();
+      else if (Date.now() - silentSince > silenceThreshold) {
+        // Auto-submit
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          voiceRecording = false;
+          document.getElementById('voice-btn').classList.remove('recording');
+          mediaRecorder.stop();
+        }
+        return;
+      }
+    } else {
+      silentSince = null;
+    }
+    silenceTimer = requestAnimationFrame(check);
+  }
+  check();
+}
+
+function stopSilenceDetection() {
+  if (silenceTimer) { cancelAnimationFrame(silenceTimer); silenceTimer = null; }
+}
+
+function drawVoiceWaveform() {
+  const canvas = document.getElementById('voice-canvas');
+  if (!canvas || !voiceAnalyser) return;
+  const ctx = canvas.getContext('2d');
+  const bufferLength = voiceAnalyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+
+  function draw() {
+    if (!voiceRecording && !voiceChatMode) return;
+    requestAnimationFrame(draw);
+    voiceAnalyser.getByteTimeDomainData(dataArray);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = 2;
+    const style = getComputedStyle(document.documentElement);
+    ctx.strokeStyle = style.getPropertyValue('--accent').trim() || '#8b5cf6';
+    ctx.beginPath();
+    const sliceWidth = canvas.width / bufferLength;
+    let x = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const v = dataArray[i] / 128.0;
+      const y = v * canvas.height / 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      x += sliceWidth;
+    }
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
+  }
+  draw();
+}
+
+function toggleVoicePanelRecording() {
+  if (!voiceChatMode) return;
+  if (voiceRecording) {
+    voiceRecording = false;
+    document.getElementById('voice-btn').classList.remove('recording');
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  } else {
+    startRecording(true);
+  }
+}
+
+// ── Voice Chat Panel ─────────────────────────────────────
+function openVoicePanel() {
+  if (voiceChatMode) { closeVoicePanel(); return; }
+  checkVoiceEnabled().then(ok => {
+    if (!ok) return;
+    voiceChatMode = true;
+    document.getElementById('voice-panel').classList.add('open');
+    document.getElementById('voice-chat-bar').classList.add('active');
+    document.getElementById('voice-chat-btn').classList.add('voice-chat-active');
+    document.getElementById('voice-transcript').textContent = 'Tap mic to start speaking...';
+    toast('Voice Chat active');
+  });
+}
+
+function closeVoicePanel() {
+  voiceChatMode = false;
+  document.getElementById('voice-panel').classList.remove('open','listening','speaking');
+  document.getElementById('voice-chat-bar').classList.remove('active');
+  document.getElementById('voice-chat-btn').classList.remove('voice-chat-active');
+  if (voiceRecording) {
+    voiceRecording = false;
+    document.getElementById('voice-btn').classList.remove('recording');
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  }
+  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
+  stopSilenceDetection();
+  toast('Voice Chat ended');
+}
+
+async function toggleVoiceChatMode() {
+  if (voiceChatMode) { closeVoicePanel(); return; }
+  openVoicePanel();
+}
+
+async function speakResponse(text) {
+  if (!voiceChatMode) return;
+  const panel = document.getElementById('voice-panel');
+  panel.className = 'open speaking';
+  try {
+    // Try streaming first
+    const resp = await fetch('/api/voice/synthesize-stream', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: text.substring(0, 4000)}),
+    });
+    if (!resp.ok) {
+      // Fall back to non-streaming
+      const resp2 = await fetch('/api/voice/synthesize', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: text.substring(0, 4000)}),
+      });
+      if (!resp2.ok) { panel.className = 'open'; return; }
+      const blob = await resp2.blob();
+      const url = URL.createObjectURL(blob);
+      ttsAudio = new Audio(url);
+      ttsAudio.playbackRate = playbackSpeed;
+      ttsAudio.onended = () => {
+        URL.revokeObjectURL(url);
+        ttsAudio = null;
+        panel.className = 'open';
+        if (voiceChatMode && !voiceRecording) { startRecording(true); }
+      };
+      ttsAudio.play();
+      return;
+    }
+    // Progressive streaming playback — play each chunk as it arrives
+    if (!voiceAudioCtx) voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const reader = resp.body.getReader();
+    let chunkBuffer = new Uint8Array(0);
+    let nextPlayTime = voiceAudioCtx.currentTime;
+    let chunksPlayed = 0;
+    let streamDone = false;
+
+    // MP3 frames start with sync word 0xFFE0+ ; accumulate until we have a decodable segment
+    async function tryDecodeAndPlay(data, isLast) {
+      try {
+        const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        const audioBuffer = await voiceAudioCtx.decodeAudioData(ab);
+        const source = voiceAudioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.playbackRate.value = playbackSpeed;
+        source.connect(voiceAudioCtx.destination);
+        // Schedule this chunk right after the previous one ends
+        if (nextPlayTime < voiceAudioCtx.currentTime) nextPlayTime = voiceAudioCtx.currentTime;
+        source.start(nextPlayTime);
+        nextPlayTime += audioBuffer.duration / playbackSpeed;
+        chunksPlayed++;
+        if (isLast) {
+          source.onended = () => {
+            panel.className = 'open';
+            if (voiceChatMode && !voiceRecording) { startRecording(true); }
+          };
+        }
+        return true;
+      } catch(e) { return false; }
+    }
+
+    while (!streamDone) {
+      const {value, done: d} = await reader.read();
+      streamDone = d;
+      if (value) {
+        // Append to buffer
+        const merged = new Uint8Array(chunkBuffer.length + value.length);
+        merged.set(chunkBuffer); merged.set(value, chunkBuffer.length);
+        chunkBuffer = merged;
+        // Try to decode what we have so far (each TTS chunk is a complete MP3 segment)
+        if (await tryDecodeAndPlay(chunkBuffer, false)) {
+          chunkBuffer = new Uint8Array(0); // successfully played, clear buffer
+        }
+      }
+    }
+    // Play any remaining buffered data
+    if (chunkBuffer.length > 0) {
+      await tryDecodeAndPlay(chunkBuffer, true);
+    } else if (chunksPlayed > 0) {
+      // Set onended on last source — schedule panel reset after last chunk finishes
+      const remaining = nextPlayTime - voiceAudioCtx.currentTime;
+      setTimeout(() => {
+        panel.className = 'open';
+        if (voiceChatMode && !voiceRecording) { startRecording(true); }
+      }, Math.max(0, remaining * 1000));
+    }
+  } catch(e) {
+    panel.className = 'open';
+    // TTS failed silently
+  }
+}
+
+// ── Global Keyboard Shortcuts ─────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    if (document.getElementById('cmd-palette').classList.contains('open')) closePalette();
+    else openPalette();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'T') {
+    e.preventDefault(); toggleTheme();
+  }
+  if (e.key === '?' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+    document.getElementById('shortcuts-panel').classList.toggle('open');
+  }
+  if (e.key === 'Escape') {
+    closePalette();
+    document.getElementById('shortcuts-panel').classList.remove('open');
+    closeCredentialModal();
+  }
+});
+
+// ── Credential Modal ──────────────────────────────────────
+let _credSkillName = '';
+async function openCredentialModal(skillName, description, requiredCreds) {
+  _credSkillName = skillName;
+  document.getElementById('cred-modal-title').textContent = 'Configure: ' + skillName;
+  document.getElementById('cred-modal-desc').textContent = description || 'Set credentials for this skill.';
+  const fieldsEl = document.getElementById('cred-modal-fields');
+  const creds = Array.isArray(requiredCreds) ? requiredCreds : [];
+  if (!creds.length) {
+    fieldsEl.innerHTML = '<p style="color:var(--text-secondary);font-size:13px">No credentials required for this skill.</p>';
+  } else {
+    // Load existing credentials
+    let savedMap = {};
+    try {
+      const resp = await fetch('/api/skills/'+encodeURIComponent(skillName)+'/credentials');
+      if (resp.ok) {
+        const data = await resp.json();
+        const savedList = Array.isArray(data.credentials) ? data.credentials : [];
+        for (const sc of savedList) { savedMap[sc.key] = sc; }
+      }
+    } catch(e) { console.warn('Could not load saved credentials for', skillName, e); }
+    fieldsEl.innerHTML = creds.map(c => {
+      const key = (typeof c === 'string') ? c : (c.key || '');
+      const label = (typeof c === 'string') ? c : (c.label || c.key || '');
+      const fieldType = (typeof c === 'string') ? 'password' : (c.type || 'password');
+      const saved = savedMap[key];
+      const hasValue = saved && saved.is_set;
+      return `
+      <div class="cred-field">
+        <div class="form-group"><label>${esc(label)}</label><input type="${fieldType}" id="cred-${esc(key)}" placeholder="${hasValue ? '(saved) Enter to update' : 'Enter '+esc(label)}" value=""></div>
+        <button class="btn btn-outline btn-sm" onclick="verifyCred('${esc(skillName)}','${esc(key)}')" style="margin-bottom:14px">Verify</button>
+        <span class="verify-status" id="cred-status-${esc(key)}">${hasValue ? '✅' : ''}</span>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('credential-modal').classList.add('open');
+}
+function closeCredentialModal() { document.getElementById('credential-modal').classList.remove('open'); }
+
+async function configureSkill(name) {
+  // Look up skill data from whichever page loaded it
+  let skill = (window._allSkills||[]).find(s=>s.name===name);
+  if (!skill) {
+    // Fetch directly from API if not cached
+    try { skill = await api('/skills/'+encodeURIComponent(name)); } catch(e) {}
+  }
+  if (!skill) { toast('Skill not found','error'); return; }
+  try {
+    await openCredentialModal(skill.name, skill.description||'', skill.required_credentials||[]);
+  } catch(e) {
+    console.error('Failed to open credential modal:', e);
+    toast('Error opening configure dialog', 'error');
+  }
+}
+
+async function verifyCred(skillName, credName) {
+  const val = document.getElementById('cred-'+credName)?.value;
+  const statusEl = document.getElementById('cred-status-'+credName);
+  if (!val) { if (statusEl) statusEl.textContent = '⚠️ Enter a value first'; return; }
+  if (statusEl) statusEl.textContent = '⏳';
+  try {
+    const r = await fetch('/api/skills/'+encodeURIComponent(skillName)+'/verify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({credential: credName, value: val})
+    });
+    const d = await r.json();
+    if (statusEl) statusEl.textContent = d.valid ? '✅' : '❌ ' + (d.message || 'Failed');
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ Network error';
+  }
+}
+
+async function saveCredentials() {
+  const inputs = document.querySelectorAll('#cred-modal-fields input');
+  const creds = {};
+  inputs.forEach(inp => {
+    const name = inp.id.replace('cred-','');
+    if (inp.value) creds[name] = inp.value;
+  });
+  try {
+    const r = await fetch('/api/skills/'+encodeURIComponent(_credSkillName)+'/credentials', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({credentials: creds})
+    });
+    if (!r.ok) { toast('Error saving credentials ('+r.status+')', 'error'); return; }
+    toast('Credentials saved');
+    closeCredentialModal();
+    if (loaders.skills) loaders.skills();
+  } catch(e) { toast('Error saving credentials', 'error'); }
+}
+
+// ── Settings Page (Tabbed) ────────────────────────────────
 const loaders = {};
+let _settingsTab = 'appearance';
+
+function showSettingsTab(tab) {
+  _settingsTab = tab;
+  document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.settings-section').forEach(s => s.classList.toggle('active', s.id === 'stab-'+tab));
+}
 
 loaders.settings = async () => {
   const body = document.getElementById('settings-body');
-  const [cfg, info] = await Promise.all([api('/config'), fetch('/info').then(r=>r.json()).catch(()=>({}))]);
+  const [cfg, info, skillsData] = await Promise.all([api('/config'), fetch('/info').then(r=>r.json()).catch(()=>({})), api('/skills')]);
+  if (!window._allSkills && Array.isArray(skillsData)) window._allSkills = skillsData;
   const llm = cfg.agents?.llm || {};
   const srv = cfg.server || {};
   const db = cfg.database || {};
   const voice = cfg.agents?.voice || {};
   const skills = cfg.agents?.skills || {};
   const gw = cfg.gateway || {};
+  const sec = cfg.security || {};
+
+  const currentAccent = localStorage.getItem('steelclaw-accent') || 'violet';
+  const currentFS = localStorage.getItem('steelclaw-fontsize') || 'medium';
+  const currentDensity = localStorage.getItem('steelclaw-density') || 'comfortable';
+  const currentTheme = localStorage.getItem('steelclaw-theme') || 'dark';
 
   body.innerHTML = `
-    <div class="card">
-      <h3>🤖 LLM Provider</h3>
-      <div class="form-row">
-        <div class="form-group"><label>Model</label><input id="s-model" value="${esc(llm.default_model)}"><div class="hint">e.g. claude-sonnet-4-20250514, gpt-4o, deepseek/deepseek-chat, ollama/llama3</div></div>
-        <div class="form-group"><label>API Key</label><input id="s-apikey" type="password" value="${esc(llm.api_key)}" placeholder="Set via env var or here"></div>
-      </div>
-      <div class="form-row-3">
-        <div class="form-group"><label>Temperature</label><input id="s-temp" type="number" step="0.1" min="0" max="2" value="${llm.temperature??0.7}"></div>
-        <div class="form-group"><label>Max Tokens</label><input id="s-tokens" type="number" value="${llm.max_tokens||4096}"></div>
-        <div class="form-group"><label>Timeout (sec)</label><input id="s-timeout" type="number" value="${llm.timeout||120}"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Max Context Messages</label><input id="s-ctx" type="number" value="${llm.max_context_messages||50}"><div class="hint">History messages included in each LLM call</div></div>
-        <div class="form-group"><label>API Base URL</label><input id="s-apibase" value="${esc(llm.api_base)}" placeholder="Leave empty for default"><div class="hint">For self-hosted models (Ollama, vLLM, etc.)</div></div>
-      </div>
-      <div class="toggle-row"><input type="checkbox" id="s-streaming" ${llm.streaming!==false?'checked':''}><label for="s-streaming">Enable streaming responses</label></div>
-      <div class="form-group"><label>System Prompt</label><textarea id="s-prompt" rows="4">${esc(llm.system_prompt)}</textarea></div>
-      <button class="btn btn-primary" onclick="saveLLM()">Save LLM Settings</button>
+  <div class="settings-layout">
+    <div class="settings-tabs">
+      <button class="settings-tab active" data-tab="appearance" onclick="showSettingsTab('appearance')">Appearance</button>
+      <button class="settings-tab" data-tab="voice" onclick="showSettingsTab('voice')">Voice & Audio</button>
+      <button class="settings-tab" data-tab="agent" onclick="showSettingsTab('agent')">Agent Behavior</button>
+      <button class="settings-tab" data-tab="tools" onclick="showSettingsTab('tools')">Tool Management</button>
+      <button class="settings-tab" data-tab="gateway" onclick="showSettingsTab('gateway')">Gateway</button>
+      <button class="settings-tab" data-tab="database" onclick="showSettingsTab('database')">Database</button>
+      <button class="settings-tab" data-tab="server" onclick="showSettingsTab('server')">Server</button>
+      <button class="settings-tab" data-tab="security" onclick="showSettingsTab('security')">Security</button>
     </div>
+    <div class="settings-content">
 
-    <div class="card-row">
-      <div class="card">
-        <h3>🖥️ Server</h3>
-        <div class="form-row">
-          <div class="form-group"><label>Host</label><input id="s-host" value="${esc(srv.host)||'0.0.0.0'}"></div>
-          <div class="form-group"><label>Port</label><input id="s-port" type="number" value="${srv.port||8000}"></div>
+      <!-- Appearance Tab -->
+      <div class="settings-section active" id="stab-appearance">
+        <div class="card">
+          <h3>Theme</h3>
+          <div class="toggle-row">
+            <label style="font-size:13px;color:var(--text-secondary)">Dark</label>
+            <input type="checkbox" id="s-theme-toggle" ${currentTheme==='light'?'checked':''} onchange="toggleTheme()">
+            <label style="font-size:13px;color:var(--text-secondary)">Light</label>
+          </div>
         </div>
-        <div class="form-group"><label>Log Level</label>
-          <select id="s-loglevel">
-            ${['debug','info','warning','error'].map(l=>`<option${srv.log_level===l?' selected':''}>${l}</option>`).join('')}
-          </select>
+        <div class="card">
+          <h3>Accent Color</h3>
+          <div class="accent-swatches">
+            ${['violet','cyan','emerald','amber','rose'].map(c => `<div class="accent-swatch${c===currentAccent?' active':''}" data-color="${c}" onclick="setAccent('${c}')"></div>`).join('')}
+          </div>
         </div>
-        <button class="btn btn-primary" onclick="saveServer()">Save</button>
-        <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
-      </div>
-
-      <div class="card">
-        <h3>🗄️ Database</h3>
-        <div class="form-group"><label>Database URL</label><input id="s-dburl" value="${esc(db.url)||'sqlite+aiosqlite:///./data/steelclaw.db'}"><div class="hint">SQLite, PostgreSQL, or MySQL async URL</div></div>
-        <div class="toggle-row"><input type="checkbox" id="s-dbecho" ${db.echo?'checked':''}><label for="s-dbecho">Echo SQL queries (debug)</label></div>
-        <button class="btn btn-primary" onclick="saveDatabase()">Save</button>
-        <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
-      </div>
-    </div>
-
-    <div class="card-row">
-      <div class="card">
-        <h3>📡 Gateway</h3>
-        <div class="form-group"><label>Mention Keywords</label><input id="s-gw-keywords" value="${esc((gw.mention_keywords||[]).join(', '))}"><div class="hint">Comma-separated. Bot responds in groups when these appear.</div></div>
-        <div class="toggle-row"><input type="checkbox" id="s-gw-allowlist" ${gw.dm_allowlist_enabled?'checked':''}><label for="s-gw-allowlist">Enable DM allowlist (only approved users can DM)</label></div>
-        <button class="btn btn-primary" onclick="saveGateway()">Save</button>
-      </div>
-
-      <div class="card">
-        <h3>🎤 Voice</h3>
-        <div class="toggle-row"><input type="checkbox" id="s-voice-on" ${voice.enabled?'checked':''}><label for="s-voice-on">Enable voice capabilities</label></div>
-        <div class="form-row">
-          <div class="form-group"><label>Transcription Model</label><input id="s-voice-stt" value="${esc(voice.transcription_model)||'whisper-1'}"></div>
-          <div class="form-group"><label>TTS Model</label><input id="s-voice-tts" value="${esc(voice.tts_model)||'tts-1'}"></div>
+        <div class="card">
+          <h3>Font Size</h3>
+          <div class="form-group">
+            <select id="s-fontsize" onchange="setFontSize(this.value)">
+              <option value="small"${currentFS==='small'?' selected':''}>Small</option>
+              <option value="medium"${currentFS==='medium'?' selected':''}>Medium</option>
+              <option value="large"${currentFS==='large'?' selected':''}>Large</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group"><label>TTS Voice</label>
-          <select id="s-voice-voice">
-            ${['alloy','echo','fable','onyx','nova','shimmer'].map(v=>`<option${(voice.tts_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
-          </select>
+        <div class="card">
+          <h3>Chat Density</h3>
+          <div class="toggle-row">
+            <label style="font-size:13px;color:var(--text-secondary)">Comfortable</label>
+            <input type="checkbox" id="s-density" ${currentDensity==='compact'?'checked':''} onchange="setDensity(this.checked?'compact':'comfortable')">
+            <label style="font-size:13px;color:var(--text-secondary)">Compact</label>
+          </div>
         </div>
-        <button class="btn btn-primary" onclick="saveVoice()">Save</button>
       </div>
-    </div>
 
-    <div class="card">
-      <h3>🧩 Skill Directories</h3>
-      <div class="form-row-3">
-        <div class="form-group"><label>Bundled</label><input id="s-sk-bundled" value="${esc(skills.bundled_dir)||'steelclaw/skills/bundled'}"><div class="hint">Ships with SteelClaw</div></div>
-        <div class="form-group"><label>Global</label><input id="s-sk-global" value="${esc(skills.global_dir)||'~/.steelclaw/skills'}"><div class="hint">User-wide skills</div></div>
-        <div class="form-group"><label>Workspace</label><input id="s-sk-workspace" value="${esc(skills.workspace_dir)||'.steelclaw/skills'}"><div class="hint">Project-specific, highest priority</div></div>
+      <!-- Voice & Audio Tab -->
+      <div class="settings-section" id="stab-voice">
+        <div class="card">
+          <h3>Voice Settings</h3>
+          <div class="toggle-row"><input type="checkbox" id="s-voice-on" ${voice.enabled?'checked':''}><label for="s-voice-on">Enable voice capabilities</label></div>
+          <div class="form-row">
+            <div class="form-group"><label>STT Provider / Model</label><input id="s-voice-stt" value="${esc(voice.transcription_model)||'whisper-1'}"></div>
+            <div class="form-group"><label>TTS Model</label><input id="s-voice-tts" value="${esc(voice.tts_model)||'tts-1'}"></div>
+          </div>
+          <div class="form-group"><label>TTS Voice</label>
+            <select id="s-voice-voice">
+              ${['alloy','echo','fable','onyx','nova','shimmer'].map(v=>`<option${(voice.tts_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="saveVoice()">Save Voice Settings</button>
+        </div>
+        <div class="card">
+          <h3>Voice Chat Options</h3>
+          <div class="toggle-row"><input type="checkbox" id="s-voice-autosubmit" ${voiceAutoSubmit?'checked':''} onchange="localStorage.setItem('steelclaw-voice-autosubmit',this.checked);voiceAutoSubmit=this.checked"><label for="s-voice-autosubmit">Auto-submit on silence</label></div>
+          <div class="range-group">
+            <label><span>Silence Threshold</span><span id="silence-val">${silenceThreshold}ms</span></label>
+            <input type="range" min="300" max="1500" step="50" value="${silenceThreshold}" oninput="silenceThreshold=parseInt(this.value);localStorage.setItem('steelclaw-silence-threshold',this.value);document.getElementById('silence-val').textContent=this.value+'ms'">
+          </div>
+          <div class="form-group"><label>Playback Speed</label>
+            <select id="s-playback-speed" onchange="playbackSpeed=parseFloat(this.value);localStorage.setItem('steelclaw-playback-speed',this.value)">
+              ${['0.75','1','1.25','1.5'].map(s=>`<option value="${s}"${parseFloat(s)===playbackSpeed?' selected':''}>${s}x</option>`).join('')}
+            </select>
+          </div>
+        </div>
       </div>
-      <div class="toggle-row"><input type="checkbox" id="s-sk-enabled" ${skills.enabled!==false?'checked':''}><label for="s-sk-enabled">Enable skill system</label></div>
-      <button class="btn btn-primary" onclick="saveSkillConfig()">Save Skill Config</button>
-    </div>
 
-    <div class="card">
-      <h3>📊 System Info</h3>
-      <table class="tbl">
-        <tr><td style="color:var(--text-muted);width:160px">Version</td><td>${info.version||'—'}</td></tr>
-        <tr><td style="color:var(--text-muted)">Active Connectors</td><td>${Object.keys(info.connectors||{}).length}</td></tr>
-        <tr><td style="color:var(--text-muted)">Config File</td><td>config.json</td></tr>
-      </table>
+      <!-- Agent Behavior Tab -->
+      <div class="settings-section" id="stab-agent">
+        <div class="card">
+          <h3>LLM Configuration</h3>
+          <div class="form-row">
+            <div class="form-group"><label>Default Model</label><input id="s-model" value="${esc(llm.default_model)}"><div class="hint">e.g. claude-sonnet-4-20250514, gpt-4o, ollama/llama3</div></div>
+            <div class="form-group"><label>API Key</label><input id="s-apikey" type="password" value="${esc(llm.api_key)}" placeholder="Set via env var or here"></div>
+          </div>
+          <div class="range-group">
+            <label><span>Temperature</span><span id="temp-val">${llm.temperature??0.7} ${(llm.temperature??0.7) < 0.5 ? '(Precise)' : (llm.temperature??0.7) > 1.2 ? '(Creative)' : '(Balanced)'}</span></label>
+            <input type="range" id="s-temp" min="0" max="2" step="0.1" value="${llm.temperature??0.7}" oninput="document.getElementById('temp-val').textContent=this.value + (this.value<0.5?' (Precise)':this.value>1.2?' (Creative)':' (Balanced)')">
+          </div>
+          <div class="form-row-3">
+            <div class="form-group"><label>Max Tokens</label><input id="s-tokens" type="number" value="${llm.max_tokens||4096}"></div>
+            <div class="form-group"><label>Context Messages</label><input id="s-ctx" type="number" value="${llm.max_context_messages||50}"><div class="hint">History per LLM call</div></div>
+            <div class="form-group"><label>Timeout (sec)</label><input id="s-timeout" type="number" value="${llm.timeout||120}"></div>
+          </div>
+          <div class="form-group"><label>API Base URL</label><input id="s-apibase" value="${esc(llm.api_base)}" placeholder="Leave empty for default"><div class="hint">For self-hosted models (Ollama, vLLM, etc.)</div></div>
+          <div class="toggle-row"><input type="checkbox" id="s-streaming" ${llm.streaming!==false?'checked':''}><label for="s-streaming">Enable streaming responses</label></div>
+          <div class="form-group"><label>System Prompt</label><textarea id="s-prompt" rows="4" style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc(llm.system_prompt)}</textarea></div>
+          <button class="btn btn-primary" onclick="saveLLM()">Save Agent Settings</button>
+        </div>
+      </div>
+
+      <!-- Tool Management Tab -->
+      <div class="settings-section" id="stab-tools">
+        <div class="card">
+          <h3>Skill Directories</h3>
+          <div class="form-row-3">
+            <div class="form-group"><label>Bundled</label><input id="s-sk-bundled" value="${esc(skills.bundled_dir)||'steelclaw/skills/bundled'}"><div class="hint">Ships with SteelClaw</div></div>
+            <div class="form-group"><label>Global</label><input id="s-sk-global" value="${esc(skills.global_dir)||'~/.steelclaw/skills'}"><div class="hint">User-wide skills</div></div>
+            <div class="form-group"><label>Workspace</label><input id="s-sk-workspace" value="${esc(skills.workspace_dir)||'.steelclaw/skills'}"><div class="hint">Project-specific</div></div>
+          </div>
+          <div class="toggle-row"><input type="checkbox" id="s-sk-enabled" ${skills.enabled!==false?'checked':''}><label for="s-sk-enabled">Enable skill system</label></div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="saveSkillConfig()">Save Skill Config</button>
+            <button class="btn btn-outline" onclick="reloadSkills()">Reload Skills</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Installed Skills</h3>
+          <div id="settings-skills-list" style="display:flex;flex-direction:column;gap:8px">
+            ${(skillsData||[]).map(s => `
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--glass);border-radius:10px;border:1px solid var(--glass-border)">
+                <label class="skill-toggle" style="flex-shrink:0">
+                  <input type="checkbox" ${s.enabled!==false?'checked':''} onchange="toggleSkill('${esc(s.name)}',this.checked)">
+                  <span class="slider"></span>
+                </label>
+                <span style="flex:1;font-weight:500;font-size:13px">${esc(s.name)}</span>
+                ${s.default_enabled ? '<span class="badge badge-blue">default</span>' : ''}
+                <button class="btn btn-outline btn-sm" onclick="configureSkill('${esc(s.name)}')">Configure</button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- Gateway Tab -->
+      <div class="settings-section" id="stab-gateway">
+        <div class="card">
+          <h3>Gateway Settings</h3>
+          <div class="form-group"><label>Mention Keywords</label><input id="s-gw-keywords" value="${esc((gw.mention_keywords||[]).join(', '))}"><div class="hint">Comma-separated. Bot responds in groups when these appear.</div></div>
+          <div class="toggle-row"><input type="checkbox" id="s-gw-allowlist" ${gw.dm_allowlist_enabled?'checked':''}><label for="s-gw-allowlist">Enable DM allowlist (only approved users can DM)</label></div>
+          <button class="btn btn-primary" onclick="saveGateway()">Save</button>
+        </div>
+      </div>
+
+      <!-- Database Tab -->
+      <div class="settings-section" id="stab-database">
+        <div class="card">
+          <h3>Database</h3>
+          <div class="form-group"><label>Database URL</label><input id="s-dburl" value="${esc(db.url)||'sqlite+aiosqlite:///./data/steelclaw.db'}"><div class="hint">SQLite, PostgreSQL, or MySQL async URL</div></div>
+          <div class="toggle-row"><input type="checkbox" id="s-dbecho" ${db.echo?'checked':''}><label for="s-dbecho">Echo SQL queries (debug)</label></div>
+          <button class="btn btn-primary" onclick="saveDatabase()">Save</button>
+          <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
+        </div>
+      </div>
+
+      <!-- Server Tab -->
+      <div class="settings-section" id="stab-server">
+        <div class="card">
+          <h3>Server</h3>
+          <div class="form-row">
+            <div class="form-group"><label>Host</label><input id="s-host" value="${esc(srv.host)||'0.0.0.0'}"></div>
+            <div class="form-group"><label>Port</label><input id="s-port" type="number" value="${srv.port||8000}"></div>
+          </div>
+          <div class="form-group"><label>Log Level</label>
+            <select id="s-loglevel">
+              ${['debug','info','warning','error'].map(l=>`<option${srv.log_level===l?' selected':''}>${l}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="saveServer()">Save</button>
+          <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
+        </div>
+        <div class="card">
+          <h3>System Info</h3>
+          <table class="tbl">
+            <tr><td style="color:var(--text-secondary);width:160px">Version</td><td>${info.version||'—'}</td></tr>
+            <tr><td style="color:var(--text-secondary)">Active Connectors</td><td>${Object.keys(info.connectors||{}).length}</td></tr>
+            <tr><td style="color:var(--text-secondary)">Config File</td><td style="font-family:'JetBrains Mono',monospace;font-size:12px">config.json</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- Security Tab -->
+      <div class="settings-section" id="stab-security">
+        ${await renderSecuritySettings()}
+      </div>
+
     </div>
-  `;
+  </div>`;
+
+  showSettingsTab(_settingsTab);
 };
 
+async function renderSecuritySettings() {
+  const [data, cfg] = await Promise.all([api('/config/approvals'), api('/config/security')]);
+  const rules = data.rules || [];
+  const sec = cfg.security || {};
+
+  let html = `
+    <div class="card">
+      <h3>Permission Settings</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Default Permission</label>
+          <select id="sec-default">
+            ${['ask','record','ignore'].map(v=>`<option${(sec.default_permission||'ask')===v?' selected':''}>${v}</option>`).join('')}
+          </select>
+          <div class="hint">ask = prompt user, record = log & allow, ignore = auto-allow</div>
+        </div>
+        <div class="form-group"><label>Command Timeout (sec)</label><input id="sec-timeout" type="number" value="${sec.max_command_timeout||30}"></div>
+      </div>
+      <div class="toggle-row"><input type="checkbox" id="sec-sandbox" ${sec.sandbox_enabled!==false?'checked':''}><label for="sec-sandbox">Enable sandbox (subprocess isolation)</label></div>
+      <div class="form-group"><label>Blocked Commands</label><textarea id="sec-blocked" rows="2" style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc((sec.blocked_commands||[]).join('\n'))}</textarea><div class="hint">One per line. Always blocked regardless of rules.</div></div>
+      <button class="btn btn-primary" onclick="saveSecurity()">Save Security Settings</button>
+    </div>
+    <div class="card">
+      <h3>Approval Rules</h3>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="sec-pattern" placeholder="Pattern (e.g. git *)" class="inline-input" style="flex:2;font-family:'JetBrains Mono',monospace">
+        <select id="sec-perm" class="inline-input" style="flex:0 0 90px">
+          <option value="ignore">ignore</option><option value="record">record</option><option value="ask">ask</option>
+        </select>
+        <input id="sec-note" placeholder="Note (optional)" class="inline-input" style="flex:1">
+        <button class="btn btn-primary btn-sm" onclick="addApproval()">Add</button>
+      </div>`;
+  if (rules.length) {
+    html += `<table class="tbl"><thead><tr><th>Pattern</th><th>Permission</th><th>Note</th><th></th></tr></thead><tbody>`;
+    for (const r of rules) {
+      const permClass = r.permission==='ignore'?'badge-green':r.permission==='record'?'badge-blue':'badge-yellow';
+      html += `<tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc(r.pattern)}</td>
+        <td><span class="badge ${permClass}">${r.permission}</span></td>
+        <td style="font-size:12px;color:var(--text-secondary)">${esc(r.note)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="removeApproval('${r.pattern.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">Remove</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--text-secondary);font-size:13px">No approval rules configured.</p>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// ── Settings Save Functions ───────────────────────────────
 async function saveLLM() {
   const d = {
     default_model: document.getElementById('s-model').value,
@@ -379,7 +1793,7 @@ async function saveLLM() {
   const k = document.getElementById('s-apikey').value;
   if (k && !k.includes('****')) d.api_key = k;
   await api('/config/llm', {method:'PUT', body:JSON.stringify(d)});
-  toast('LLM settings saved');
+  toast('Agent settings saved');
 }
 
 async function saveServer() {
@@ -429,194 +1843,6 @@ async function saveSkillConfig() {
   toast('Skill config saved');
 }
 
-// ── Connectors Page ────────────────────────────────────────
-loaders.connectors = async () => {
-  const body = document.getElementById('connectors-body');
-  const [data, gwData] = await Promise.all([api('/config/connectors'), api('/config/gateway')]);
-  const connectors = data.connectors || {};
-  const gw = gwData.gateway || {};
-  const allConnectors = gw.connectors || {};
-  const platforms = ['telegram','discord','slack','whatsapp','signal','imessage','mattermost','matrix','teams'];
-
-  let html = '';
-  for (const p of platforms) {
-    const c = connectors[p] || {enabled:false, status:'disabled', config:{}};
-    const cfg = allConnectors[p] || {};
-    const statusClass = c.status === 'running' ? 'badge-green' : c.enabled ? 'badge-yellow' : 'badge-red';
-    const statusText = c.status === 'running' ? 'Running' : c.enabled ? 'Enabled' : 'Disabled';
-    const pName = p.charAt(0).toUpperCase()+p.slice(1);
-
-    html += `<div class="card">
-      <h3>${pName} <span class="badge ${statusClass}">${statusText}</span></h3>
-      <div class="form-row">
-        <div class="form-group"><label>Bot Token</label><input class="inline-input" id="conn-${p}-token" type="password" value="${esc(c.config?.token)}" placeholder="Enter ${pName} bot token"></div>
-        <div style="display:flex;align-items:end;gap:8px;padding-bottom:14px">
-          <div class="toggle-row" style="margin:0"><input type="checkbox" id="conn-${p}-on" ${c.enabled?'checked':''}><label for="conn-${p}-on">Enabled</label></div>
-        </div>
-      </div>
-      ${p==='matrix' ? `<div class="form-row">
-        <div class="form-group"><label>Homeserver URL</label><input class="inline-input" id="conn-${p}-hs" value="${esc(cfg.homeserver)}" placeholder="https://matrix.org"></div>
-        <div class="form-group"><label>User ID</label><input class="inline-input" id="conn-${p}-uid" value="${esc(cfg.user_id)}" placeholder="@steelclaw:matrix.org"></div>
-      </div>` : ''}
-      <button class="btn btn-primary btn-sm" onclick="saveConnector('${p}')">Save ${pName}</button>
-      <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart to apply</span>
-    </div>`;
-  }
-  body.innerHTML = html;
-};
-
-async function saveConnector(platform) {
-  const d = {
-    enabled: document.getElementById('conn-'+platform+'-on').checked,
-  };
-  const tokenEl = document.getElementById('conn-'+platform+'-token');
-  if (tokenEl.value && !tokenEl.value.includes('****')) d.token = tokenEl.value;
-  if (platform === 'matrix') {
-    const hs = document.getElementById('conn-matrix-hs');
-    const uid = document.getElementById('conn-matrix-uid');
-    if (hs) d.homeserver = hs.value;
-    if (uid) d.user_id = uid.value;
-  }
-  await api('/config/connectors/'+platform, {method:'PUT', body:JSON.stringify(d)});
-  toast(platform.charAt(0).toUpperCase()+platform.slice(1)+' config saved — restart to apply');
-}
-
-// ── Skills Page ────────────────────────────────────────────
-loaders.skills = async () => {
-  const body = document.getElementById('skills-body');
-  const [skills, skillCfg] = await Promise.all([api('/skills'), api('/config/skills')]);
-  const cfg = skillCfg.skills || {};
-
-  let html = `<div class="card">
-    <h3>Skill Directories</h3>
-    <table class="tbl">
-      <tr><td style="color:var(--text-muted);width:100px">Bundled</td><td style="font-family:monospace;font-size:12px">${esc(cfg.bundled_dir)||'steelclaw/skills/bundled'}</td></tr>
-      <tr><td style="color:var(--text-muted)">Global</td><td style="font-family:monospace;font-size:12px">${esc(cfg.global_dir)||'~/.steelclaw/skills'}</td></tr>
-      <tr><td style="color:var(--text-muted)">Workspace</td><td style="font-family:monospace;font-size:12px">${esc(cfg.workspace_dir)||'.steelclaw/skills'}</td></tr>
-      <tr><td style="color:var(--text-muted)">Enabled</td><td>${cfg.enabled!==false?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-red">No</span>'}</td></tr>
-    </table>
-  </div>`;
-
-  if (!skills.length) {
-    html += '<div class="card"><p style="color:var(--text-muted)">No skills loaded.</p></div>';
-  }
-
-  // Count tools
-  let totalTools = 0;
-  for (const s of skills) totalTools += (s.tools||[]).length;
-  html += `<div style="margin-bottom:16px;font-size:13px;color:var(--text-muted)">${skills.length} skill(s) loaded, ${totalTools} tool(s) registered</div>`;
-
-  for (const s of skills) {
-    const scopeMap = {bundled:'badge-blue',global:'badge-yellow',workspace:'badge-green'};
-    html += `<div class="card">
-      <h3>${esc(s.name)} <span class="badge ${scopeMap[s.scope]||'badge-blue'}">${s.scope}</span></h3>
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px">${esc(s.description)||'No description'}</p>
-      <div style="font-size:12px;margin-bottom:6px"><strong>Version:</strong> ${esc(s.version)||'—'}</div>
-      ${s.tools?.length ? `<div style="font-size:12px;margin-bottom:4px"><strong>Tools:</strong></div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-        ${s.tools.map(t=>`<span class="badge badge-purple" style="font-size:11px">${esc(t)}</span>`).join('')}
-      </div>` : ''}
-      ${s.triggers?.length ? `<div style="font-size:12px"><strong>Triggers:</strong> ${s.triggers.map(t=>`<span class="badge badge-blue" style="font-size:10px">${esc(t)}</span>`).join(' ')}</div>` : ''}
-    </div>`;
-  }
-  body.innerHTML = html;
-};
-
-async function reloadSkills() {
-  await api('/skills/reload', {method:'POST'});
-  toast('Skills reloaded');
-  loaders.skills();
-}
-
-// ── Sessions Page ──────────────────────────────────────────
-loaders.sessions = async () => {
-  const body = document.getElementById('sessions-body');
-  const sessions = await api('/sessions');
-
-  if (!sessions.length) { body.innerHTML='<p style="color:var(--text-muted)">No sessions yet.</p>'; return; }
-
-  // Summary
-  const platforms = {};
-  let dms=0, groups=0;
-  for (const s of sessions) {
-    platforms[s.platform] = (platforms[s.platform]||0)+1;
-    if (s.session_type==='dm') dms++; else groups++;
-  }
-  let html = `<div class="card"><h3>Summary</h3><table class="tbl">
-    <tr><td style="color:var(--text-muted);width:140px">Total Sessions</td><td>${sessions.length}</td></tr>
-    <tr><td style="color:var(--text-muted)">DMs / Groups</td><td>${dms} / ${groups}</td></tr>
-    <tr><td style="color:var(--text-muted)">Platforms</td><td>${Object.entries(platforms).map(([p,n])=>`${p} (${n})`).join(', ')}</td></tr>
-  </table></div>`;
-
-  html += `<div class="card"><h3>All Sessions</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Chat ID</th><th>User</th><th>Active</th><th>Created</th></tr></thead><tbody>`;
-  for (const s of sessions) {
-    html += `<tr>
-      <td>${esc(s.platform)}</td>
-      <td><span class="badge ${s.session_type==='dm'?'badge-blue':'badge-yellow'}">${s.session_type}</span></td>
-      <td style="font-family:monospace;font-size:12px">${esc((s.platform_chat_id||'').slice(0,16))}${(s.platform_chat_id||'').length>16?'...':''}</td>
-      <td style="font-size:12px">${esc(s.user_id||'—')}</td>
-      <td>${s.is_active ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-red">No</span>'}</td>
-      <td style="font-size:12px;color:var(--text-muted)">${s.created_at ? new Date(s.created_at).toLocaleString() : '—'}</td>
-    </tr>`;
-  }
-  html += '</tbody></table></div>';
-  body.innerHTML = html;
-};
-
-// ── Security Page ──────────────────────────────────────────
-loaders.security = async () => {
-  const body = document.getElementById('security-body');
-  const [data, cfg] = await Promise.all([api('/config/approvals'), api('/config/security')]);
-  const rules = data.rules || [];
-  const sec = cfg.security || {};
-
-  let html = `
-    <div class="card">
-      <h3>🛡️ Permission Settings</h3>
-      <div class="form-row">
-        <div class="form-group"><label>Default Permission</label>
-          <select id="sec-default">
-            ${['ask','record','ignore'].map(v=>`<option${(sec.default_permission||'ask')===v?' selected':''}>${v}</option>`).join('')}
-          </select>
-          <div class="hint">ask = prompt user, record = log & allow, ignore = auto-allow</div>
-        </div>
-        <div class="form-group"><label>Command Timeout (sec)</label><input id="sec-timeout" type="number" value="${sec.max_command_timeout||30}"></div>
-      </div>
-      <div class="toggle-row"><input type="checkbox" id="sec-sandbox" ${sec.sandbox_enabled!==false?'checked':''}><label for="sec-sandbox">Enable sandbox (subprocess isolation)</label></div>
-      <div class="form-group"><label>Blocked Commands</label><textarea id="sec-blocked" rows="2" style="font-family:monospace;font-size:12px">${esc((sec.blocked_commands||[]).join('\n'))}</textarea><div class="hint">One per line. These are always blocked regardless of approval rules.</div></div>
-      <button class="btn btn-primary" onclick="saveSecurity()">Save Security Settings</button>
-    </div>
-
-    <div class="card">
-      <h3>📋 Approval Rules</h3>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input id="sec-pattern" placeholder="Pattern (e.g. git *)" style="flex:2;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:13px;font-family:monospace">
-        <select id="sec-perm" style="flex:0 0 90px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:13px">
-          <option value="ignore">ignore</option><option value="record">record</option><option value="ask">ask</option>
-        </select>
-        <input id="sec-note" placeholder="Note (optional)" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);font-size:13px">
-        <button class="btn btn-primary btn-sm" onclick="addApproval()">Add</button>
-      </div>`;
-
-  if (rules.length) {
-    html += `<table class="tbl"><thead><tr><th>Pattern</th><th>Permission</th><th>Note</th><th></th></tr></thead><tbody>`;
-    for (const r of rules) {
-      const permClass = r.permission==='ignore'?'badge-green':r.permission==='record'?'badge-blue':'badge-yellow';
-      html += `<tr>
-        <td style="font-family:monospace">${esc(r.pattern)}</td>
-        <td><span class="badge ${permClass}">${r.permission}</span></td>
-        <td style="font-size:12px;color:var(--text-muted)">${esc(r.note)}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="removeApproval('${r.pattern.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">Remove</button></td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-  } else {
-    html += '<p style="color:var(--text-muted);font-size:13px">No approval rules configured. Commands will use the default permission level.</p>';
-  }
-  html += '</div>';
-  body.innerHTML = html;
-};
-
 async function saveSecurity() {
   const blocked = document.getElementById('sec-blocked').value.split('\n').map(s=>s.trim()).filter(Boolean);
   await api('/config/security', {method:'PUT', body:JSON.stringify({
@@ -638,14 +1864,260 @@ async function addApproval() {
   document.getElementById('sec-pattern').value = '';
   document.getElementById('sec-note').value = '';
   toast('Rule added');
-  loaders.security();
+  loaders.settings();
 }
 
 async function removeApproval(pattern) {
   await fetch('/api/config/approvals/'+encodeURIComponent(pattern), {method:'DELETE'});
   toast('Rule removed');
-  loaders.security();
+  loaders.settings();
 }
+
+// ── Connectors Page ────────────────────────────────────────
+loaders.connectors = async () => {
+  const body = document.getElementById('connectors-body');
+  const [data, gwData] = await Promise.all([api('/config/connectors'), api('/config/gateway')]);
+  const connectors = data.connectors || {};
+  const gw = gwData.gateway || {};
+  const allConnectors = gw.connectors || {};
+  const platforms = ['telegram','discord','slack','whatsapp','signal','imessage','mattermost','matrix','teams'];
+
+  let html = '';
+  for (const p of platforms) {
+    const c = connectors[p] || {enabled:false, status:'disabled', config:{}};
+    const cfg = allConnectors[p] || {};
+    const statusClass = c.status === 'running' ? 'badge-green' : c.enabled ? 'badge-yellow' : 'badge-red';
+    const statusText = c.status === 'running' ? 'Running' : c.enabled ? 'Enabled' : 'Disabled';
+    const pName = p.charAt(0).toUpperCase()+p.slice(1);
+
+    html += `<div class="card">
+      <h3>${pName} <span class="badge ${statusClass}">${statusText}</span></h3>
+      <div class="form-row">
+        <div class="form-group"><label>Bot Token</label><input class="inline-input" id="conn-${p}-token" type="password" value="${esc(c.config?.token||'')}" placeholder="Enter ${pName} bot token"></div>
+        <div style="display:flex;align-items:end;gap:8px;padding-bottom:14px">
+          <div class="toggle-row" style="margin:0"><input type="checkbox" id="conn-${p}-on" ${c.enabled?'checked':''}><label for="conn-${p}-on">Enabled</label></div>
+        </div>
+      </div>
+      ${p==='matrix' ? `<div class="form-row">
+        <div class="form-group"><label>Homeserver URL</label><input class="inline-input" id="conn-${p}-hs" value="${esc(cfg.homeserver||'')}" placeholder="https://matrix.org"></div>
+        <div class="form-group"><label>User ID</label><input class="inline-input" id="conn-${p}-uid" value="${esc(cfg.user_id||'')}" placeholder="@steelclaw:matrix.org"></div>
+      </div>` : ''}
+      <button class="btn btn-primary btn-sm" onclick="saveConnector('${p}')">Save ${pName}</button>
+      <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
+    </div>`;
+  }
+  body.innerHTML = html;
+};
+
+async function saveConnector(platform) {
+  const d = { enabled: document.getElementById('conn-'+platform+'-on').checked };
+  const tokenEl = document.getElementById('conn-'+platform+'-token');
+  if (tokenEl.value && !tokenEl.value.includes('****')) d.token = tokenEl.value;
+  if (platform === 'matrix') {
+    const hs = document.getElementById('conn-matrix-hs');
+    const uid = document.getElementById('conn-matrix-uid');
+    if (hs) d.homeserver = hs.value;
+    if (uid) d.user_id = uid.value;
+  }
+  await api('/config/connectors/'+platform, {method:'PUT', body:JSON.stringify(d)});
+  toast(platform.charAt(0).toUpperCase()+platform.slice(1)+' config saved — restart to apply');
+}
+
+// ── Skills Page ────────────────────────────────────────────
+loaders.skills = async () => {
+  const body = document.getElementById('skills-body');
+  const [skills, skillCfg] = await Promise.all([api('/skills'), api('/config/skills')]);
+  const cfg = skillCfg.skills || {};
+
+  const integrationKw = ['api','webhook','send','message','search','create_issue','list_repos','query','post','tweet','channel','calendar','drive','bucket','invoice','deal','contact'];
+  const utilityKw = ['file','csv','pdf','docker','system','markdown','screenshot','code','scraper','organizer'];
+  const aiKw = ['openai','perplexity','image','analyze','translate','speech','voice','elevenlabs'];
+
+  function categorize(s) {
+    const name = (s.name+' '+(s.description||'')+' '+((s.tools||[]).join(' '))).toLowerCase();
+    if (aiKw.some(k=>name.includes(k))) return 'AI';
+    if (utilityKw.some(k=>name.includes(k))) return 'Utilities';
+    return 'Integrations';
+  }
+  const allSkills = skills.map(s => ({...s, category: categorize(s)}));
+  const categories = ['All','Integrations','Utilities','AI'];
+
+  let totalTools = 0;
+  for (const s of skills) totalTools += (s.tools||[]).length;
+
+  let html = `<div style="margin-bottom:12px;font-size:var(--base-fs);color:var(--text-secondary)">${skills.length} skills loaded, ${totalTools} tools registered</div>`;
+  html += `<div class="skills-filter-bar">
+    <input id="skills-search" placeholder="Search skills..." oninput="filterSkillGrid()">
+    ${categories.map((c,i) => `<button class="cat-tab${i===0?' active':''}" onclick="setSkillCat('${c}',this)">${c}</button>`).join('')}
+  </div>`;
+  html += '<div class="skills-grid" id="skills-grid"></div>';
+  body.innerHTML = html;
+
+  window._allSkills = allSkills;
+  window._skillCat = 'All';
+  filterSkillGrid();
+};
+
+function setSkillCat(cat, btn) {
+  window._skillCat = cat;
+  document.querySelectorAll('.cat-tab').forEach(b=>b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  filterSkillGrid();
+}
+
+function filterSkillGrid() {
+  const q = (document.getElementById('skills-search')?.value||'').toLowerCase();
+  const cat = window._skillCat || 'All';
+  const grid = document.getElementById('skills-grid');
+  if (!grid || !window._allSkills) return;
+
+  const filtered = window._allSkills.filter(s => {
+    if (cat !== 'All' && s.category !== cat) return false;
+    if (q && !(s.name+' '+(s.description||'')).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const scopeMap = {bundled:'badge-blue',global:'badge-yellow',workspace:'badge-green'};
+  grid.innerHTML = filtered.map(s => `
+    <div class="skill-card${s.enabled===false?' disabled':''}">
+      <div class="skill-header">
+        <h4 style="flex:1;margin:0">${esc(s.name)} <span class="badge ${scopeMap[s.scope]||'badge-blue'}" style="font-size:10px">${s.scope}</span></h4>
+        <label class="skill-toggle" title="${s.enabled===false?'Enable':'Disable'} skill">
+          <input type="checkbox" ${s.enabled!==false?'checked':''} onchange="toggleSkill('${esc(s.name)}',this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <p>${esc(s.description)||'No description'}</p>
+      <div class="tool-tags">
+        ${(s.tools||[]).map(t=>`<span class="badge badge-purple" style="font-size:10px">${esc(t)}</span>`).join('')}
+      </div>
+      <button class="configure-btn" onclick="configureSkill('${esc(s.name)}')">Configure</button>
+    </div>
+  `).join('');
+}
+
+async function reloadSkills() {
+  await api('/skills/reload', {method:'POST'});
+  toast('Skills reloaded');
+  loaders.skills();
+}
+
+async function toggleSkill(name, enabled) {
+  const action = enabled ? 'enable' : 'disable';
+  await api(`/skills/${encodeURIComponent(name)}/${action}`, {method:'POST'});
+  const skill = (window._allSkills||[]).find(s=>s.name===name);
+  if (skill) skill.enabled = enabled;
+  toast(`${name} ${enabled?'enabled':'disabled'}`);
+  filterSkillGrid();
+}
+
+// ── Sessions Page ──────────────────────────────────────────
+loaders.sessions = async () => {
+  const body = document.getElementById('sessions-body');
+  const sessions = await api('/sessions');
+
+  if (!sessions.length) { body.innerHTML='<p style="color:var(--text-secondary)">No sessions yet.</p>'; return; }
+
+  const platforms = {};
+  let active=0, idle=0, closed=0;
+  for (const s of sessions) {
+    platforms[s.platform] = (platforms[s.platform]||0)+1;
+    if (s.status==='active') active++;
+    else if (s.status==='idle') idle++;
+    else closed++;
+  }
+  let html = `<div class="card"><h3>Summary</h3><table class="tbl">
+    <tr><td style="color:var(--text-secondary);width:140px">Total Sessions</td><td>${sessions.length}</td></tr>
+    <tr><td style="color:var(--text-secondary)">Status</td><td><span class="badge badge-green">${active} active</span> <span class="badge badge-yellow">${idle} idle</span> <span class="badge badge-red">${closed} closed</span></td></tr>
+    <tr><td style="color:var(--text-secondary)">Platforms</td><td>${Object.entries(platforms).map(([p,n])=>`${p} (${n})`).join(', ')}</td></tr>
+  </table></div>`;
+
+  html += `<div class="card"><h3>All Sessions</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Connector</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead><tbody>`;
+  for (const s of sessions) {
+    const statusClass = s.status==='active'?'badge-green':s.status==='idle'?'badge-yellow':'badge-red';
+    html += `<tr>
+      <td>${esc(s.platform)}</td>
+      <td><span class="badge ${s.session_type==='dm'?'badge-blue':'badge-yellow'}">${s.session_type}</span></td>
+      <td style="font-size:12px">${esc(s.connector_type||'—')}</td>
+      <td><span class="badge ${statusClass}">${s.status}</span></td>
+      <td style="font-size:12px;color:var(--text-secondary)">${s.last_activity_at ? new Date(s.last_activity_at).toLocaleString() : '—'}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="resetSession('${s.id}')">Reset</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  body.innerHTML = html;
+};
+
+async function resetSession(id) {
+  if (!confirm('Reset this session? All messages will be cleared.')) return;
+  await api('/sessions/'+id+'/reset', {method:'POST'});
+  toast('Session reset');
+  loaders.sessions();
+}
+
+async function deleteSession(id) {
+  if (!confirm('Delete this session permanently?')) return;
+  await fetch('/api/sessions/'+id, {method:'DELETE'});
+  toast('Session deleted');
+  loaders.sessions();
+}
+
+// ── Security Page ──────────────────────────────────────────
+loaders.security = async () => {
+  const body = document.getElementById('security-body');
+  const [data, cfg] = await Promise.all([api('/config/approvals'), api('/config/security')]);
+  const rules = data.rules || [];
+  const sec = cfg.security || {};
+
+  let html = `
+    <div class="card">
+      <h3>Permission Settings</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Default Permission</label>
+          <select id="sec-default">
+            ${['ask','record','ignore'].map(v=>`<option${(sec.default_permission||'ask')===v?' selected':''}>${v}</option>`).join('')}
+          </select>
+          <div class="hint">ask = prompt user, record = log & allow, ignore = auto-allow</div>
+        </div>
+        <div class="form-group"><label>Command Timeout (sec)</label><input id="sec-timeout" type="number" value="${sec.max_command_timeout||30}"></div>
+      </div>
+      <div class="toggle-row"><input type="checkbox" id="sec-sandbox" ${sec.sandbox_enabled!==false?'checked':''}><label for="sec-sandbox">Enable sandbox (subprocess isolation)</label></div>
+      <div class="form-group"><label>Blocked Commands</label><textarea id="sec-blocked" rows="2" style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc((sec.blocked_commands||[]).join('\n'))}</textarea><div class="hint">One per line. Always blocked regardless of rules.</div></div>
+      <button class="btn btn-primary" onclick="saveSecurity()">Save Security Settings</button>
+    </div>
+
+    <div class="card">
+      <h3>Approval Rules</h3>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="sec-pattern" placeholder="Pattern (e.g. git *)" class="inline-input" style="flex:2;font-family:'JetBrains Mono',monospace">
+        <select id="sec-perm" class="inline-input" style="flex:0 0 90px">
+          <option value="ignore">ignore</option><option value="record">record</option><option value="ask">ask</option>
+        </select>
+        <input id="sec-note" placeholder="Note (optional)" class="inline-input" style="flex:1">
+        <button class="btn btn-primary btn-sm" onclick="addApproval()">Add</button>
+      </div>`;
+
+  if (rules.length) {
+    html += `<table class="tbl"><thead><tr><th>Pattern</th><th>Permission</th><th>Note</th><th></th></tr></thead><tbody>`;
+    for (const r of rules) {
+      const permClass = r.permission==='ignore'?'badge-green':r.permission==='record'?'badge-blue':'badge-yellow';
+      html += `<tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc(r.pattern)}</td>
+        <td><span class="badge ${permClass}">${r.permission}</span></td>
+        <td style="font-size:12px;color:var(--text-secondary)">${esc(r.note)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="removeApproval('${r.pattern.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">Remove</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--text-secondary);font-size:13px">No approval rules configured.</p>';
+  }
+  html += '</div>';
+  body.innerHTML = html;
+};
 
 // ── Scheduler Page ─────────────────────────────────────────
 loaders.scheduler = async () => {
@@ -658,14 +2130,14 @@ loaders.scheduler = async () => {
       <div class="card">
         <h3>Engine Status <span class="badge ${status.running?'badge-green':'badge-red'}">${status.running?'Running':'Stopped'}</span></h3>
         <table class="tbl">
-          <tr><td style="color:var(--text-muted)">Active Jobs</td><td>${status.jobs_count||0}</td></tr>
-          <tr><td style="color:var(--text-muted)">Timezone</td><td>${esc(cfg.timezone)||'UTC'}</td></tr>
-          <tr><td style="color:var(--text-muted)">Max Concurrent</td><td>${cfg.max_concurrent_jobs||5}</td></tr>
+          <tr><td style="color:var(--text-secondary)">Active Jobs</td><td>${status.jobs_count||0}</td></tr>
+          <tr><td style="color:var(--text-secondary)">Timezone</td><td>${esc(cfg.timezone)||'UTC'}</td></tr>
+          <tr><td style="color:var(--text-secondary)">Max Concurrent</td><td>${cfg.max_concurrent_jobs||5}</td></tr>
         </table>
       </div>
 
       <div class="card">
-        <h3>⚙️ Scheduler Config</h3>
+        <h3>Scheduler Config</h3>
         <div class="toggle-row"><input type="checkbox" id="sched-on" ${cfg.enabled!==false?'checked':''}><label for="sched-on">Enable scheduler</label></div>
         <div class="form-row">
           <div class="form-group"><label>Timezone</label><input id="sched-tz" value="${esc(cfg.timezone)||'UTC'}"><div class="hint">e.g. UTC, US/Eastern, Europe/London</div></div>
@@ -680,17 +2152,17 @@ loaders.scheduler = async () => {
     html += `<div class="card"><h3>Scheduled Jobs</h3><table class="tbl"><thead><tr><th>ID</th><th>Type</th><th>Schedule</th><th>Description</th><th>Next Run</th><th></th></tr></thead><tbody>`;
     for (const j of jobs) {
       html += `<tr>
-        <td style="font-family:monospace;font-size:12px">${esc(j.id)}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc(j.id)}</td>
         <td><span class="badge badge-blue">${j.type}</span></td>
         <td style="font-size:12px">${j.cron||((j.seconds||'')+'s')||'—'}</td>
         <td style="font-size:12px">${esc(j.description)}</td>
-        <td style="font-size:12px;color:var(--text-muted)">${j.next_run||'—'}</td>
+        <td style="font-size:12px;color:var(--text-secondary)">${j.next_run||'—'}</td>
         <td><button class="btn btn-danger btn-sm" onclick="removeJob('${esc(j.id)}')">Remove</button></td>
       </tr>`;
     }
     html += '</tbody></table></div>';
   } else {
-    html += '<div class="card"><p style="color:var(--text-muted)">No scheduled jobs.</p></div>';
+    html += '<div class="card"><p style="color:var(--text-secondary)">No scheduled jobs.</p></div>';
   }
   body.innerHTML = html;
 };
@@ -709,6 +2181,209 @@ async function removeJob(id) {
   toast('Job removed');
   loaders.scheduler();
 }
+
+// ── Agents Page ───────────────────────────────────────────
+loaders.agents = async () => {
+  const body = document.getElementById('agents-body');
+  const agents = await fetch('/api/agents').then(r=>r.json()).catch(()=>[]);
+
+  let html = `<div class="card">
+    <h3>Create Agent</h3>
+    <div class="form-row-3">
+      <div class="form-group"><label>Name</label><input id="agent-name" placeholder="e.g. ResearchBot"></div>
+      <div class="form-group"><label>Display Name</label><input id="agent-display" placeholder="e.g. Research Assistant"></div>
+      <div class="form-group"><label>Model Override</label><input id="agent-model" placeholder="e.g. claude-sonnet-4-20250514"></div>
+    </div>
+    <div class="form-group"><label>System Prompt</label><textarea id="agent-prompt" rows="2" placeholder="Custom instructions for this agent..."></textarea></div>
+    <button class="btn btn-success" onclick="createAgent()">Create Agent</button>
+  </div>`;
+
+  if (!agents.length) {
+    html += '<p style="color:var(--text-secondary)">No agents configured yet.</p>';
+  } else {
+    html += `<div class="card"><h3>All Agents</h3><table class="tbl"><thead><tr><th>Name</th><th>Display</th><th>Model</th><th>Main</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead><tbody>`;
+    for (const a of agents) {
+      html += `<tr>
+        <td style="font-weight:600">${esc(a.name)}</td>
+        <td>${esc(a.display_name)}</td>
+        <td style="font-size:12px;font-family:'JetBrains Mono',monospace">${esc(a.model_override||'default')}</td>
+        <td>${a.is_main?'<span class="badge badge-green">Main</span>':''}</td>
+        <td>${a.is_active?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-red">No</span>'}</td>
+        <td style="font-size:12px;color:var(--text-secondary)">${a.created_at?new Date(a.created_at).toLocaleDateString():'—'}</td>
+        <td>${a.is_main?'':'<button class="btn btn-danger btn-sm" onclick="deleteAgent(\''+a.id+'\')">Delete</button>'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+  body.innerHTML = html;
+};
+
+async function createAgent() {
+  const name = document.getElementById('agent-name').value.trim();
+  if (!name) { toast('Agent name is required','error'); return; }
+  const body = { name, display_name: document.getElementById('agent-display').value || name };
+  const model = document.getElementById('agent-model').value.trim();
+  if (model) body.model_override = model;
+  const prompt = document.getElementById('agent-prompt').value.trim();
+  if (prompt) body.system_prompt = prompt;
+  const r = await fetch('/api/agents', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  if (r.ok) { toast('Agent created'); loaders.agents(); }
+  else { const d = await r.json(); toast(d.detail||'Error creating agent','error'); }
+}
+
+async function deleteAgent(id) {
+  if (!confirm('Delete this agent?')) return;
+  await fetch('/api/agents/'+id, {method:'DELETE'});
+  toast('Agent deleted');
+  loaders.agents();
+}
+
+// ── Persona Page ──────────────────────────────────────────
+loaders.persona = async () => {
+  const body = document.getElementById('persona-body');
+  const p = await fetch('/api/persona').then(r=>r.json()).catch(()=>({}));
+
+  body.innerHTML = `
+    <div class="card">
+      <h3>Agent Persona</h3>
+      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">Configure how the agent behaves, addresses you, and what goals it prioritizes.</p>
+      <div class="form-row">
+        <div class="form-group"><label>Agent Name</label><input id="p-agent-name" value="${esc(p.agent_name||'SteelClaw')}"></div>
+        <div class="form-group"><label>User Name</label><input id="p-user-name" value="${esc(p.user_name||'')}" placeholder="What should the agent call you?"></div>
+      </div>
+      <div class="form-group"><label>Personality Description</label><textarea id="p-personality" rows="2" placeholder="Describe the agent's personality...">${esc(p.personality_description||'')}</textarea></div>
+      <div class="form-group"><label>Tone</label>
+        <select id="p-tone">
+          ${['professional','friendly','casual','concise','technical'].map(t=>`<option${(p.tone||'friendly')==t?' selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Goals</label><textarea id="p-goals" rows="2" placeholder="Comma-separated goals...">${esc((p.goals||[]).join(', '))}</textarea><div class="hint">Primary goals or tasks for the agent</div></div>
+      <div class="form-group"><label>Additional Instructions</label><textarea id="p-extension" rows="2" placeholder="Extra system prompt additions...">${esc(p.additional_prompts||'')}</textarea></div>
+      <button class="btn btn-primary" onclick="savePersonaNew()">Save Persona</button>
+    </div>
+  `;
+};
+
+async function savePersonaNew() {
+  const goals = document.getElementById('p-goals').value.split(',').map(g=>g.trim()).filter(Boolean);
+  const persona = {
+    agent_name: document.getElementById('p-agent-name').value,
+    user_name: document.getElementById('p-user-name').value,
+    personality_description: document.getElementById('p-personality').value,
+    tone: document.getElementById('p-tone').value,
+    goals: goals,
+    additional_prompts: document.getElementById('p-extension').value,
+  };
+  await fetch('/api/persona', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(persona)});
+  toast('Persona saved');
+}
+
+// ── Analytics Page ────────────────────────────────────────
+loaders.analytics = async () => {
+  const body = document.getElementById('analytics-body');
+  const days = parseInt(document.getElementById('analytics-range').value) || 30;
+  const from = new Date(Date.now()-days*86400000).toISOString();
+  const to = new Date().toISOString();
+  const q = `?from_date=${from}&to_date=${to}`;
+
+  const [summary, timeline, byModel, byAgent, histogram] = await Promise.all([
+    fetch('/api/analytics/summary'+q).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/analytics/usage-over-time'+q).then(r=>r.json()).catch(()=>[]),
+    fetch('/api/analytics/by-model'+q).then(r=>r.json()).catch(()=>[]),
+    fetch('/api/analytics/by-agent'+q).then(r=>r.json()).catch(()=>[]),
+    fetch('/api/analytics/session-histogram'+q).then(r=>r.json()).catch(()=>[]),
+  ]);
+
+  let html = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--accent)">${(summary.total_tokens||0).toLocaleString()}</div><div style="font-size:12px;color:var(--text-secondary)">Total Tokens</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--green)">$${(summary.total_cost_usd||0).toFixed(4)}</div><div style="font-size:12px;color:var(--text-secondary)">Total Cost</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--yellow)">${summary.active_sessions||0}</div><div style="font-size:12px;color:var(--text-secondary)">Active Sessions</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--accent)">${summary.total_messages||0}</div><div style="font-size:12px;color:var(--text-secondary)">Total Messages</div></div>
+    </div>
+
+    <div class="card-row">
+      <div class="card"><h3>Token Usage Over Time</h3><canvas id="chart-tokens" height="200"></canvas></div>
+      <div class="card"><h3>Cost Over Time</h3><canvas id="chart-cost" height="200"></canvas></div>
+    </div>
+    <div class="card-row">
+      <div class="card"><h3>Usage by Model</h3><canvas id="chart-model" height="200"></canvas></div>
+      <div class="card"><h3>Messages per Session</h3><canvas id="chart-histogram" height="200"></canvas></div>
+    </div>
+  `;
+
+  if (byAgent.length) {
+    html += `<div class="card"><h3>Usage by Agent</h3><table class="tbl"><thead><tr><th>Agent</th><th>Tokens</th><th>Cost</th><th>Messages</th></tr></thead><tbody>`;
+    for (const a of byAgent) {
+      html += `<tr><td>${esc(a.agent_id)}</td><td>${a.total_tokens.toLocaleString()}</td><td>$${a.cost.toFixed(4)}</td><td>${a.message_count}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+
+  body.innerHTML = html;
+
+  if (typeof Chart === 'undefined') return;
+
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8b5cf6';
+  const greenColor = getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#10b981';
+  const yellowColor = getComputedStyle(document.documentElement).getPropertyValue('--yellow').trim() || '#f59e0b';
+  const textSecondary = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || 'rgba(255,255,255,0.5)';
+  const textDim = getComputedStyle(document.documentElement).getPropertyValue('--text-dim').trim() || 'rgba(255,255,255,0.25)';
+
+  const chartDefaults = {
+    responsive: true,
+    plugins: { legend: { labels: { color: textSecondary } } },
+    scales: { x: { ticks: { color: textDim }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { ticks: { color: textDim }, grid: { color: 'rgba(255,255,255,0.05)' } } }
+  };
+
+  if (timeline.length) {
+    new Chart(document.getElementById('chart-tokens'), {
+      type:'line', data:{
+        labels: timeline.map(d=>d.date),
+        datasets: [
+          {label:'Prompt',data:timeline.map(d=>d.prompt_tokens),borderColor:accentColor,tension:.3,fill:false,pointRadius:2},
+          {label:'Completion',data:timeline.map(d=>d.completion_tokens),borderColor:greenColor,tension:.3,fill:false,pointRadius:2},
+        ]
+      }, options: chartDefaults
+    });
+  }
+
+  if (timeline.length) {
+    new Chart(document.getElementById('chart-cost'), {
+      type:'line', data:{
+        labels: timeline.map(d=>d.date),
+        datasets: [{label:'Cost ($)',data:timeline.map(d=>d.cost),borderColor:yellowColor,tension:.3,fill:true,backgroundColor:yellowColor+'18',pointRadius:2}]
+      }, options: chartDefaults
+    });
+  }
+
+  if (byModel.length) {
+    const modelColors = [accentColor, greenColor, yellowColor, '#ef4444', '#a78bfa', '#06b6d4', '#f43f5e'];
+    new Chart(document.getElementById('chart-model'), {
+      type:'doughnut', data:{
+        labels: byModel.map(m=>m.model),
+        datasets: [{data:byModel.map(m=>m.total_tokens),backgroundColor:modelColors.slice(0,byModel.length)}]
+      }, options:{responsive:true,plugins:{legend:{labels:{color:textSecondary}}}}
+    });
+  }
+
+  if (histogram.length) {
+    new Chart(document.getElementById('chart-histogram'), {
+      type:'bar', data:{
+        labels: histogram.map(h=>h.bucket),
+        datasets: [{label:'Sessions',data:histogram.map(h=>h.count),backgroundColor:accentColor+'40',borderColor:accentColor,borderWidth:1,borderRadius:4}]
+      }, options: {...chartDefaults, plugins:{legend:{display:false}}}
+    });
+  }
+};
+
+function exportCSV() {
+  const days = parseInt(document.getElementById('analytics-range').value) || 30;
+  const from = new Date(Date.now()-days*86400000).toISOString();
+  const to = new Date().toISOString();
+  window.open('/api/analytics/export?from_date='+from+'&to_date='+to, '_blank');
+}
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </body>
 </html>

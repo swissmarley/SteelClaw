@@ -50,7 +50,12 @@ class LLMSettings(BaseModel):
     system_prompt: str = (
         "You are SteelClaw, a helpful personal AI assistant. "
         "You can execute commands, browse the web, manage tasks, and communicate across platforms. "
-        "Be concise, accurate, and proactive."
+        "Be concise, accurate, and proactive. "
+        "IMPORTANT: When a user asks about current events, real-time data, recent news, prices, weather, "
+        "or anything that requires up-to-date information, you MUST use the web_search tool to find the "
+        "latest information. Then use fetch_url to read relevant pages for details. "
+        "Never say you cannot access the internet — you have web_search and fetch_url tools available. "
+        "Always search first, then answer based on what you find."
     )
     provider_keys: dict[str, str] = {}  # {"anthropic": "sk-...", "openai": "sk-..."}
     streaming: bool = True
@@ -64,6 +69,26 @@ class SkillSettings(BaseModel):
     global_dir: str = "~/.steelclaw/skills"
     workspace_dir: str = ".steelclaw/skills"
     enabled: bool = True
+    disabled_skills: list[str] = []
+    enabled_skills: list[str] = []  # skills user explicitly enabled (overrides auto-disable)
+    skill_configs: dict[str, dict[str, str]] = {}  # per-skill credentials/settings
+
+
+class MemorySettings(BaseModel):
+    """Persistent memory configuration (ChromaDB vector store)."""
+
+    enabled: bool = True
+    chromadb_path: str = "~/.steelclaw/chromadb"
+    collection_name: str = "steelclaw_memory"
+    top_k: int = 5  # number of relevant memories to inject
+
+
+class SessionLifecycleSettings(BaseModel):
+    """Session heartbeat and lifecycle configuration."""
+
+    idle_timeout_minutes: int = 30
+    close_timeout_minutes: int = 1440  # 24 hours
+    heartbeat_interval_seconds: int = 60
 
 
 class SecuritySettings(BaseModel):
@@ -90,6 +115,8 @@ class VoiceSettings(BaseModel):
     transcription_model: str = "whisper-1"
     tts_model: str = "tts-1"
     tts_voice: str = "alloy"
+    stt_provider: str = "openai"
+    tts_provider: str = "openai"
     enabled: bool = False
 
 
@@ -100,6 +127,8 @@ class AgentSettings(BaseModel):
     security: SecuritySettings = SecuritySettings()
     scheduler: SchedulerSettings = SchedulerSettings()
     voice: VoiceSettings = VoiceSettings()
+    memory: MemorySettings = MemorySettings()
+    session_lifecycle: SessionLifecycleSettings = SessionLifecycleSettings()
 
 
 class Settings(BaseSettings):
@@ -122,11 +151,13 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        from steelclaw.paths import PROJECT_ROOT
+
         sources = [init_settings, env_settings]
         try:
             from pydantic_settings import JsonConfigSettingsSource
 
-            json_path = Path("config.json")
+            json_path = PROJECT_ROOT / "config.json"
             if json_path.exists():
                 sources.append(JsonConfigSettingsSource(settings_cls, json_file=json_path))
         except ImportError:

@@ -18,6 +18,7 @@ class InboundMessage(BaseModel):
     platform_message_id: str | None = None
     platform_username: str | None = None
     content: str
+    attachments: list[dict] | None = None
     is_group: bool = False
     is_mention: bool = False
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

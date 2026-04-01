@@ -2,25 +2,36 @@
 
 from __future__ import annotations
 
+default_enabled = True
+required_credentials = []
+
+_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
 
 async def tool_web_search(query: str, max_results: int = 5) -> str:
-    """Search the web using DuckDuckGo HTML scraping."""
+    """Search the web using DuckDuckGo and return results."""
     import httpx
 
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
-            timeout=httpx.Timeout(15.0),
-            headers={"User-Agent": "Mozilla/5.0 (compatible; SteelClaw/1.0)"},
+            timeout=httpx.Timeout(20.0),
+            headers={
+                "User-Agent": _BROWSER_UA,
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
         ) as client:
-            resp = await client.get(
+            resp = await client.post(
                 "https://html.duckduckgo.com/html/",
-                params={"q": query},
+                data={"q": query, "b": ""},
             )
             resp.raise_for_status()
             html = resp.text
 
-        # Parse results from DuckDuckGo HTML
         results = _parse_ddg_html(html, max_results)
         if not results:
             return f"No results found for: {query}"
@@ -40,28 +51,51 @@ async def tool_web_search(query: str, max_results: int = 5) -> str:
 
 def _parse_ddg_html(html: str, max_results: int) -> list[dict]:
     """Parse DuckDuckGo HTML results page."""
-    results = []
-    # Simple parsing — find result links and snippets
     import re
+    from urllib.parse import unquote
 
-    # Each result is in a <div class="result"> or similar
+    results = []
+
+    # Primary pattern: result__a + result__snippet
     blocks = re.findall(
         r'<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>.*?'
         r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
         html,
         re.DOTALL,
     )
-    for url, title, snippet in blocks[:max_results]:
-        # Clean HTML tags
+
+    # Fallback pattern: broader result block extraction
+    if not blocks:
+        blocks = re.findall(
+            r'class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>.*?'
+            r'class="result__snippet"[^>]*>(.*?)</(?:a|div)',
+            html,
+            re.DOTALL,
+        )
+
+    # Second fallback: look for any result links
+    if not blocks:
+        link_blocks = re.findall(
+            r'<a[^>]+class="[^"]*result[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
+            html,
+            re.DOTALL,
+        )
+        blocks = [(url, title, "") for url, title in link_blocks]
+
+    for url, title, snippet in blocks:
+        if len(results) >= max_results:
+            break
         title = re.sub(r"<[^>]+>", "", title).strip()
         snippet = re.sub(r"<[^>]+>", "", snippet).strip()
-        # DuckDuckGo wraps URLs in a redirect
+        # Skip DuckDuckGo ads (contain ad tracking URLs)
+        if "ad_provider" in url or "ad_domain" in url or "y.js?" in url:
+            continue
         if "uddg=" in url:
             url_match = re.search(r"uddg=([^&]+)", url)
             if url_match:
-                from urllib.parse import unquote
                 url = unquote(url_match.group(1))
-        results.append({"title": title, "url": url, "snippet": snippet})
+        if title and url:
+            results.append({"title": title, "url": url, "snippet": snippet})
 
     return results
 

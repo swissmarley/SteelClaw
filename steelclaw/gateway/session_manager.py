@@ -62,7 +62,7 @@ class SessionManager:
             DBSession.user_id == user.id,
             DBSession.session_type == "dm",
             DBSession.unified_session_id.isnot(None),
-        )
+        ).limit(1)
         existing_result = await db.execute(existing_stmt)
         unified_id = existing_result.scalar_one_or_none()
 
@@ -71,6 +71,8 @@ class SessionManager:
             platform_chat_id=msg.platform_chat_id,
             session_type="dm",
             user_id=user.id,
+            connector_type=msg.platform,
+            status="active",
         )
         db.add(new_session)
         await db.flush()  # populate new_session.id
@@ -97,6 +99,8 @@ class SessionManager:
             platform=msg.platform,
             platform_chat_id=msg.platform_chat_id,
             session_type="group",
+            connector_type=msg.platform,
+            status="active",
         )
         db.add(new_session)
         await db.flush()
