@@ -60,6 +60,16 @@ class DiscordConnector(BaseConnector):
         except asyncio.CancelledError:
             await client.close()
 
+    async def send_typing(self, chat_id: str) -> None:
+        if self._client is None:
+            return
+        channel = self._client.get_channel(int(chat_id))
+        if channel and hasattr(channel, "typing"):
+            try:
+                await channel.typing()
+            except Exception:
+                logger.debug("Failed to send typing indicator to %s", chat_id)
+
     async def send(self, message: OutboundMessage) -> None:
         if self._client is None:
             return

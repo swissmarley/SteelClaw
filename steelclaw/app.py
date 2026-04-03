@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI):
     )
 
     # ── Messaging gateway ───────────────────────────────────────────────
-    from steelclaw.gateway.router import process_message
+    from steelclaw.gateway.router import process_message, set_connector_registry
 
     registry = ConnectorRegistry(settings.gateway)
 
@@ -123,19 +123,29 @@ async def lifespan(app: FastAPI):
         """Handle messages from platform connectors (Telegram, Discord, etc.)."""
         from steelclaw.db.engine import get_async_session
 
+        connector = registry.get(inbound.platform)
+
+        # Start typing indicator while processing
+        if connector:
+            await connector.start_typing(inbound.platform_chat_id)
+
         outbound = None
         try:
             async for db in get_async_session():
                 outbound = await process_message(inbound, settings.gateway, db)
         except Exception:
             logger.exception("Error processing connector message (%s)", inbound.platform)
-        if outbound:
-            connector = registry.get(inbound.platform)
+        finally:
+            # Stop typing indicator
             if connector:
-                await connector.send(outbound)
+                connector.stop_typing(inbound.platform_chat_id)
+
+        if outbound and connector:
+            await connector.send(outbound)
 
     registry.set_handler(_connector_handler)
     await registry.start_all()
+    set_connector_registry(registry)
     app.state.registry = registry
 
     logger.info("SteelClaw started on %s:%s", settings.server.host, settings.server.port)
