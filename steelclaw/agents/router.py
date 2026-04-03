@@ -390,6 +390,12 @@ class AgentRouter:
                     if td.get("arguments"):
                         buf["arguments_str"] += td["arguments"]
 
+                if chunk.model:
+                    model_used = chunk.model
+                if chunk.usage:
+                    total_prompt += chunk.usage.get("prompt_tokens", 0)
+                    total_completion += chunk.usage.get("completion_tokens", 0)
+
                 if chunk.finish_reason:
                     finish_reason = chunk.finish_reason
 

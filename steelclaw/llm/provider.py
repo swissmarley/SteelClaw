@@ -149,10 +149,14 @@ class StreamChunk:
         content: str | None = None,
         tool_call_delta: dict | None = None,
         finish_reason: str | None = None,
+        model: str | None = None,
+        usage: dict | None = None,
     ) -> None:
         self.content = content or ""
         self.tool_call_delta = tool_call_delta
         self.finish_reason = finish_reason
+        self.model = model
+        self.usage = usage
 
     @classmethod
     def from_litellm_chunk(cls, chunk: Any) -> StreamChunk:
@@ -170,10 +174,18 @@ class StreamChunk:
                 "arguments": getattr(tc.function, "arguments", "") if hasattr(tc, "function") else "",
             }
 
+        # Extract model and usage from chunk (litellm includes these on the final chunk)
+        model = getattr(chunk, "model", None)
+        usage = None
+        if hasattr(chunk, "usage") and chunk.usage is not None:
+            usage = dict(chunk.usage)
+
         return cls(
             content=getattr(delta, "content", None),
             tool_call_delta=tool_delta,
             finish_reason=chunk.choices[0].finish_reason,
+            model=model,
+            usage=usage,
         )
 
 

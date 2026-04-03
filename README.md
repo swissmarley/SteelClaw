@@ -2,7 +2,7 @@
 
 Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
 
-**Key highlights:** Premium glassmorphism UI, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), 60+ skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
+**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), 60+ skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -85,7 +85,7 @@ Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. Th
 steelclaw chat
 ```
 
-The TUI chat uses Rich for styled panels, Markdown rendering, and a spinner while the assistant is thinking. Commands: `/help`, `/clear`, `/status`, `/history`, `/quit`.
+The TUI chat supports streaming responses — text appears token-by-token as the LLM generates it, with live tool-call status indicators. Uses Rich for styled panels and Markdown rendering. Commands: `/help`, `/clear`, `/status`, `/history`, `/quit`.
 
 ## CLI Commands
 
@@ -113,7 +113,7 @@ The TUI chat uses Rich for styled panels, Markdown rendering, and a spinner whil
 
 | Method | How to Access | Description |
 |--------|--------------|-------------|
-| **Control UI** | `http://localhost:8000/` | Glassmorphism dashboard with chat, voice, settings, skills, analytics |
+| **Control UI** | `http://localhost:8000/` | Glassmorphism dashboard with streaming chat, voice, settings, skills, analytics |
 | **Voice Chat** | Dashboard microphone button | Streaming voice conversation with animated waveform |
 | **TUI Chat** | `steelclaw chat` | Rich-powered interactive terminal client |
 | **Onboarding** | `steelclaw onboard` | Arrow-key guided setup wizard |
@@ -201,6 +201,16 @@ SteelClaw supports voice interaction via the dashboard. Click the microphone but
 
 **Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. Supports configurable STT/TTS models and voice selection (alloy, echo, fable, onyx, nova, shimmer).
 
+## Streaming Responses
+
+SteelClaw streams LLM responses in real time across all interfaces:
+
+- **Web UI** — tokens appear character-by-character via WebSocket with a typing indicator and live tool-call status
+- **TUI chat** — Rich live display updates as tokens arrive, with tool execution progress
+- **WebSocket API** — structured streaming events (`chunk`, `tool_start`, `tool_end`, `done`, `error`) for programmatic clients
+
+Streaming is used by default for all new conversations. Token usage and model metadata are captured from the streaming response for accurate analytics and billing.
+
 ## File Uploads in Chat
 
 Attach files directly in the chat to have SteelClaw analyze their content:
@@ -284,7 +294,7 @@ The dashboard Analytics page provides:
 - **Session histogram** — message distribution across sessions
 - **CSV export** — download raw data for any date range
 
-Token usage and cost are tracked across all tool-calling rounds in the agent pipeline.
+Token usage and cost are tracked across all tool-calling rounds in both standard and streaming agent pipelines.
 
 ### Analytics API
 

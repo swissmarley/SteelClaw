@@ -203,6 +203,8 @@ async def process_message_streaming(
         elif event["type"] == "done":
             full_content = event.get("content", full_content)
             usage = event.get("usage", {})
+        elif event["type"] == "error":
+            full_content = event.get("content", full_content or "An error occurred.")
         yield event
 
     # Persist outbound message
