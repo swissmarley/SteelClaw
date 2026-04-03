@@ -69,6 +69,19 @@ class TelegramConnector(BaseConnector):
         )
         await self.dispatch(inbound)
 
+    async def send_typing(self, chat_id: str) -> None:
+        import httpx
+
+        token = self.config.token
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{token}/sendChatAction",
+                    json={"chat_id": chat_id, "action": "typing"},
+                )
+        except Exception:
+            logger.debug("Failed to send typing indicator to %s", chat_id)
+
     async def send(self, message: OutboundMessage) -> None:
         import httpx
 

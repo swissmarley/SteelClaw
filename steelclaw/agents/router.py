@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from steelclaw.agents.persona_loader import build_persona_system_prompt
 from steelclaw.db.models import Session as DBSession
 from steelclaw.llm.context import ContextBuilder
-from steelclaw.llm.provider import LLMProvider, LLMResponse, ToolCall
+from steelclaw.llm.provider import LLMProvider, LLMResponse, StreamChunk, ToolCall
 from steelclaw.pricing import calculate_cost
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.settings import AgentSettings
@@ -281,6 +282,178 @@ class AgentRouter:
             len(selected), len(all_tools),
         )
         return selected
+
+    async def stream_response(
+        self,
+        message: InboundMessage,
+        session: DBSession,
+        db: AsyncSession | None = None,
+    ) -> AsyncIterator[dict]:
+        """Stream agent response as chunks. Yields dicts:
+
+        - {"type": "chunk", "content": "text"}  — incremental text
+        - {"type": "tool_start", "name": "...", "id": "..."}  — tool call starting
+        - {"type": "tool_end", "name": "...", "result_preview": "..."}  — tool call done
+        - {"type": "done", "content": "full text", "usage": {...}}  — final
+        - {"type": "error", "content": "..."}  — on failure
+        """
+        try:
+            async for event in self._stream_agent_loop(message, session, db):
+                yield event
+        except Exception as e:
+            logger.exception("Streaming agent error for session %s", session.id)
+            yield {"type": "error", "content": f"I encountered an error: {e}"}
+
+    async def _stream_agent_loop(
+        self,
+        message: InboundMessage,
+        session: DBSession,
+        db: AsyncSession | None = None,
+    ) -> AsyncIterator[dict]:
+        """Streaming agentic loop. Yields events as chunks arrive."""
+
+        # Build context (same as non-streaming)
+        skill_context = self._skills.get_combined_system_context() if self._skills else None
+        tools_schema = self._skills.get_all_tools_schema() if self._skills else []
+
+        if len(tools_schema) > MAX_TOOLS:
+            tools_schema = self._select_relevant_tools(message.content, tools_schema)
+
+        memory_context = None
+        if self._memory_retriever and message.content:
+            namespace = getattr(session, "unified_session_id", None) or session.id
+            memories = self._memory_retriever.retrieve_relevant(
+                query_text=message.content,
+                namespace=namespace,
+                limit=self._settings.memory.top_k,
+            )
+            memory_context = self._memory_retriever.format_for_prompt(memories)
+
+        persona_prompt = build_persona_system_prompt()
+
+        if db is not None:
+            messages = await self._context.build(
+                session=session,
+                db=db,
+                persona_prompt=persona_prompt,
+                skill_context=skill_context,
+                memory_context=memory_context,
+                current_message=message.content,
+                attachments=message.attachments,
+            )
+        else:
+            system = f"{persona_prompt}\n\n{self._settings.llm.system_prompt}"
+            if skill_context:
+                system = f"{system}\n\n{skill_context}"
+            if memory_context:
+                system = f"{system}\n\n{memory_context}"
+            messages = [
+                {"role": "system", "content": system},
+                self._context._build_user_message(message.content, message.attachments),
+            ]
+
+        total_prompt = 0
+        total_completion = 0
+        model_used = None
+        full_content = ""
+
+        for round_num in range(MAX_TOOL_ROUNDS):
+            # Accumulate streaming chunks
+            content_buffer = ""
+            tool_call_buffers: dict[int, dict] = {}  # index → {id, name, arguments_str}
+            finish_reason = None
+
+            async for chunk in self._provider.stream(
+                messages=messages,
+                tools=tools_schema if tools_schema else None,
+            ):
+                # Text content — yield immediately
+                if chunk.content:
+                    content_buffer += chunk.content
+                    yield {"type": "chunk", "content": chunk.content}
+
+                # Tool call delta — accumulate
+                if chunk.tool_call_delta:
+                    td = chunk.tool_call_delta
+                    idx = td.get("index", 0)
+                    if idx not in tool_call_buffers:
+                        tool_call_buffers[idx] = {
+                            "id": td.get("id", ""),
+                            "name": td.get("name", ""),
+                            "arguments_str": "",
+                        }
+                    buf = tool_call_buffers[idx]
+                    if td.get("id"):
+                        buf["id"] = td["id"]
+                    if td.get("name"):
+                        buf["name"] = (buf["name"] or "") + td["name"]
+                    if td.get("arguments"):
+                        buf["arguments_str"] += td["arguments"]
+
+                if chunk.model:
+                    model_used = chunk.model
+                if chunk.usage:
+                    total_prompt += chunk.usage.get("prompt_tokens", 0)
+                    total_completion += chunk.usage.get("completion_tokens", 0)
+
+                if chunk.finish_reason:
+                    finish_reason = chunk.finish_reason
+
+            full_content += content_buffer
+
+            # Parse accumulated tool calls
+            tool_calls: list[ToolCall] = []
+            for idx in sorted(tool_call_buffers.keys()):
+                buf = tool_call_buffers[idx]
+                try:
+                    args = json.loads(buf["arguments_str"]) if buf["arguments_str"] else {}
+                except json.JSONDecodeError:
+                    args = {"raw": buf["arguments_str"]}
+                tool_calls.append(ToolCall(id=buf["id"], name=buf["name"], arguments=args))
+
+            # No tool calls → we're done
+            if not tool_calls:
+                usage = {
+                    "model": model_used,
+                    "prompt_tokens": total_prompt,
+                    "completion_tokens": total_completion,
+                }
+                yield {"type": "done", "content": full_content or "(no response)", "usage": usage}
+                return
+
+            # Execute tool calls
+            logger.info("Stream round %d: %d tool call(s)", round_num + 1, len(tool_calls))
+
+            messages.append(
+                self._context.build_assistant_tool_call_message(
+                    content=content_buffer,
+                    tool_calls=tool_calls,
+                )
+            )
+
+            for tc in tool_calls:
+                yield {"type": "tool_start", "name": tc.name, "id": tc.id}
+                result = await self._execute_tool_call(tc)
+                messages.append(
+                    self._context.build_tool_result_message(tc.id, result)
+                )
+                yield {
+                    "type": "tool_end",
+                    "name": tc.name,
+                    "result_preview": result[:200],
+                }
+
+        # Exhausted tool rounds
+        usage = {
+            "model": model_used,
+            "prompt_tokens": total_prompt,
+            "completion_tokens": total_completion,
+        }
+        yield {
+            "type": "done",
+            "content": full_content or "I've been working on this but reached my iteration limit.",
+            "usage": usage,
+        }
 
     async def _execute_tool_call(self, tc: ToolCall) -> str:
         """Execute a single tool call via the skill registry."""

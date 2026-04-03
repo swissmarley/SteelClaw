@@ -210,6 +210,12 @@ body {
 .msg.user .lbl { color: rgba(255,255,255,0.7); }
 .msg.assistant .lbl { color: var(--accent); }
 .typing-indicator { color: var(--text-secondary); font-size: 12px; font-style: italic; padding: 4px 0; }
+.streaming-cursor { color: var(--accent); animation: blink 0.6s step-end infinite; font-weight: bold; }
+@keyframes blink { 50% { opacity: 0; } }
+.streaming-body { min-height: 1.2em; }
+.tool-indicator { color: var(--accent); font-size: 12px; padding: 6px 0 2px; display: flex; align-items: center; gap: 6px; }
+.tool-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .typing-dots { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
 .typing-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.4s infinite ease-in-out; }
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
@@ -806,13 +812,103 @@ const wsDot = document.getElementById('ws-dot');
 const wsLabel = document.getElementById('ws-label');
 let ws = null;
 
+// ── Streaming state ───────────────────────────────────────
+let _streamingMsgEl = null;   // The DOM element being streamed into
+let _streamingContent = '';    // Accumulated text so far
+let _streamingToolEl = null;   // Tool indicator element
+
+function _createStreamingMsg() {
+  removeTyping();
+  _streamingContent = '';
+  const d = document.createElement('div'); d.className='msg assistant';
+  const l = document.createElement('div'); l.className='lbl'; l.textContent='SteelClaw';
+  const t = document.createElement('div'); t.className='streaming-body';
+  const cursor = document.createElement('span'); cursor.className='streaming-cursor'; cursor.textContent='\u258C';
+  t.appendChild(cursor);
+  const actions = document.createElement('div'); actions.className='msg-actions'; actions.style.display='none';
+  const copyBtn = document.createElement('button'); copyBtn.textContent='\uD83D\uDCCB'; copyBtn.title='Copy';
+  actions.appendChild(copyBtn);
+  ['\uD83D\uDC4D','\uD83D\uDC4E'].forEach(emoji => {
+    const rb = document.createElement('button'); rb.textContent=emoji; rb.title='React';
+    rb.onclick = () => { rb.style.opacity = rb.style.opacity==='0.4'?'1':'0.4'; };
+    actions.appendChild(rb);
+  });
+  d.appendChild(l); d.appendChild(t); d.appendChild(actions);
+  d._actionsEl = actions; d._bodyEl = t; d._copyBtn = copyBtn;
+  msgEl.appendChild(d);
+  msgEl.scrollTop = msgEl.scrollHeight;
+  _streamingMsgEl = d;
+  return d;
+}
+
+function _appendStreamChunk(text) {
+  if (!_streamingMsgEl) _createStreamingMsg();
+  _streamingContent += text;
+  const body = _streamingMsgEl._bodyEl;
+  body.innerHTML = renderMarkdown(_streamingContent) + '<span class="streaming-cursor">\u258C</span>';
+  msgEl.scrollTop = msgEl.scrollHeight;
+}
+
+function _showToolIndicator(toolName) {
+  if (!_streamingMsgEl) _createStreamingMsg();
+  if (_streamingToolEl) _streamingToolEl.remove();
+  const ind = document.createElement('div'); ind.className='tool-indicator';
+  ind.innerHTML = '<span class="tool-spinner"></span> Using <strong>' + (toolName||'tool') + '</strong>...';
+  _streamingMsgEl._bodyEl.appendChild(ind);
+  _streamingToolEl = ind;
+  msgEl.scrollTop = msgEl.scrollHeight;
+}
+
+function _removeToolIndicator() {
+  if (_streamingToolEl) { _streamingToolEl.remove(); _streamingToolEl = null; }
+}
+
+function _finalizeStream(fullContent) {
+  if (!_streamingMsgEl) _createStreamingMsg();
+  _removeToolIndicator();
+  const finalText = fullContent || _streamingContent;
+  const body = _streamingMsgEl._bodyEl;
+  body.innerHTML = renderMarkdown(finalText);
+  body.classList.remove('streaming-body');
+  _streamingMsgEl._copyBtn.onclick = () => { navigator.clipboard.writeText(finalText).then(()=>toast('Copied!')); };
+  _streamingMsgEl._actionsEl.style.display = '';
+  msgEl.scrollTop = msgEl.scrollHeight;
+  if (voiceChatMode) speakResponse(finalText);
+  _streamingMsgEl = null;
+  _streamingContent = '';
+}
+
 function wsConnect() {
   const proto = location.protocol==='https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/gateway/ws`);
   ws.onopen = () => { wsDot.className='dot green'; wsLabel.textContent='Connected'; sendBtn.disabled=false; };
   ws.onclose = () => { wsDot.className='dot red'; wsLabel.textContent='Disconnected'; sendBtn.disabled=true; setTimeout(wsConnect,3000); };
   ws.onerror = () => ws.close();
-  ws.onmessage = (e) => { removeTyping(); const d=JSON.parse(e.data); const txt=d.content||JSON.stringify(d); addMsg('assistant',txt); if(voiceChatMode) speakResponse(txt); };
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    const etype = d.type;
+    if (etype === 'chunk') {
+      removeTyping();
+      _appendStreamChunk(d.content || '');
+    } else if (etype === 'tool_start') {
+      removeTyping();
+      _showToolIndicator(d.name || 'tool');
+    } else if (etype === 'tool_end') {
+      _removeToolIndicator();
+    } else if (etype === 'done') {
+      removeTyping();
+      _finalizeStream(d.content);
+    } else if (etype === 'error') {
+      removeTyping();
+      _finalizeStream(d.content || 'An error occurred.');
+    } else {
+      // Legacy non-streaming response (no type field)
+      removeTyping();
+      const txt = d.content || JSON.stringify(d);
+      addMsg('assistant', txt);
+      if (voiceChatMode) speakResponse(txt);
+    }
+  };
 }
 
 function addMsg(role, content, attachments) {
@@ -890,8 +986,8 @@ function sendMsg() {
 
   addMsg('user', displayParts.join('\n'), readyAttachments);
 
-  // Send via WebSocket with attachment IDs
-  const payload = { content: t };
+  // Send via WebSocket with attachment IDs and streaming enabled
+  const payload = { content: t, stream: true };
   if (readyAttachments.length) {
     payload.attachments = readyAttachments.map(a => ({ id: a.id, filename: a.filename, category: a.category }));
   }
@@ -1174,7 +1270,7 @@ async function startRecording(continuous) {
         if (data.text) {
           if (voiceChatMode) document.getElementById('voice-transcript').textContent = data.text;
           addMsg('user', data.text);
-          ws.send(JSON.stringify({content:data.text}));
+          ws.send(JSON.stringify({content:data.text, stream:true}));
           showTyping();
         } else if (data.error) {
           toast('Transcription: '+data.error, 'error');
