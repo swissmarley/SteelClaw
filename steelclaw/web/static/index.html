@@ -788,11 +788,15 @@ body {
   <div class="voice-waveform" id="voice-waveform" aria-hidden="true"></div>
   <div class="voice-selector" id="voice-selector" aria-label="Voice selection">
     <button class="voice-chip active" onclick="voiceMode.setVoice('alloy');updateVoiceChips(this)" aria-pressed="true">alloy</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('ash');updateVoiceChips(this)" aria-pressed="false">ash</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('ballad');updateVoiceChips(this)" aria-pressed="false">ballad</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('coral');updateVoiceChips(this)" aria-pressed="false">coral</button>
     <button class="voice-chip" onclick="voiceMode.setVoice('echo');updateVoiceChips(this)" aria-pressed="false">echo</button>
-    <button class="voice-chip" onclick="voiceMode.setVoice('fable');updateVoiceChips(this)" aria-pressed="false">fable</button>
-    <button class="voice-chip" onclick="voiceMode.setVoice('onyx');updateVoiceChips(this)" aria-pressed="false">onyx</button>
-    <button class="voice-chip" onclick="voiceMode.setVoice('nova');updateVoiceChips(this)" aria-pressed="false">nova</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('sage');updateVoiceChips(this)" aria-pressed="false">sage</button>
     <button class="voice-chip" onclick="voiceMode.setVoice('shimmer');updateVoiceChips(this)" aria-pressed="false">shimmer</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('verse');updateVoiceChips(this)" aria-pressed="false">verse</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('marin');updateVoiceChips(this)" aria-pressed="false">marin</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('cedar');updateVoiceChips(this)" aria-pressed="false">cedar</button>
   </div>
   <div class="voice-transcript-wrap">
     <div class="voice-transcript-text" id="voice-transcript-text" aria-live="polite" aria-label="Voice transcript"></div>
@@ -1541,10 +1545,19 @@ loaders.settings = async () => {
             <div class="form-group"><label>STT Provider / Model</label><input id="s-voice-stt" value="${esc(voice.transcription_model)||'whisper-1'}"></div>
             <div class="form-group"><label>TTS Model</label><input id="s-voice-tts" value="${esc(voice.tts_model)||'tts-1'}"></div>
           </div>
-          <div class="form-group"><label>TTS Voice</label>
-            <select id="s-voice-voice">
-              ${['alloy','echo','fable','onyx','nova','shimmer'].map(v=>`<option${(voice.tts_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
-            </select>
+          <div class="form-row">
+            <div class="form-group"><label>TTS Voice</label>
+              <select id="s-voice-voice">
+                ${['alloy','echo','fable','onyx','nova','shimmer'].map(v=>`<option${(voice.tts_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
+              </select>
+              <div class="hint">Used for REST TTS endpoint</div>
+            </div>
+            <div class="form-group"><label>Realtime Voice</label>
+              <select id="s-voice-realtime-voice">
+                ${['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar'].map(v=>`<option${(voice.realtime_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
+              </select>
+              <div class="hint">Used for WebRTC Talk mode</div>
+            </div>
           </div>
           <button class="btn btn-primary" onclick="saveVoice()">Save Voice Settings</button>
         </div>
@@ -1767,6 +1780,7 @@ async function saveVoice() {
     transcription_model: document.getElementById('s-voice-stt').value,
     tts_model: document.getElementById('s-voice-tts').value,
     tts_voice: document.getElementById('s-voice-voice').value,
+    realtime_voice: document.getElementById('s-voice-realtime-voice').value,
   })});
   toast('Voice settings saved');
 }

@@ -8,7 +8,7 @@
  *   voiceMode.stop()           // tears down connection, appends transcript to chat
  *   voiceMode.interrupt()      // cancels agent speech, resumes listening
  *   voiceMode.mute()           // toggles mic without ending session
- *   voiceMode.setVoice('nova') // changes preferred voice (persisted in localStorage)
+ *   voiceMode.setVoice('coral') // changes preferred voice (persisted in localStorage)
  */
 class VoiceModeManager {
   constructor() {
@@ -162,8 +162,8 @@ class VoiceModeManager {
   }
 
   /**
-   * Set the preferred TTS voice and persist it to localStorage.
-   * @param {string} voice - One of: alloy, echo, fable, onyx, nova, shimmer
+   * Set the preferred Realtime API voice and persist it to localStorage.
+   * @param {string} voice - One of: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
    */
   setVoice(voice) {
     this._voice = voice;
