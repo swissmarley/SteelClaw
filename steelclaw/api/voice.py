@@ -307,7 +307,21 @@ async def create_realtime_session(
     )
 
     persona_prompt = build_persona_system_prompt()
-    parts = [p for p in [persona_prompt, system_prompt] if p]
+
+    memory_context = ""
+    memory_retriever = getattr(request.app.state, "memory_retriever", None)
+    if memory_retriever:
+        try:
+            memories = memory_retriever.retrieve_relevant(
+                query_text="user name preferences goals",
+                namespace="memory_main",
+                limit=5,
+            )
+            memory_context = memory_retriever.format_for_prompt(memories)
+        except Exception:
+            logger.debug("Memory retrieval failed for voice session (non-critical)", exc_info=True)
+
+    parts = [p for p in [persona_prompt, system_prompt, memory_context] if p]
     full_instructions = "\n\n".join(parts)
 
     payload = {

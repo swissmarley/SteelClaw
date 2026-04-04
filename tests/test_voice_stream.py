@@ -168,6 +168,63 @@ async def test_realtime_session_uses_agent_system_prompt(voice_client):
     assert len(captured["payload"]["instructions"]) > 0
 
 
+@pytest.fixture()
+async def voice_app_and_client():
+    """Like voice_client but also yields the app so we can set state."""
+    from steelclaw.app import create_app
+    app = create_app(_make_voice_settings())
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield app, ac
+
+
+async def test_realtime_session_injects_memory(voice_app_and_client):
+    """Instructions must include formatted memory context when retriever is set."""
+    app, ac = voice_app_and_client
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve_relevant.return_value = ["m1"]
+    mock_retriever.format_for_prompt.return_value = "Memory: user prefers brevity."
+    app.state.memory_retriever = mock_retriever
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "id": "sess_m1",
+        "client_secret": {"value": "ek_m1"},
+        "model": "gpt-4o-realtime-preview",
+    }
+    captured = {}
+
+    async def capture_post(url, **kwargs):
+        captured["payload"] = kwargs.get("json", {})
+        return mock_resp
+
+    with patch(
+        "steelclaw.api.voice.build_persona_system_prompt",
+        return_value="Persona prefix.",
+    ), patch("steelclaw.api.voice.httpx.AsyncClient") as MockClient:
+        instance = AsyncMock()
+        MockClient.return_value.__aenter__.return_value = instance
+        instance.post.side_effect = capture_post
+
+        resp = await ac.post(
+            "/api/voice/realtime-session",
+            json={},
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert resp.status_code == 200
+    instructions = captured.get("payload", {}).get("instructions", "")
+    assert "Memory: user prefers brevity." in instructions
+    mock_retriever.retrieve_relevant.assert_called_once_with(
+        query_text="user name preferences goals",
+        namespace="memory_main",
+        limit=5,
+    )
+
+
 async def test_realtime_session_injects_persona(voice_client):
     """Instructions must include the persona user name."""
     mock_resp = MagicMock()
