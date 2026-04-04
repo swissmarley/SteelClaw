@@ -31,3 +31,42 @@ async def test_webhook_placeholder(client):
     resp = await client.post("/gateway/webhook/slack")
     assert resp.status_code == 200
     assert resp.json()["platform"] == "slack"
+
+
+def test_base_connector_last_error_default():
+    """BaseConnector starts with last_error=None and is_running=False."""
+    from unittest.mock import AsyncMock
+    from steelclaw.gateway.base import BaseConnector
+    from steelclaw.settings import ConnectorConfig
+
+    class _DummyConnector(BaseConnector):
+        platform_name = "dummy"
+        async def _run(self): pass
+        async def send(self, message): pass
+
+    conn = _DummyConnector(
+        config=ConnectorConfig(enabled=True, token="tok"),
+        handler=AsyncMock(),
+    )
+    assert conn.last_error is None
+    assert conn.is_running is False
+
+
+@pytest.mark.asyncio
+async def test_base_connector_verify_returns_none():
+    """Default verify() returns None (no error)."""
+    from unittest.mock import AsyncMock
+    from steelclaw.gateway.base import BaseConnector
+    from steelclaw.settings import ConnectorConfig
+
+    class _DummyConnector(BaseConnector):
+        platform_name = "dummy"
+        async def _run(self): pass
+        async def send(self, message): pass
+
+    conn = _DummyConnector(
+        config=ConnectorConfig(enabled=True, token="tok"),
+        handler=AsyncMock(),
+    )
+    result = await conn.verify()
+    assert result is None
