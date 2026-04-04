@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from steelclaw.db.engine import get_async_session
+
+logger = logging.getLogger("steelclaw.voice.api")
 
 router = APIRouter()
 
@@ -252,4 +259,87 @@ async def voice_status(request: Request) -> dict:
         "tts_provider": settings.tts_provider,
         "tts_model": settings.tts_model,
         "tts_voice": settings.tts_voice,
+    }
+
+
+class RealtimeSessionRequest(BaseModel):
+    """Request body for creating an ephemeral Realtime API session."""
+
+    voice: str = ""
+
+
+@router.post("/realtime-session")
+async def create_realtime_session(
+    request: Request,
+    body: RealtimeSessionRequest,
+    db: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """Create an ephemeral OpenAI Realtime API session token for browser WebRTC.
+
+    Queries the main agent profile from DB to inject its system_prompt as
+    ``instructions`` for the Realtime session, ensuring voice and text chat
+    share the same persona. Returns the ephemeral client_secret for WebRTC.
+    """
+    settings = request.app.state.settings
+    voice_settings = settings.agents.voice
+
+    if not voice_settings.enabled:
+        raise HTTPException(400, "Voice mode is not enabled in settings")
+
+    api_key = (
+        settings.agents.llm.provider_keys.get("openai")
+        or settings.agents.llm.api_key
+    )
+    if not api_key:
+        raise HTTPException(400, "OpenAI API key not configured")
+
+    from sqlalchemy import select
+
+    from steelclaw.db.models import AgentProfile
+
+    result = await db.execute(
+        select(AgentProfile).where(AgentProfile.is_main.is_(True))
+    )
+    agent = result.scalar_one_or_none()
+    system_prompt = (
+        agent.system_prompt if agent else settings.agents.llm.system_prompt
+    )
+
+    payload = {
+        "model": voice_settings.realtime_model,
+        "modalities": ["audio", "text"],
+        "voice": body.voice or voice_settings.realtime_voice,
+        "instructions": system_prompt,
+        "input_audio_transcription": {"model": "whisper-1"},
+        "turn_detection": {
+            "type": "server_vad",
+            "threshold": voice_settings.realtime_vad_threshold,
+            "silence_duration_ms": voice_settings.realtime_silence_ms,
+            "prefix_padding_ms": voice_settings.realtime_prefix_padding_ms,
+        },
+    }
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/realtime/sessions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=10.0,
+        )
+
+    if resp.status_code != 200:
+        logger.error(
+            "Realtime session creation failed: %s %s", resp.status_code, resp.text
+        )
+        raise HTTPException(502, f"OpenAI API error: {resp.status_code}")
+
+    data = resp.json()
+    logger.info("Realtime session created: %s", data.get("id"))
+    return {
+        "client_secret": data.get("client_secret"),
+        "session_id": data.get("id"),
+        "model": data.get("model", voice_settings.realtime_model),
     }
