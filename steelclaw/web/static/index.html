@@ -970,7 +970,6 @@ function _finalizeStream(fullContent) {
   _streamingMsgEl._copyBtn.onclick = () => { navigator.clipboard.writeText(finalText).then(()=>toast('Copied!')); };
   _streamingMsgEl._actionsEl.style.display = '';
   msgEl.scrollTop = msgEl.scrollHeight;
-  if (voiceChatMode) speakResponse(finalText);
   _streamingMsgEl = null;
   _streamingContent = '';
 }
@@ -1003,7 +1002,6 @@ function wsConnect() {
       removeTyping();
       const txt = d.content || JSON.stringify(d);
       addMsg('assistant', txt);
-      if (voiceChatMode) speakResponse(txt);
     }
   };
 }
@@ -1293,35 +1291,18 @@ function handlePaletteKey(e) {
   else if (e.key==='Escape') { closePalette(); }
 }
 
-// ── Voice Mode ────────────────────────────────────────────
+// ── Push-to-Talk (single-message Whisper mode) ────────────
+// Voice Talk mode (continuous) is handled by VoiceModeManager in voice-mode.js
 let voiceRecording = false;
 let mediaRecorder = null;
-let voiceChatMode = false;
-let ttsAudio = null;
-let voiceAudioCtx = null;
-let voiceAnalyser = null;
 let voiceStream = null;
-let silenceTimer = null;
-let voiceAutoSubmit = true;
-let silenceThreshold = 500;
-let playbackSpeed = 1.0;
-
-function loadVoicePrefs() {
-  voiceAutoSubmit = localStorage.getItem('steelclaw-voice-autosubmit') !== 'false';
-  silenceThreshold = parseInt(localStorage.getItem('steelclaw-silence-threshold')) || 500;
-  playbackSpeed = parseFloat(localStorage.getItem('steelclaw-playback-speed')) || 1.0;
-}
-loadVoicePrefs();
 
 async function checkVoiceEnabled() {
   try {
-    const status = await fetch('/api/voice/status').then(r=>r.json());
-    if (!status.enabled) {
-      toast('Voice mode is disabled. Enable it in Settings.', 'error');
-      return false;
-    }
+    const status = await fetch('/api/voice/status').then(r => r.json());
+    if (!status.enabled) { toast('Voice mode is disabled. Enable it in Settings.', 'error'); return false; }
     return true;
-  } catch(e) { return true; }
+  } catch (_) { return true; }
 }
 
 async function toggleVoice() {
@@ -1333,257 +1314,34 @@ async function toggleVoice() {
     return;
   }
   if (!(await checkVoiceEnabled())) return;
-  await startRecording(false);
-}
-
-async function startRecording(continuous) {
-  const btn = document.getElementById('voice-btn');
   try {
-    voiceStream = await navigator.mediaDevices.getUserMedia({audio:true});
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(voiceStream);
     const chunks = [];
-
-    // Set up analyser for silence detection and visualization
-    if (!voiceAudioCtx) voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = voiceAudioCtx.createMediaStreamSource(voiceStream);
-    voiceAnalyser = voiceAudioCtx.createAnalyser();
-    voiceAnalyser.fftSize = 256;
-    source.connect(voiceAnalyser);
-
-    if (voiceChatMode) drawVoiceWaveform();
-    if (voiceChatMode && voiceAutoSubmit) startSilenceDetection();
-
     mediaRecorder.ondataavailable = e => chunks.push(e.data);
     mediaRecorder.onstop = async () => {
-      stopSilenceDetection();
-      voiceStream.getTracks().forEach(t=>t.stop());
+      voiceStream.getTracks().forEach(t => t.stop());
       voiceStream = null;
-      const blob = new Blob(chunks, {type:'audio/webm'});
+      const blob = new Blob(chunks, { type: 'audio/webm' });
       const form = new FormData();
       form.append('file', blob, 'recording.webm');
       try {
-        const resp = await fetch('/api/voice/transcribe', {method:'POST', body:form});
+        const resp = await fetch('/api/voice/transcribe', { method: 'POST', body: form });
         const data = await resp.json();
         if (data.text) {
-          if (voiceChatMode) document.getElementById('voice-transcript').textContent = data.text;
           addMsg('user', data.text);
-          ws.send(JSON.stringify({content:data.text, stream:true}));
+          ws.send(JSON.stringify({ content: data.text, stream: true }));
           showTyping();
         } else if (data.error) {
-          toast('Transcription: '+data.error, 'error');
+          toast('Transcription: ' + data.error, 'error');
         }
-      } catch(e) { toast('Voice error: '+e.message, 'error'); }
+      } catch (e) { toast('Voice error: ' + e.message, 'error'); }
     };
     mediaRecorder.start();
     voiceRecording = true;
     btn.classList.add('recording');
-    if (voiceChatMode) document.getElementById('voice-panel').className = 'open listening';
-    if (!continuous) toast('Recording... click mic again to stop');
-  } catch(e) { toast('Microphone access denied', 'error'); }
-}
-
-function startSilenceDetection() {
-  if (!voiceAnalyser) return;
-  const bufferLength = voiceAnalyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  let silentSince = null;
-
-  function check() {
-    if (!voiceRecording || !voiceAnalyser) return;
-    voiceAnalyser.getByteFrequencyData(dataArray);
-    const avg = dataArray.reduce((a,b)=>a+b,0) / bufferLength;
-    if (avg < 10) {
-      if (!silentSince) silentSince = Date.now();
-      else if (Date.now() - silentSince > silenceThreshold) {
-        // Auto-submit
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-          voiceRecording = false;
-          document.getElementById('voice-btn').classList.remove('recording');
-          mediaRecorder.stop();
-        }
-        return;
-      }
-    } else {
-      silentSince = null;
-    }
-    silenceTimer = requestAnimationFrame(check);
-  }
-  check();
-}
-
-function stopSilenceDetection() {
-  if (silenceTimer) { cancelAnimationFrame(silenceTimer); silenceTimer = null; }
-}
-
-function drawVoiceWaveform() {
-  const canvas = document.getElementById('voice-canvas');
-  if (!canvas || !voiceAnalyser) return;
-  const ctx = canvas.getContext('2d');
-  const bufferLength = voiceAnalyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-
-  function draw() {
-    if (!voiceRecording && !voiceChatMode) return;
-    requestAnimationFrame(draw);
-    voiceAnalyser.getByteTimeDomainData(dataArray);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.lineWidth = 2;
-    const style = getComputedStyle(document.documentElement);
-    ctx.strokeStyle = style.getPropertyValue('--accent').trim() || '#8b5cf6';
-    ctx.beginPath();
-    const sliceWidth = canvas.width / bufferLength;
-    let x = 0;
-    for (let i = 0; i < bufferLength; i++) {
-      const v = dataArray[i] / 128.0;
-      const y = v * canvas.height / 2;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-      x += sliceWidth;
-    }
-    ctx.lineTo(canvas.width, canvas.height / 2);
-    ctx.stroke();
-  }
-  draw();
-}
-
-function toggleVoicePanelRecording() {
-  if (!voiceChatMode) return;
-  if (voiceRecording) {
-    voiceRecording = false;
-    document.getElementById('voice-btn').classList.remove('recording');
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  } else {
-    startRecording(true);
-  }
-}
-
-// ── Voice Chat Panel ─────────────────────────────────────
-function openVoicePanel() {
-  if (voiceChatMode) { closeVoicePanel(); return; }
-  checkVoiceEnabled().then(ok => {
-    if (!ok) return;
-    voiceChatMode = true;
-    document.getElementById('voice-panel').classList.add('open');
-    document.getElementById('voice-chat-bar').classList.add('active');
-    document.getElementById('voice-chat-btn').classList.add('voice-chat-active');
-    document.getElementById('voice-transcript').textContent = 'Tap mic to start speaking...';
-    toast('Voice Chat active');
-  });
-}
-
-function closeVoicePanel() {
-  voiceChatMode = false;
-  document.getElementById('voice-panel').classList.remove('open','listening','speaking');
-  document.getElementById('voice-chat-bar').classList.remove('active');
-  document.getElementById('voice-chat-btn').classList.remove('voice-chat-active');
-  if (voiceRecording) {
-    voiceRecording = false;
-    document.getElementById('voice-btn').classList.remove('recording');
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  }
-  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
-  stopSilenceDetection();
-  toast('Voice Chat ended');
-}
-
-async function toggleVoiceChatMode() {
-  if (voiceChatMode) { closeVoicePanel(); return; }
-  openVoicePanel();
-}
-
-async function speakResponse(text) {
-  if (!voiceChatMode) return;
-  const panel = document.getElementById('voice-panel');
-  panel.className = 'open speaking';
-  try {
-    // Try streaming first
-    const resp = await fetch('/api/voice/synthesize-stream', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text: text.substring(0, 4000)}),
-    });
-    if (!resp.ok) {
-      // Fall back to non-streaming
-      const resp2 = await fetch('/api/voice/synthesize', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text: text.substring(0, 4000)}),
-      });
-      if (!resp2.ok) { panel.className = 'open'; return; }
-      const blob = await resp2.blob();
-      const url = URL.createObjectURL(blob);
-      ttsAudio = new Audio(url);
-      ttsAudio.playbackRate = playbackSpeed;
-      ttsAudio.onended = () => {
-        URL.revokeObjectURL(url);
-        ttsAudio = null;
-        panel.className = 'open';
-        if (voiceChatMode && !voiceRecording) { startRecording(true); }
-      };
-      ttsAudio.play();
-      return;
-    }
-    // Progressive streaming playback — play each chunk as it arrives
-    if (!voiceAudioCtx) voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const reader = resp.body.getReader();
-    let chunkBuffer = new Uint8Array(0);
-    let nextPlayTime = voiceAudioCtx.currentTime;
-    let chunksPlayed = 0;
-    let streamDone = false;
-
-    // MP3 frames start with sync word 0xFFE0+ ; accumulate until we have a decodable segment
-    async function tryDecodeAndPlay(data, isLast) {
-      try {
-        const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-        const audioBuffer = await voiceAudioCtx.decodeAudioData(ab);
-        const source = voiceAudioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.playbackRate.value = playbackSpeed;
-        source.connect(voiceAudioCtx.destination);
-        // Schedule this chunk right after the previous one ends
-        if (nextPlayTime < voiceAudioCtx.currentTime) nextPlayTime = voiceAudioCtx.currentTime;
-        source.start(nextPlayTime);
-        nextPlayTime += audioBuffer.duration / playbackSpeed;
-        chunksPlayed++;
-        if (isLast) {
-          source.onended = () => {
-            panel.className = 'open';
-            if (voiceChatMode && !voiceRecording) { startRecording(true); }
-          };
-        }
-        return true;
-      } catch(e) { return false; }
-    }
-
-    while (!streamDone) {
-      const {value, done: d} = await reader.read();
-      streamDone = d;
-      if (value) {
-        // Append to buffer
-        const merged = new Uint8Array(chunkBuffer.length + value.length);
-        merged.set(chunkBuffer); merged.set(value, chunkBuffer.length);
-        chunkBuffer = merged;
-        // Try to decode what we have so far (each TTS chunk is a complete MP3 segment)
-        if (await tryDecodeAndPlay(chunkBuffer, false)) {
-          chunkBuffer = new Uint8Array(0); // successfully played, clear buffer
-        }
-      }
-    }
-    // Play any remaining buffered data
-    if (chunkBuffer.length > 0) {
-      await tryDecodeAndPlay(chunkBuffer, true);
-    } else if (chunksPlayed > 0) {
-      // Set onended on last source — schedule panel reset after last chunk finishes
-      const remaining = nextPlayTime - voiceAudioCtx.currentTime;
-      setTimeout(() => {
-        panel.className = 'open';
-        if (voiceChatMode && !voiceRecording) { startRecording(true); }
-      }, Math.max(0, remaining * 1000));
-    }
-  } catch(e) {
-    panel.className = 'open';
-    // TTS failed silently
-  }
+    toast('Recording... click mic again to stop');
+  } catch (_) { toast('Microphone access denied', 'error'); }
 }
 
 // ── Global Keyboard Shortcuts ─────────────────────────────
@@ -1789,19 +1547,6 @@ loaders.settings = async () => {
             </select>
           </div>
           <button class="btn btn-primary" onclick="saveVoice()">Save Voice Settings</button>
-        </div>
-        <div class="card">
-          <h3>Voice Chat Options</h3>
-          <div class="toggle-row"><input type="checkbox" id="s-voice-autosubmit" ${voiceAutoSubmit?'checked':''} onchange="localStorage.setItem('steelclaw-voice-autosubmit',this.checked);voiceAutoSubmit=this.checked"><label for="s-voice-autosubmit">Auto-submit on silence</label></div>
-          <div class="range-group">
-            <label><span>Silence Threshold</span><span id="silence-val">${silenceThreshold}ms</span></label>
-            <input type="range" min="300" max="1500" step="50" value="${silenceThreshold}" oninput="silenceThreshold=parseInt(this.value);localStorage.setItem('steelclaw-silence-threshold',this.value);document.getElementById('silence-val').textContent=this.value+'ms'">
-          </div>
-          <div class="form-group"><label>Playback Speed</label>
-            <select id="s-playback-speed" onchange="playbackSpeed=parseFloat(this.value);localStorage.setItem('steelclaw-playback-speed',this.value)">
-              ${['0.75','1','1.25','1.5'].map(s=>`<option value="${s}"${parseFloat(s)===playbackSpeed?' selected':''}>${s}x</option>`).join('')}
-            </select>
-          </div>
         </div>
       </div>
 
