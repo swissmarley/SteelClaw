@@ -70,3 +70,72 @@ async def test_base_connector_verify_returns_none():
     )
     result = await conn.verify()
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_registry_start_connector():
+    """start_connector starts a connector and adds it to _connectors."""
+    from unittest.mock import AsyncMock, patch
+    from steelclaw.gateway.registry import ConnectorRegistry
+    from steelclaw.settings import ConnectorConfig, GatewaySettings
+
+    settings = GatewaySettings()
+    registry = ConnectorRegistry(settings)
+    registry.set_handler(AsyncMock())
+
+    conf = ConnectorConfig(enabled=True, token="tok-test")
+
+    mock_connector = AsyncMock()
+    mock_connector.last_error = None
+    mock_connector.verify = AsyncMock(return_value=None)
+
+    with patch.object(ConnectorRegistry, "_import_connector", return_value=lambda **kw: mock_connector):
+        result, error = await registry.start_connector("telegram", conf)
+
+    assert error is None
+    assert "telegram" in registry._connectors
+    mock_connector.start.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_registry_start_connector_verify_failure():
+    """start_connector returns error without starting task when verify() fails."""
+    from unittest.mock import AsyncMock, patch
+    from steelclaw.gateway.registry import ConnectorRegistry
+    from steelclaw.settings import ConnectorConfig, GatewaySettings
+
+    settings = GatewaySettings()
+    registry = ConnectorRegistry(settings)
+    registry.set_handler(AsyncMock())
+
+    conf = ConnectorConfig(enabled=True, token="bad-tok")
+
+    mock_connector = AsyncMock()
+    mock_connector.last_error = None
+    mock_connector.verify = AsyncMock(return_value="auth.test failed: invalid_auth")
+
+    with patch.object(ConnectorRegistry, "_import_connector", return_value=lambda **kw: mock_connector):
+        result, error = await registry.start_connector("telegram", conf)
+
+    assert error == "auth.test failed: invalid_auth"
+    assert mock_connector.last_error == "auth.test failed: invalid_auth"
+    mock_connector.start.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_registry_stop_connector():
+    """stop_connector stops and removes a connector from _connectors."""
+    from unittest.mock import AsyncMock
+    from steelclaw.gateway.registry import ConnectorRegistry
+    from steelclaw.settings import GatewaySettings
+
+    settings = GatewaySettings()
+    registry = ConnectorRegistry(settings)
+
+    mock_connector = AsyncMock()
+    registry._connectors["slack"] = mock_connector
+
+    await registry.stop_connector("slack")
+
+    mock_connector.stop.assert_called_once()
+    assert "slack" not in registry._connectors

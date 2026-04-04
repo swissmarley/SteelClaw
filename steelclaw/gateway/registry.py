@@ -6,7 +6,7 @@ import importlib
 import logging
 
 from steelclaw.gateway.base import BaseConnector, MessageHandler
-from steelclaw.settings import GatewaySettings
+from steelclaw.settings import ConnectorConfig, GatewaySettings
 
 logger = logging.getLogger("steelclaw.gateway")
 
@@ -58,6 +58,48 @@ class ConnectorRegistry:
         for connector in self._connectors.values():
             await connector.stop()
         self._connectors.clear()
+
+    async def start_connector(
+        self, name: str, conf: ConnectorConfig
+    ) -> tuple[BaseConnector | None, str | None]:
+        """Import, verify, and start a single connector.
+
+        Returns (connector, None) on success, (connector, error_string) if verify fails.
+        If the connector name is unknown or import fails, returns (None, error_string).
+        """
+        if name not in _CONNECTOR_CLASSES:
+            return None, f"Unknown connector: {name}"
+
+        # Stop existing instance if running
+        if name in self._connectors:
+            await self._connectors[name].stop()
+            del self._connectors[name]
+
+        try:
+            cls = self._import_connector(_CONNECTOR_CLASSES[name])
+        except (ImportError, AttributeError) as exc:
+            return None, f"Failed to import connector {name}: {exc}"
+
+        connector = cls(config=conf, handler=self._handler or self._noop_handler)
+
+        # Pre-flight check before creating asyncio task
+        error = await connector.verify()
+        if error:
+            connector.last_error = error
+            logger.error("Connector %s verify failed: %s", name, error)
+            return connector, error
+
+        await connector.start()
+        self._connectors[name] = connector
+        logger.info("Connector %s live-started", name)
+        return connector, None
+
+    async def stop_connector(self, name: str) -> None:
+        """Stop and remove a single connector."""
+        connector = self._connectors.pop(name, None)
+        if connector:
+            await connector.stop()
+            logger.info("Connector %s stopped", name)
 
     def get(self, platform: str) -> BaseConnector | None:
         return self._connectors.get(platform)
