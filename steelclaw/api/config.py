@@ -180,7 +180,24 @@ async def update_connector_config(platform: str, request: Request) -> dict:
     data = _read_config()
     data.setdefault("gateway", {}).setdefault("connectors", {})[platform] = body
     _write_config(data)
-    return {"status": "saved", "section": f"connectors.{platform}"}
+
+    from steelclaw.gateway.registry import ConnectorRegistry
+    from steelclaw.settings import ConnectorConfig
+
+    registry: ConnectorRegistry = request.app.state.registry
+
+    if body.get("enabled"):
+        try:
+            conf = ConnectorConfig.model_validate(body)
+        except Exception:
+            conf = ConnectorConfig(enabled=True, token=body.get("token"))
+        connector, error = await registry.start_connector(platform, conf)
+        if error:
+            return {"status": "error", "message": error, "section": f"connectors.{platform}"}
+        return {"status": "running", "section": f"connectors.{platform}"}
+    else:
+        await registry.stop_connector(platform)
+        return {"status": "disabled", "section": f"connectors.{platform}"}
 
 
 @router.get("/connectors")
@@ -201,11 +218,14 @@ async def get_connectors_status(request: Request) -> dict:
             status = "enabled_not_running"
         else:
             status = "disabled"
-        result[name] = {
+        entry = {
             "enabled": cfg.get("enabled", False),
             "status": status,
             "config": _mask_secrets(cfg),
         }
+        if connector and connector.last_error:
+            entry["last_error"] = connector.last_error
+        result[name] = entry
     return {"connectors": result}
 
 
