@@ -118,3 +118,56 @@ async def test_connectors_status_includes_last_error(config_app_client):
     assert resp.status_code == 200
     slack_info = resp.json()["connectors"].get("slack", {})
     assert slack_info.get("last_error") == "auth.test failed: invalid_auth"
+
+
+def test_connectors_list_no_server(monkeypatch):
+    """connectors list exits gracefully when server is not running."""
+    import sys, httpx
+    from steelclaw.cli.connectors_cmd import _list_connectors
+    with patch("steelclaw.cli.connectors_cmd.httpx.get", side_effect=httpx.ConnectError("no server")):
+        with pytest.raises(SystemExit):
+            _list_connectors()
+
+
+def test_connectors_enable_calls_put(monkeypatch):
+    """connectors enable calls PUT with enabled=true."""
+    import httpx
+    from unittest.mock import MagicMock
+    from steelclaw.cli.connectors_cmd import _enable_connector
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"status": "running"}
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("steelclaw.cli.connectors_cmd.httpx.get") as mock_get, \
+         patch("steelclaw.cli.connectors_cmd.httpx.put", return_value=mock_resp) as mock_put:
+        # Need existing config so PUT has something to merge
+        mock_get.return_value = MagicMock(
+            json=lambda: {"connectors": {"slack": {"enabled": False, "token": "tok"}}}
+        )
+        _enable_connector("slack")
+
+    mock_put.assert_called_once()
+    call_json = mock_put.call_args.kwargs.get("json") or mock_put.call_args[1].get("json", {})
+    assert call_json.get("enabled") is True
+
+
+def test_connectors_disable_calls_put(monkeypatch):
+    """connectors disable calls PUT with enabled=false."""
+    from unittest.mock import MagicMock
+    from steelclaw.cli.connectors_cmd import _disable_connector
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"status": "disabled"}
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("steelclaw.cli.connectors_cmd.httpx.get") as mock_get, \
+         patch("steelclaw.cli.connectors_cmd.httpx.put", return_value=mock_resp) as mock_put:
+        mock_get.return_value = MagicMock(
+            json=lambda: {"connectors": {"slack": {"enabled": True, "token": "tok"}}}
+        )
+        _disable_connector("slack")
+
+    mock_put.assert_called_once()
+    call_json = mock_put.call_args.kwargs.get("json") or mock_put.call_args[1].get("json", {})
+    assert call_json.get("enabled") is False
