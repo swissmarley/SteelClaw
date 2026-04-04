@@ -6,6 +6,7 @@ import logging
 from typing import Dict, List, Optional
 
 from steelclaw.settings import SkillSettings
+from steelclaw.skills.credential_store import get_credential
 from steelclaw.skills.loader import Skill, discover_skills
 
 logger = logging.getLogger("steelclaw.skills")
@@ -101,7 +102,6 @@ class SkillRegistry:
         for cred in skill.required_credentials:
             value = stored.get(cred["key"])
             if not value:
-                from steelclaw.skills.credential_store import get_credential
                 value = get_credential(skill.name, cred["key"])
             if not value:
                 return False
@@ -192,7 +192,6 @@ class SkillRegistry:
         for cred in skill.required_credentials:
             value = stored.get(cred["key"], "")
             if not value:
-                from steelclaw.skills.credential_store import get_credential
                 value = get_credential(name, cred["key"]) or ""
             masked = ""
             if value:
