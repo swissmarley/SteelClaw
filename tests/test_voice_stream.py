@@ -166,3 +166,37 @@ async def test_realtime_session_uses_agent_system_prompt(voice_client):
 
     assert "instructions" in captured.get("payload", {})
     assert len(captured["payload"]["instructions"]) > 0
+
+
+async def test_realtime_session_injects_persona(voice_client):
+    """Instructions must include the persona user name."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "id": "sess_p1",
+        "client_secret": {"value": "ek_p1"},
+        "model": "gpt-4o-realtime-preview",
+    }
+    captured = {}
+
+    async def capture_post(url, **kwargs):
+        captured["payload"] = kwargs.get("json", {})
+        return mock_resp
+
+    with patch(
+        "steelclaw.api.voice.build_persona_system_prompt",
+        return_value="Your user's name is Alice. Address them by name.",
+    ), patch("steelclaw.api.voice.httpx.AsyncClient") as MockClient:
+        instance = AsyncMock()
+        MockClient.return_value.__aenter__.return_value = instance
+        instance.post.side_effect = capture_post
+
+        resp = await voice_client.post(
+            "/api/voice/realtime-session",
+            json={},
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert resp.status_code == 200
+    instructions = captured.get("payload", {}).get("instructions", "")
+    assert "Alice" in instructions

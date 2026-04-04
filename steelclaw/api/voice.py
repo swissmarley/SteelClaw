@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from steelclaw.agents.persona_loader import build_persona_system_prompt
 from steelclaw.db.engine import get_async_session
 
 logger = logging.getLogger("steelclaw.voice.api")
@@ -305,11 +306,17 @@ async def create_realtime_session(
         agent.system_prompt if agent else settings.agents.llm.system_prompt
     )
 
+    persona_prompt = build_persona_system_prompt()
+    parts = [persona_prompt]
+    if system_prompt:
+        parts.append(system_prompt)
+    full_instructions = "\n\n".join(parts)
+
     payload = {
         "model": voice_settings.realtime_model,
         "modalities": ["audio", "text"],
         "voice": body.voice or voice_settings.realtime_voice,
-        "instructions": system_prompt,
+        "instructions": full_instructions,
         "input_audio_transcription": {"model": "whisper-1"},
         "turn_detection": {
             "type": "server_vad",
