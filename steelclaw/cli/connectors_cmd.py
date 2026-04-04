@@ -69,7 +69,7 @@ def _get_connectors() -> dict:
         resp = httpx.get(f"{BASE_URL}/api/config/connectors", timeout=10)
         resp.raise_for_status()
         return resp.json().get("connectors", {})
-    except httpx.ConnectError:
+    except httpx.HTTPError:
         console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
         sys.exit(1)
 
@@ -158,8 +158,8 @@ def _configure_connector_named(name: str) -> None:
         )
         if value:
             collected[key] = value
-        elif current_val and is_secret:
-            pass  # keep existing masked value — don't overwrite
+        elif current_val:
+            collected[key] = current_val  # re-send existing (masked) value
 
     try:
         resp = httpx.put(
@@ -173,7 +173,7 @@ def _configure_connector_named(name: str) -> None:
             console.print(f"[red]Error: {result.get('message')}[/red]")
         else:
             console.print(f"[green]✓ Connector '{name}' configured.[/green]")
-    except httpx.ConnectError:
+    except httpx.HTTPError:
         console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
         sys.exit(1)
 
@@ -198,7 +198,7 @@ def _enable_connector(name: str) -> None:
             console.print(f"[green]Connector '{name}' is now running.[/green]")
         else:
             console.print(f"[yellow]Connector '{name}' status: {result.get('status')}[/yellow]")
-    except httpx.ConnectError:
+    except httpx.HTTPError:
         console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
         sys.exit(1)
 
@@ -217,7 +217,7 @@ def _disable_connector(name: str) -> None:
         )
         resp.raise_for_status()
         console.print(f"[yellow]Connector '{name}' disabled.[/yellow]")
-    except httpx.ConnectError:
+    except httpx.HTTPError:
         console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
         sys.exit(1)
 
