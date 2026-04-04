@@ -139,3 +139,84 @@ async def test_registry_stop_connector():
 
     mock_connector.stop.assert_called_once()
     assert "slack" not in registry._connectors
+
+
+@pytest.mark.asyncio
+async def test_slack_verify_missing_token():
+    """verify() returns error string when bot token is missing."""
+    from unittest.mock import AsyncMock
+    from steelclaw.gateway.connectors.slack import SlackConnector
+    from steelclaw.settings import ConnectorConfig
+
+    conn = SlackConnector(
+        config=ConnectorConfig(enabled=True, token=""),
+        handler=AsyncMock(),
+    )
+    error = await conn.verify()
+    assert error is not None
+    assert "token" in error.lower()
+
+
+@pytest.mark.asyncio
+async def test_slack_verify_missing_app_token():
+    """verify() returns error string when app-level token is missing."""
+    from unittest.mock import AsyncMock
+    from steelclaw.gateway.connectors.slack import SlackConnector
+    from steelclaw.settings import ConnectorConfig
+
+    conn = SlackConnector(
+        config=ConnectorConfig(enabled=True, token="xoxb-valid"),
+        handler=AsyncMock(),
+    )
+    error = await conn.verify()
+    assert error is not None
+    assert "app" in error.lower() or "app_token" in error.lower()
+
+
+@pytest.mark.asyncio
+async def test_slack_verify_auth_test_failure():
+    """verify() returns error string when auth.test returns ok=false."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from steelclaw.gateway.connectors.slack import SlackConnector
+    from steelclaw.settings import ConnectorConfig
+
+    conn = SlackConnector(
+        config=ConnectorConfig(enabled=True, token="xoxb-bad", app_token="xapp-test"),
+        handler=AsyncMock(),
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"ok": False, "error": "invalid_auth"}
+
+    with patch("steelclaw.gateway.connectors.slack.httpx.AsyncClient") as MockClient:
+        instance = AsyncMock()
+        MockClient.return_value.__aenter__.return_value = instance
+        instance.post.return_value = mock_resp
+        error = await conn.verify()
+
+    assert error is not None
+    assert "invalid_auth" in error
+
+
+@pytest.mark.asyncio
+async def test_slack_verify_success():
+    """verify() returns None when auth.test returns ok=true."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from steelclaw.gateway.connectors.slack import SlackConnector
+    from steelclaw.settings import ConnectorConfig
+
+    conn = SlackConnector(
+        config=ConnectorConfig(enabled=True, token="xoxb-valid", app_token="xapp-valid"),
+        handler=AsyncMock(),
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"ok": True, "user": "testbot", "team": "TestTeam"}
+
+    with patch("steelclaw.gateway.connectors.slack.httpx.AsyncClient") as MockClient:
+        instance = AsyncMock()
+        MockClient.return_value.__aenter__.return_value = instance
+        instance.post.return_value = mock_resp
+        error = await conn.verify()
+
+    assert error is None

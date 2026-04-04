@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 
+import httpx
+
 from steelclaw.gateway.base import BaseConnector
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
@@ -15,21 +17,45 @@ logger = logging.getLogger("steelclaw.gateway.slack")
 class SlackConnector(BaseConnector):
     platform_name = "slack"
 
+    async def verify(self) -> str | None:
+        """Validate Slack tokens via auth.test before starting the connector."""
+        token = self.config.token
+        app_token = (self.config.model_extra or {}).get("app_token", "")
+
+        if not token:
+            return "Slack bot token not configured (expected xoxb-...)"
+        if not app_token:
+            return "Slack app-level token not configured (expected xapp-...)"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://slack.com/api/auth.test",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5.0,
+                )
+                data = resp.json()
+                if not data.get("ok"):
+                    return f"auth.test failed: {data.get('error', 'unknown')}"
+                logger.info(
+                    "Slack auth.test OK — bot: %s, team: %s",
+                    data.get("user"),
+                    data.get("team"),
+                )
+        except Exception as exc:
+            return f"Slack connection error: {exc}"
+
+        return None
+
     async def _run(self) -> None:
         token = self.config.token  # Bot token (xoxb-...)
-        app_token = self.config.extra.get("app_token", "")  # App-level token (xapp-...)
+        app_token = (self.config.model_extra or {}).get("app_token", "")  # App-level token (xapp-...)
 
         if not token:
             logger.error("Slack bot token not configured")
             return
         if not app_token:
             logger.error("Slack app-level token not configured (needed for Socket Mode)")
-            return
-
-        try:
-            import httpx
-        except ImportError:
-            logger.error("httpx not installed")
             return
 
         while True:
@@ -42,8 +68,6 @@ class SlackConnector(BaseConnector):
                 await asyncio.sleep(5)
 
     async def _connect_and_listen(self, token: str, app_token: str) -> None:
-        import httpx
-
         # Get WebSocket URL via apps.connections.open
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -89,8 +113,6 @@ class SlackConnector(BaseConnector):
                     await self.dispatch(inbound)
 
     async def send(self, message: OutboundMessage) -> None:
-        import httpx
-
         token = self.config.token
         if not token:
             logger.warning("Slack bot token not configured, cannot send")
