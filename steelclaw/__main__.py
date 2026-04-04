@@ -160,6 +160,12 @@ def cmd_gateway(args: argparse.Namespace) -> None:
     handle_gateway(args)
 
 
+def cmd_connectors(args: argparse.Namespace) -> None:
+    """Manage gateway connectors (list, configure, enable, disable, status)."""
+    from steelclaw.cli.connectors_cmd import handle_connectors
+    handle_connectors(args)
+
+
 # ── App ─────────────────────────────────────────────────────────────────────
 
 
@@ -293,6 +299,24 @@ def main() -> None:
         gw_action_p = gateway_sub.add_parser(action, help=f"{action.title()} a connector")
         gw_action_p.add_argument("connector", nargs="?", default=None, help="Connector name")
 
+    # connectors
+    connectors_p = sub.add_parser("connectors", help="Manage gateway connectors")
+    connectors_sub = connectors_p.add_subparsers(dest="connectors_action")
+    connectors_sub.add_parser("list", help="List all connectors with status")
+    connectors_configure_p = connectors_sub.add_parser(
+        "configure",
+        help="Configure connector credentials (interactive if no name given)",
+    )
+    connectors_configure_p.add_argument(
+        "name", nargs="?", default=None, help="Connector name (omit for interactive menu)"
+    )
+    connectors_enable_p = connectors_sub.add_parser("enable", help="Enable and start a connector")
+    connectors_enable_p.add_argument("name", help="Connector name")
+    connectors_disable_p = connectors_sub.add_parser("disable", help="Stop and disable a connector")
+    connectors_disable_p.add_argument("name", help="Connector name")
+    connectors_status_p = connectors_sub.add_parser("status", help="Show connector status and config")
+    connectors_status_p.add_argument("name", help="Connector name")
+
     # app
     app_p = sub.add_parser("app", help="Manage app components")
     app_sub = app_p.add_subparsers(dest="app_action")
@@ -320,6 +344,7 @@ def main() -> None:
         "logs": cmd_logs,
         "migrate": cmd_migrate,
         "gateway": cmd_gateway,
+        "connectors": cmd_connectors,
         "app": cmd_app_mgmt,
         "persona": cmd_persona,
     }
