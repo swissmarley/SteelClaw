@@ -319,39 +319,113 @@ body {
 }
 .voice-btn:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
 .voice-btn.recording { color: var(--red); border-color: var(--red); animation: pulse 1.5s infinite; box-shadow: 0 0 12px rgba(239,68,68,0.3); }
-.voice-btn.voice-chat-active { color: var(--green); border-color: var(--green); box-shadow: 0 0 12px rgba(16,185,129,0.3); }
+.voice-btn.voice-active { color: var(--green); border-color: var(--green); box-shadow: 0 0 12px rgba(16,185,129,0.3); }
 
-/* ── Voice Chat Bar ──────────────────────── */
-#voice-chat-bar { display:none; align-items:center; gap:8px; padding:8px 20px; background:var(--glass); backdrop-filter:blur(20px); border-bottom:1px solid var(--glass-border); font-size:12px; color:var(--text-secondary); }
-#voice-chat-bar.active { display:flex; }
-#voice-chat-bar .vc-indicator { width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 1.5s infinite; box-shadow:0 0 8px var(--green); }
-#voice-chat-bar button { background:var(--glass-elevated); border:1px solid var(--glass-border); border-radius:8px; padding:4px 12px; cursor:pointer; color:var(--text-secondary); font-size:11px; margin-left:auto; font-family:inherit; }
-#voice-chat-bar button:hover { color:var(--red); border-color:var(--red); }
-
-/* ── Voice Chat Panel (Overlay) ──────────── */
-#voice-panel {
-  display:none; position:fixed; bottom:0; left:0; right:0; z-index:200;
-  height:50vh; min-height:360px;
-  background:var(--glass-elevated); backdrop-filter:blur(40px); -webkit-backdrop-filter:blur(40px);
-  border-top:1px solid var(--glass-border);
-  border-radius:24px 24px 0 0;
-  flex-direction:column; align-items:center; justify-content:center; gap:20px;
-  transition:transform 0.4s cubic-bezier(0.16,1,0.3,1);
-  transform:translateY(100%);
+/* ── Voice Overlay (Full-Screen) ─────────── */
+#voice-overlay {
+  display:none; position:fixed; inset:0; z-index:500;
+  background:linear-gradient(180deg,#080810 0%,#0d0816 100%);
+  flex-direction:column; align-items:center; justify-content:center;
 }
-#voice-panel.open { display:flex; transform:translateY(0); }
-#voice-panel .orb {
+.voice-agent-name { position:absolute; top:20px; left:24px; font-size:13px; color:rgba(255,255,255,0.3); }
+.voice-esc-hint { position:absolute; top:20px; right:24px; font-size:12px; color:rgba(255,255,255,0.2); }
+.voice-ambient {
+  position:absolute; width:500px; height:500px; border-radius:50%; pointer-events:none;
+  background:radial-gradient(circle,rgba(139,92,246,0.08) 0%,transparent 70%);
+  top:50%; left:50%; transform:translate(-50%,-50%); transition:background 0.6s;
+}
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-ambient {
+  background:radial-gradient(circle,rgba(16,185,129,0.1) 0%,transparent 70%);
+  animation:ambientPulse 0.8s ease-in-out infinite;
+}
+#voice-overlay[data-voice-state="LISTENING"] .voice-ambient { animation:ambientPulse 2s ease-in-out infinite; }
+.voice-state-label {
+  font-size:11px; letter-spacing:3px; text-transform:uppercase;
+  color:rgba(139,92,246,0.7); margin-bottom:32px; position:relative; z-index:2;
+  min-height:16px; transition:color 0.3s;
+}
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-state-label { color:rgba(16,185,129,0.7); }
+#voice-overlay[data-voice-state="CONNECTING"] .voice-state-label,
+#voice-overlay[data-voice-state="INTERRUPTED"] .voice-state-label { color:rgba(245,158,11,0.7); }
+.voice-orb-wrap { position:relative; z-index:2; margin-bottom:32px; }
+.voice-orb {
   width:140px; height:140px; border-radius:50%;
-  background:var(--accent-gradient);
-  box-shadow:0 0 60px var(--accent-glow), 0 0 120px var(--accent-glow);
-  animation:orbPulse 3s ease-in-out infinite;
+  background:linear-gradient(135deg,#8b5cf6,#6366f1);
+  box-shadow:0 0 40px rgba(139,92,246,0.5);
+  display:flex; align-items:center; justify-content:center; position:relative;
+  transition:background 0.4s, box-shadow 0.4s;
 }
-#voice-panel.listening .orb { animation:orbListen 1s ease-in-out infinite; }
-#voice-panel.speaking .orb { animation:orbSpeak 2s linear infinite; }
-#voice-panel canvas { width:200px; height:60px; }
-#voice-panel .transcript { max-width:600px; text-align:center; color:var(--text-secondary); font-size:14px; max-height:80px; overflow-y:auto; padding:0 20px; }
-#voice-panel .close-voice { position:absolute; top:16px; right:20px; background:var(--glass); border:1px solid var(--glass-border); border-radius:10px; padding:6px 14px; cursor:pointer; color:var(--text-secondary); font-size:12px; font-family:inherit; }
-#voice-panel .close-voice:hover { color:var(--red); border-color:var(--red); }
+#voice-overlay[data-voice-state="LISTENING"] .voice-orb { animation:orbPulse 2s ease-in-out infinite; }
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-orb {
+  background:linear-gradient(135deg,#10b981,#34d399); box-shadow:0 0 60px rgba(16,185,129,0.4);
+  animation:orbSpeak 0.6s ease-in-out infinite alternate;
+}
+#voice-overlay[data-voice-state="CONNECTING"] .voice-orb {
+  background:linear-gradient(135deg,#f59e0b,#f97316); box-shadow:0 0 30px rgba(245,158,11,0.3);
+  animation:orbSpin 2s linear infinite;
+}
+#voice-overlay[data-voice-state="INTERRUPTED"] .voice-orb {
+  background:linear-gradient(135deg,#f59e0b,#f97316); box-shadow:0 0 30px rgba(245,158,11,0.3);
+}
+.voice-orb-ring, .voice-orb-ring-2 { position:absolute; border-radius:50%; opacity:0; transition:opacity 0.3s; }
+.voice-orb-ring { inset:-12px; border:2px solid rgba(139,92,246,0.3); }
+.voice-orb-ring-2 { inset:-24px; border:1px solid rgba(139,92,246,0.15); }
+#voice-overlay[data-voice-state="LISTENING"] .voice-orb-ring { opacity:1; animation:ringExpand 2s ease-out infinite; }
+#voice-overlay[data-voice-state="LISTENING"] .voice-orb-ring-2 { opacity:1; animation:ringExpand 2s ease-out 0.5s infinite; }
+.voice-orb-icon { font-size:48px; line-height:1; position:relative; z-index:1; }
+.voice-waveform {
+  display:flex; align-items:center; gap:4px; height:40px;
+  position:relative; z-index:2; margin-bottom:20px; opacity:0; transition:opacity 0.3s;
+}
+#voice-overlay[data-voice-state="LISTENING"] .voice-waveform,
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-waveform { opacity:1; }
+.voice-waveform .vbar { width:3px; background:rgba(139,92,246,0.8); border-radius:2px; }
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-waveform .vbar { background:rgba(16,185,129,0.8); }
+@keyframes vbarDance { 0%,100%{height:4px} 50%{height:var(--h,20px)} }
+.voice-selector {
+  display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
+  position:relative; z-index:2; margin-bottom:24px;
+  opacity:0; pointer-events:none; transition:opacity 0.3s;
+}
+#voice-overlay[data-voice-state="CONNECTING"] .voice-selector { opacity:1; pointer-events:auto; }
+.voice-chip {
+  padding:6px 14px; border-radius:20px; border:1px solid rgba(255,255,255,0.1);
+  font-size:12px; color:rgba(255,255,255,0.5); cursor:pointer; background:transparent;
+  font-family:inherit; transition:all 0.2s;
+}
+.voice-chip.active, .voice-chip:focus { border-color:rgba(139,92,246,0.5); color:#a78bfa; background:rgba(139,92,246,0.1); outline:none; }
+.voice-transcript-wrap { position:relative; z-index:2; max-width:520px; text-align:center; min-height:48px; margin-bottom:32px; padding:0 32px; }
+.voice-transcript-text { font-size:15px; color:rgba(255,255,255,0.7); line-height:1.6; }
+.voice-controls { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; gap:14px; }
+.voice-controls-row { display:flex; align-items:center; gap:12px; }
+.voice-btn-interrupt {
+  padding:10px 22px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3);
+  border-radius:12px; color:#f59e0b; font-size:13px; cursor:pointer; font-family:inherit;
+  opacity:0; pointer-events:none; transition:opacity 0.25s;
+}
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-btn-interrupt { opacity:1; pointer-events:auto; }
+.voice-btn-mute {
+  padding:10px 18px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+  border-radius:12px; color:rgba(255,255,255,0.5); font-size:13px; cursor:pointer; font-family:inherit;
+  transition:all 0.2s;
+}
+.voice-btn-mute:hover { border-color:rgba(255,255,255,0.2); color:rgba(255,255,255,0.8); }
+.voice-btn-end {
+  padding:12px 36px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.25);
+  border-radius:14px; color:#ef4444; font-size:14px; font-weight:500; cursor:pointer; font-family:inherit;
+  transition:all 0.2s;
+}
+.voice-btn-end:hover { background:rgba(239,68,68,0.2); border-color:rgba(239,68,68,0.4); }
+/* Voice session transcript block in chat history */
+.voice-session-block .lbl { color:var(--accent); }
+.voice-turns { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.voice-turn { font-size:13px; line-height:1.5; }
+.voice-turn-label { font-weight:600; color:var(--text-secondary); }
+.voice-turn-text { color:var(--text); }
+/* Additional keyframes for voice */
+@keyframes orbSpin { to { transform:rotate(360deg); } }
+@keyframes orbSpeak { 0%{transform:scale(1)} 100%{transform:scale(1.1)} }
+@keyframes ringExpand { 0%{transform:scale(0.9);opacity:0.6} 100%{transform:scale(1.2);opacity:0} }
 
 /* ── Cards ───────────────────────────────── */
 .card {
@@ -617,16 +691,11 @@ body {
 
   <!-- Chat Page -->
   <div class="page active" id="page-chat">
-    <div id="voice-chat-bar">
-      <span class="vc-indicator"></span>
-      <span>Voice Chat active — responses will be spoken aloud</span>
-      <button onclick="toggleVoiceChatMode()">End Voice Chat</button>
-    </div>
     <div id="chat-messages"></div>
     <div id="chat-attachments"></div>
     <div id="chat-input-area">
-      <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Push to talk (single message)">🎙</button>
-      <button class="voice-btn" id="voice-chat-btn" onclick="openVoicePanel()" title="Voice Chat mode (continuous)">🎧</button>
+      <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Push to talk (single message)" aria-label="Push to talk">🎙</button>
+      <button class="voice-btn" id="voice-chat-btn" onclick="voiceMode.start()" title="Voice Talk mode" aria-label="Start Voice Talk mode">🎧</button>
       <button class="attach-btn" id="attach-btn" onclick="document.getElementById('file-upload').click()" title="Attach files (images, documents, audio)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
       </button>
@@ -703,12 +772,40 @@ body {
 
 </div>
 
-<!-- Voice Chat Panel -->
-<div id="voice-panel">
-  <button class="close-voice" onclick="closeVoicePanel()">Close</button>
-  <div class="orb" onclick="toggleVoicePanelRecording()" style="cursor:pointer" title="Click to start/stop recording"></div>
-  <canvas id="voice-canvas" width="200" height="60"></canvas>
-  <div class="transcript" id="voice-transcript">Tap orb to start speaking...</div>
+<!-- Voice Mode Overlay (Full-Screen) -->
+<div id="voice-overlay" style="display:none" role="dialog" aria-label="Voice Mode" aria-modal="true">
+  <span class="voice-agent-name">SteelClaw</span>
+  <span class="voice-esc-hint" aria-hidden="true">Esc to exit</span>
+  <div class="voice-ambient" aria-hidden="true"></div>
+  <div class="voice-state-label" id="voice-state-label" aria-live="polite"></div>
+  <div class="voice-orb-wrap" aria-hidden="true">
+    <div class="voice-orb" id="voice-orb">
+      <div class="voice-orb-ring"></div>
+      <div class="voice-orb-ring-2"></div>
+      <div class="voice-orb-icon" id="voice-orb-icon">🎙</div>
+    </div>
+  </div>
+  <div class="voice-waveform" id="voice-waveform" aria-hidden="true"></div>
+  <div class="voice-selector" id="voice-selector" aria-label="Voice selection">
+    <button class="voice-chip active" onclick="voiceMode.setVoice('alloy');updateVoiceChips(this)" aria-pressed="true">alloy</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('echo');updateVoiceChips(this)" aria-pressed="false">echo</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('fable');updateVoiceChips(this)" aria-pressed="false">fable</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('onyx');updateVoiceChips(this)" aria-pressed="false">onyx</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('nova');updateVoiceChips(this)" aria-pressed="false">nova</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('shimmer');updateVoiceChips(this)" aria-pressed="false">shimmer</button>
+  </div>
+  <div class="voice-transcript-wrap">
+    <div class="voice-transcript-text" id="voice-transcript-text" aria-live="polite" aria-label="Voice transcript"></div>
+  </div>
+  <div class="voice-controls">
+    <div class="voice-controls-row">
+      <button class="voice-btn-interrupt" id="voice-interrupt-btn" onclick="voiceMode.interrupt()" aria-label="Interrupt agent speech">✋ Interrupt</button>
+    </div>
+    <div class="voice-controls-row">
+      <button class="voice-btn-mute" id="voice-mute-btn" onclick="voiceMode.mute()" aria-label="Toggle microphone mute" aria-pressed="false">🔇 Mute</button>
+      <button class="voice-btn-end" onclick="voiceMode.stop()" aria-label="End voice conversation">End Conversation</button>
+    </div>
+  </div>
 </div>
 
 <!-- Command Palette -->
@@ -2481,5 +2578,31 @@ function exportCSV() {
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/static/voice-mode.js"></script>
+<script>
+// ── Voice overlay init ─────────────────────────────────────
+(function initVoiceOverlay() {
+  // Build animated waveform bars
+  const wf = document.getElementById('voice-waveform');
+  if (wf) {
+    const heights = [8,14,20,28,36,28,20,32,16,24,36,20,14,26,18,10,22,32,18,12];
+    heights.forEach((h, i) => {
+      const b = document.createElement('div');
+      b.className = 'vbar';
+      b.style.cssText = `--h:${h}px;height:${Math.round(h/2)}px;animation:vbarDance ${0.5+(i%5)*0.1}s ease-in-out infinite;animation-delay:${i*0.05}s;`;
+      wf.appendChild(b);
+    });
+  }
+  // Restore selected voice from localStorage
+  const saved = localStorage.getItem('steelclaw-realtime-voice');
+  if (saved) {
+    document.querySelectorAll('#voice-selector .voice-chip').forEach(btn => {
+      const active = btn.textContent.trim() === saved;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+  }
+})();
+</script>
 </body>
 </html>
