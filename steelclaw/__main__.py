@@ -268,8 +268,13 @@ def main() -> None:
     skills_enable_p.add_argument("name", help="Skill name")
     skills_disable_p = skills_sub.add_parser("disable", help="Disable a skill")
     skills_disable_p.add_argument("name", help="Skill name")
-    skills_configure_p = skills_sub.add_parser("configure", help="Configure skill credentials")
-    skills_configure_p.add_argument("name", help="Skill name")
+    skills_configure_p = skills_sub.add_parser(
+        "configure",
+        help="Configure skill credentials (interactive menu if no name given)",
+    )
+    skills_configure_p.add_argument(
+        "name", nargs="?", default=None, help="Skill name (omit for interactive menu)"
+    )
 
     # logs
     logs_p = sub.add_parser("logs", help="View daemon logs")

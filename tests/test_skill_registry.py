@@ -294,3 +294,37 @@ def test_get_skill_credentials_disk_fallback(tmp_path, monkeypatch):
     assert creds is not None
     assert creds[0]["is_set"] is True
     assert creds[0]["value"] == "****1234"
+
+
+def test_configure_skill_interactive_no_server(monkeypatch):
+    """Interactive configure exits gracefully when server is not running."""
+    import pytest
+    import httpx
+    from unittest.mock import patch
+    from steelclaw.cli.skills_cmd import _configure_skill
+
+    with patch("steelclaw.cli.skills_cmd.httpx.get", side_effect=httpx.ConnectError("no server")):
+        with pytest.raises(SystemExit):
+            _configure_skill(None)
+
+
+def test_configure_skill_named_writes_key_value(tmp_path, monkeypatch):
+    """Named configure (fallback mode) writes key=value pairs to config.json."""
+    import json
+    from unittest.mock import patch, MagicMock
+    from steelclaw.cli.skills_cmd import _configure_skill
+
+    # Make server connection fail so it uses the fallback file-write path
+    import httpx
+    import steelclaw.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "PROJECT_ROOT", tmp_path)
+
+    inputs = iter(["api_key=sk-testvalue", ""])
+    with patch("steelclaw.cli.skills_cmd.httpx.get", side_effect=httpx.ConnectError("no server")), \
+         patch("steelclaw.cli.skills_cmd.console") as mock_console:
+        mock_console.input.side_effect = lambda _: next(inputs)
+        _configure_skill("testskill")
+
+    config_path = tmp_path / "config.json"
+    cfg = json.loads(config_path.read_text())
+    assert cfg["agents"]["skills"]["skill_configs"]["testskill"]["api_key"] == "sk-testvalue"

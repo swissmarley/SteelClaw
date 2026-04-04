@@ -115,33 +115,121 @@ def _update_config_disabled(name: str, enable: bool) -> None:
     config_path.write_text(json.dumps(config, indent=2))
 
 
-def _configure_skill(name: str) -> None:
-    from steelclaw.paths import PROJECT_ROOT
-    config_path = PROJECT_ROOT / "config.json"
-    config = {}
-    if config_path.exists():
-        config = json.loads(config_path.read_text())
+def _configure_skill(name: str | None) -> None:
+    if name is not None:
+        _configure_skill_named(name)
+        return
+    _configure_skill_interactive()
 
-    agents = config.setdefault("agents", {})
-    skills = agents.setdefault("skills", {})
-    skill_configs = skills.setdefault("skill_configs", {})
-    current = skill_configs.get(name, {})
 
-    console.print(f"[bold]Configure skill: {name}[/bold]")
-    if current:
-        console.print(f"Current config: {json.dumps(current, indent=2)}")
+def _configure_skill_interactive() -> None:
+    """Show a questionary skill-selection menu, then prompt for credentials."""
+    import questionary
 
-    console.print("Enter key=value pairs (empty line to finish):")
-    while True:
-        line = console.input("> ").strip()
-        if not line:
-            break
-        if "=" not in line:
-            console.print("[red]Format: key=value[/red]")
-            continue
-        key, _, value = line.partition("=")
-        current[key.strip()] = value.strip()
+    try:
+        resp = httpx.get(f"{BASE_URL}/api/skills", timeout=10)
+        resp.raise_for_status()
+    except httpx.ConnectError:
+        console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
+        sys.exit(1)
 
-    skill_configs[name] = current
-    config_path.write_text(json.dumps(config, indent=2))
-    console.print(f"[green]Skill '{name}' configuration saved[/green]")
+    skills = resp.json()
+    skills_with_creds = [s for s in skills if s.get("required_credentials")]
+    if not skills_with_creds:
+        console.print("[dim]No skills require credentials[/dim]")
+        return
+
+    choices = []
+    for s in skills_with_creds:
+        try:
+            cred_resp = httpx.get(f"{BASE_URL}/api/skills/{s['name']}/credentials", timeout=10)
+            creds = cred_resp.json().get("credentials", [])
+            all_set = all(c.get("is_set") for c in creds) if creds else False
+        except Exception:
+            all_set = False
+        status = "✓ configured" if all_set else "✗ not configured"
+        choices.append(questionary.Choice(title=f"{s['name']}  [{status}]", value=s["name"]))
+
+    selected = questionary.select(
+        "Select a skill to configure:",
+        choices=choices,
+    ).ask()
+    if not selected:
+        return
+
+    _configure_skill_named(selected)
+
+
+def _configure_skill_named(name: str) -> None:
+    """Configure a specific skill by prompting for each credential field."""
+    cred_fields: list[dict] = []
+    try:
+        cred_resp = httpx.get(f"{BASE_URL}/api/skills/{name}/credentials", timeout=10)
+        if cred_resp.status_code == 200:
+            cred_fields = cred_resp.json().get("credentials", [])
+    except httpx.ConnectError:
+        pass  # Fall through to manual key=value entry
+
+    if cred_fields:
+        import questionary
+        console.print(f"[bold]Configure skill: {name}[/bold]")
+        collected: dict[str, str] = {}
+        for field in cred_fields:
+            key = field["key"]
+            label = field.get("label", key)
+            is_secret = field.get("type") == "password"
+            current_masked = field.get("value", "")
+            if current_masked:
+                label = f"{label} (currently set — leave blank to keep)"
+            value = (
+                questionary.password(f"{label}:").ask()
+                if is_secret
+                else questionary.text(f"{label}:").ask()
+            )
+            if value:
+                collected[key] = value
+        if not collected:
+            console.print("[dim]No changes made[/dim]")
+            return
+        try:
+            put_resp = httpx.put(
+                f"{BASE_URL}/api/skills/{name}/credentials",
+                json={"credentials": collected},
+                timeout=10,
+            )
+            put_resp.raise_for_status()
+            console.print(f"[green]✓ Credentials saved for {name}.[/green]")
+        except httpx.ConnectError:
+            console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
+            sys.exit(1)
+    else:
+        # Fallback: manual key=value entry (server not running or skill not found)
+        from steelclaw.paths import PROJECT_ROOT
+        config_path = PROJECT_ROOT / "config.json"
+        config = {}
+        if config_path.exists():
+            config = json.loads(config_path.read_text())
+
+        agents = config.setdefault("agents", {})
+        skills = agents.setdefault("skills", {})
+        skill_configs = skills.setdefault("skill_configs", {})
+        current = skill_configs.get(name, {})
+
+        console.print(f"[bold]Configure skill: {name}[/bold]")
+        if current:
+            console.print(f"Current config: {json.dumps(current, indent=2)}")
+
+        console.print("Enter key=value pairs (empty line to finish):")
+        while True:
+            line = console.input("> ").strip()
+            if not line:
+                break
+            if "=" not in line:
+                console.print("[red]Format: key=value[/red]")
+                continue
+            key, _, value = line.partition("=")
+            current[key.strip()] = value.strip()
+
+        skill_configs[name] = current
+        config_path.write_text(json.dumps(config, indent=2))
+        console.print(f"[green]Skill '{name}' configuration saved[/green]")
