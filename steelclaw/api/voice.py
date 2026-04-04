@@ -307,9 +307,7 @@ async def create_realtime_session(
     )
 
     persona_prompt = build_persona_system_prompt()
-    parts = [persona_prompt]
-    if system_prompt:
-        parts.append(system_prompt)
+    parts = [p for p in [persona_prompt, system_prompt] if p]
     full_instructions = "\n\n".join(parts)
 
     payload = {
