@@ -90,12 +90,20 @@ class SkillRegistry:
         return self._tool_index.get(tool_name)
 
     def _is_skill_configured(self, skill: "Skill") -> bool:
-        """Check if a skill's required credentials are all set."""
+        """Check if a skill's required credentials are all set.
+
+        Checks in-memory settings first, then falls back to the on-disk credential
+        store so credentials written by the CLI are visible without a server restart.
+        """
         if not skill.required_credentials:
-            return True  # no credentials needed
+            return True
         stored = self._settings.skill_configs.get(skill.name, {})
         for cred in skill.required_credentials:
-            if not stored.get(cred["key"]):
+            value = stored.get(cred["key"])
+            if not value:
+                from steelclaw.skills.credential_store import get_credential
+                value = get_credential(skill.name, cred["key"])
+            if not value:
                 return False
         return True
 
@@ -171,7 +179,11 @@ class SkillRegistry:
         return True
 
     def get_skill_credentials(self, name: str) -> list[dict] | None:
-        """Return the skill's required_credentials with current values masked."""
+        """Return the skill's required_credentials with current values masked.
+
+        Checks in-memory settings first, then falls back to the on-disk credential
+        store so CLI-written credentials appear as configured in the Web UI.
+        """
         skill = self._all_skills.get(name)
         if skill is None:
             return None
@@ -179,6 +191,9 @@ class SkillRegistry:
         result = []
         for cred in skill.required_credentials:
             value = stored.get(cred["key"], "")
+            if not value:
+                from steelclaw.skills.credential_store import get_credential
+                value = get_credential(name, cred["key"]) or ""
             masked = ""
             if value:
                 masked = "****" + value[-4:] if len(value) > 4 else "****"
