@@ -462,5 +462,7 @@ class AgentRouter:
 
         logger.info("Executing tool: %s(%s)", tc.name, json.dumps(tc.arguments)[:200])
         result = await self._skills.execute_tool(tc.name, tc.arguments)
-        logger.debug("Tool result: %s", result[:500])
+        if result is None:
+            result = f"Tool '{tc.name}' returned no output."
+        logger.info("Tool result for %s: %s", tc.name, str(result)[:200])
         return result

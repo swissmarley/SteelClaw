@@ -50,8 +50,12 @@ class SkillRegistry:
 
             # Determine if skill should be active
             if skill.name in self._disabled:
-                logger.info("Skill '%s' is explicitly disabled — skipping", skill.name)
-                continue
+                if not skill.default_enabled:
+                    logger.info("Skill '%s' is explicitly disabled — skipping", skill.name)
+                    continue
+                # default_enabled skills cannot be disabled — silently restore them
+                logger.info("Skill '%s' is default_enabled and cannot be disabled", skill.name)
+                self._disabled.discard(skill.name)
 
             if skill.name in self._explicitly_enabled:
                 # User explicitly enabled this skill
