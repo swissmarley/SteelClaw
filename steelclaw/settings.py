@@ -118,6 +118,11 @@ class VoiceSettings(BaseModel):
     stt_provider: str = "openai"
     tts_provider: str = "openai"
     enabled: bool = False
+    realtime_model: str = "gpt-4o-realtime-preview"
+    realtime_voice: str = "alloy"
+    realtime_vad_threshold: float = 0.5
+    realtime_silence_ms: int = 600
+    realtime_prefix_padding_ms: int = 300
 
 
 class AgentSettings(BaseModel):

@@ -1,4 +1,5 @@
 from steelclaw.api.voice import split_into_chunks
+from steelclaw.settings import VoiceSettings
 
 
 def test_split_basic_sentences():
@@ -22,3 +23,12 @@ def test_split_single_sentence():
 def test_split_empty():
     assert split_into_chunks("") == []
     assert split_into_chunks("   ") == []
+
+
+def test_voice_settings_realtime_defaults():
+    s = VoiceSettings()
+    assert s.realtime_model == "gpt-4o-realtime-preview"
+    assert s.realtime_voice == "alloy"
+    assert s.realtime_vad_threshold == 0.5
+    assert s.realtime_silence_ms == 600
+    assert s.realtime_prefix_padding_ms == 300
