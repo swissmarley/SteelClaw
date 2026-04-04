@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import httpx
+import questionary
 from rich.console import Console
 from rich.table import Table
 
@@ -124,13 +125,11 @@ def _configure_skill(name: str | None) -> None:
 
 def _configure_skill_interactive() -> None:
     """Show a questionary skill-selection menu, then prompt for credentials."""
-    import questionary
-
     try:
         resp = httpx.get(f"{BASE_URL}/api/skills", timeout=10)
         resp.raise_for_status()
-    except httpx.ConnectError:
-        console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
+    except httpx.HTTPError as e:
+        console.print(f"[red]Cannot connect to SteelClaw: {e}[/red]")
         sys.exit(1)
 
     skills = resp.json()
@@ -171,7 +170,6 @@ def _configure_skill_named(name: str) -> None:
         pass  # Fall through to manual key=value entry
 
     if cred_fields:
-        import questionary
         console.print(f"[bold]Configure skill: {name}[/bold]")
         collected: dict[str, str] = {}
         for field in cred_fields:
@@ -186,6 +184,9 @@ def _configure_skill_named(name: str) -> None:
                 if is_secret
                 else questionary.text(f"{label}:").ask()
             )
+            if value is None:
+                console.print("[dim]Cancelled.[/dim]")
+                return
             if value:
                 collected[key] = value
         if not collected:
@@ -199,8 +200,8 @@ def _configure_skill_named(name: str) -> None:
             )
             put_resp.raise_for_status()
             console.print(f"[green]✓ Credentials saved for {name}.[/green]")
-        except httpx.ConnectError:
-            console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
+        except httpx.HTTPError as e:
+            console.print(f"[red]Cannot connect to SteelClaw: {e}[/red]")
             sys.exit(1)
     else:
         # Fallback: manual key=value entry (server not running or skill not found)
