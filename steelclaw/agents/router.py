@@ -377,16 +377,12 @@ class AgentRouter:
                     td = chunk.tool_call_delta
                     idx = td.get("index", 0)
                     if idx not in tool_call_buffers:
-                        tool_call_buffers[idx] = {
-                            "id": td.get("id", ""),
-                            "name": td.get("name", ""),
-                            "arguments_str": "",
-                        }
+                        tool_call_buffers[idx] = {"id": "", "name": "", "arguments_str": ""}
                     buf = tool_call_buffers[idx]
                     if td.get("id"):
                         buf["id"] = td["id"]
                     if td.get("name"):
-                        buf["name"] = (buf["name"] or "") + td["name"]
+                        buf["name"] += td["name"]
                     if td.get("arguments"):
                         buf["arguments_str"] += td["arguments"]
 

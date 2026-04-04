@@ -136,6 +136,62 @@ async def test_streaming_tool_result_message_uses_null_content():
 
 
 @pytest.mark.asyncio
+async def test_tool_name_not_doubled_from_streaming_buffer():
+    """The first streaming chunk initialises the buffer AND the update block runs —
+    previously this doubled the name (web_search → web_searchweb_search)."""
+    from steelclaw.agents.router import AgentRouter
+    from steelclaw.settings import AgentSettings
+
+    settings = AgentSettings()
+    router = AgentRouter(settings)
+
+    call_count = 0
+
+    async def fake_stream(messages, tools=None, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            for chunk in _tool_chunk("web_search", "call_123", '{"query":"test"}'):
+                yield chunk
+        else:
+            yield _text_chunk("Done.")
+
+    router._provider = MagicMock()
+    router._provider.stream = fake_stream
+
+    router._context = MagicMock()
+    router._context.build = AsyncMock(return_value=[
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "search test"},
+    ])
+    router._context._build_user_message = lambda t, a=None: {"role": "user", "content": t}
+    ctx = ContextBuilder(settings.llm)
+    router._context.build_assistant_tool_call_message = ctx.build_assistant_tool_call_message
+    router._context.build_tool_result_message = ctx.build_tool_result_message
+
+    executed_names = []
+
+    async def mock_execute_tool(name, args):
+        executed_names.append(name)
+        return "Search results here."
+
+    mock_registry = MagicMock()
+    mock_registry.get_combined_system_context.return_value = ""
+    mock_registry.get_all_tools_schema.return_value = []
+    mock_registry.execute_tool = mock_execute_tool
+    router._skills = mock_registry
+
+    events = []
+    async for event in router.stream_response(_make_inbound("search test"), _make_session()):
+        events.append(event)
+
+    # Tool must be called with the correct (non-doubled) name
+    assert executed_names == ["web_search"], f"Got: {executed_names}"
+    done = next(e for e in events if e["type"] == "done")
+    assert "Done" in done["content"]
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_call_guards_none_result():
     """_execute_tool_call must return a string even when the executor returns None."""
     settings = AgentSettings()
