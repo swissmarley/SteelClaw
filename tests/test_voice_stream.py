@@ -71,6 +71,17 @@ async def voice_client():
             yield ac
 
 
+@pytest.fixture()
+async def voice_app_and_client():
+    """Like voice_client but also yields the app so we can set state."""
+    from steelclaw.app import create_app
+    app = create_app(_make_voice_settings())
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield app, ac
+
+
 async def test_realtime_session_disabled():
     """Returns 400 when voice.enabled is False."""
     from steelclaw.app import create_app
@@ -166,17 +177,6 @@ async def test_realtime_session_uses_agent_system_prompt(voice_client):
 
     assert "instructions" in captured.get("payload", {})
     assert len(captured["payload"]["instructions"]) > 0
-
-
-@pytest.fixture()
-async def voice_app_and_client():
-    """Like voice_client but also yields the app so we can set state."""
-    from steelclaw.app import create_app
-    app = create_app(_make_voice_settings())
-    async with app.router.lifespan_context(app):
-        transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            yield app, ac
 
 
 async def test_realtime_session_injects_memory(voice_app_and_client):
