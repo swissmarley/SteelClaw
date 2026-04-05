@@ -37,7 +37,7 @@ class VoiceModeManager {
     this._currentAgentTurn = '';
 
     /** @type {string} Model name resolved from session response */
-    this._model = 'gpt-4o-realtime-preview';
+    this._model = 'gpt-realtime-1.5';
 
     this._voice = localStorage.getItem('steelclaw-realtime-voice') || 'alloy';
 
@@ -195,7 +195,7 @@ class VoiceModeManager {
     }
     return {
       clientSecret: data.client_secret.value,
-      model: data.model || 'gpt-4o-realtime-preview',
+      model: data.model || 'gpt-realtime-1.5',
       sessionId: data.session_id || '',
     };
   }

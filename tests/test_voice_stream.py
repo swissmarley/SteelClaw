@@ -34,8 +34,10 @@ def test_split_empty():
 
 def test_voice_settings_realtime_defaults():
     s = VoiceSettings()
-    assert s.realtime_model == "gpt-4o-realtime-preview"
+    assert s.realtime_model == "gpt-realtime-1.5"
     assert s.realtime_voice == "alloy"
+    assert s.realtime_vad_type == "semantic_vad"
+    assert s.realtime_vad_eagerness == "auto"
     assert s.realtime_vad_threshold == 0.5
     assert s.realtime_silence_ms == 600
     assert s.realtime_prefix_padding_ms == 300
@@ -51,8 +53,10 @@ def _make_voice_settings():
             llm=LLMSettings(api_key="sk-test-key"),
             voice=VoiceSettings(
                 enabled=True,
-                realtime_model="gpt-4o-realtime-preview",
+                realtime_model="gpt-realtime-1.5",
                 realtime_voice="alloy",
+                realtime_vad_type="semantic_vad",
+                realtime_vad_eagerness="auto",
                 realtime_vad_threshold=0.5,
                 realtime_silence_ms=600,
                 realtime_prefix_padding_ms=300,
@@ -108,7 +112,7 @@ async def test_realtime_session_success(voice_client):
     mock_resp.json.return_value = {
         "id": "sess_abc123",
         "client_secret": {"value": "ek_test_token"},
-        "model": "gpt-4o-realtime-preview",
+        "model": "gpt-realtime-1.5",
     }
 
     with patch("steelclaw.api.voice.httpx.AsyncClient") as MockClient:
@@ -126,7 +130,7 @@ async def test_realtime_session_success(voice_client):
     data = resp.json()
     assert data["session_id"] == "sess_abc123"
     assert data["client_secret"]["value"] == "ek_test_token"
-    assert data["model"] == "gpt-4o-realtime-preview"
+    assert data["model"] == "gpt-realtime-1.5"
 
 
 async def test_realtime_session_openai_error(voice_client):
@@ -156,7 +160,7 @@ async def test_realtime_session_uses_agent_system_prompt(voice_client):
     mock_resp.json.return_value = {
         "id": "sess_xyz",
         "client_secret": {"value": "ek_xyz"},
-        "model": "gpt-4o-realtime-preview",
+        "model": "gpt-realtime-1.5",
     }
     captured = {}
 
@@ -179,6 +183,39 @@ async def test_realtime_session_uses_agent_system_prompt(voice_client):
     assert len(captured["payload"]["instructions"]) > 0
 
 
+async def test_realtime_session_uses_semantic_vad(voice_client):
+    """Verifies semantic_vad turn detection is sent to OpenAI for gpt-realtime-1.5."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "id": "sess_vad",
+        "client_secret": {"value": "ek_vad"},
+        "model": "gpt-realtime-1.5",
+    }
+    captured = {}
+
+    async def capture_post(url, **kwargs):
+        captured["payload"] = kwargs.get("json", {})
+        return mock_resp
+
+    with patch("steelclaw.api.voice.httpx.AsyncClient") as MockClient:
+        instance = AsyncMock()
+        MockClient.return_value.__aenter__.return_value = instance
+        instance.post.side_effect = capture_post
+
+        await voice_client.post(
+            "/api/voice/realtime-session",
+            json={},
+            headers={"Content-Type": "application/json"},
+        )
+
+    td = captured.get("payload", {}).get("turn_detection", {})
+    assert td.get("type") == "semantic_vad"
+    assert td.get("eagerness") == "auto"
+    assert "threshold" not in td
+    assert "silence_duration_ms" not in td
+
+
 async def test_realtime_session_injects_memory(voice_app_and_client):
     """Instructions must include formatted memory context when retriever is set."""
     app, ac = voice_app_and_client
@@ -193,7 +230,7 @@ async def test_realtime_session_injects_memory(voice_app_and_client):
     mock_resp.json.return_value = {
         "id": "sess_m1",
         "client_secret": {"value": "ek_m1"},
-        "model": "gpt-4o-realtime-preview",
+        "model": "gpt-realtime-1.5",
     }
     captured = {}
 
@@ -232,7 +269,7 @@ async def test_realtime_session_injects_persona(voice_client):
     mock_resp.json.return_value = {
         "id": "sess_p1",
         "client_secret": {"value": "ek_p1"},
-        "model": "gpt-4o-realtime-preview",
+        "model": "gpt-realtime-1.5",
     }
     captured = {}
 
