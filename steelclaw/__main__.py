@@ -9,9 +9,11 @@ import sys
 
 def _show_banner() -> None:
     """Show ASCII banner unless --no-banner is passed."""
-    if "--no-banner" not in sys.argv:
-        from steelclaw.cli.banner import print_banner
-        print_banner()
+    if "--no-banner" in sys.argv:
+        return
+    from steelclaw.cli.banner import print_banner
+    static_only = "--static-logo" in sys.argv
+    print_banner(animated=not static_only)
 
 
 # ── Server commands ─────────────────────────────────────────────────────────
@@ -195,6 +197,7 @@ def main() -> None:
         description="SteelClaw — self-hosted personal AI assistant",
     )
     parser.add_argument("--no-banner", action="store_true", help="Suppress the startup banner")
+    parser.add_argument("--static-logo", action="store_true", help="Show static logo without animation")
     sub = parser.add_subparsers(dest="command")
 
     # serve
