@@ -25,14 +25,19 @@ class SessionManager:
 
         if msg.is_group:
             if not msg.is_mention and not self._has_keyword(msg.content):
+                logger.debug(
+                    "Dropping group message from %s/%s — no bot mention or keyword",
+                    msg.platform,
+                    msg.platform_chat_id,
+                )
                 return None
             return await self._resolve_group_session(msg, db)
 
         # DM path
         if self._settings.dm_allowlist_enabled:
             if not await self._is_allowed(msg.platform, msg.platform_user_id, db):
-                logger.debug(
-                    "Dropping DM from non-allowlisted user %s/%s",
+                logger.warning(
+                    "Dropping DM from non-allowlisted user %s/%s — add them via the dashboard or disable the DM allowlist in Gateway settings",
                     msg.platform,
                     msg.platform_user_id,
                 )

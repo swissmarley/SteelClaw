@@ -287,9 +287,12 @@ async def create_realtime_session(
     if not voice_settings.enabled:
         raise HTTPException(400, "Voice mode is not enabled in settings")
 
+    import os
+
     api_key = (
         settings.agents.llm.provider_keys.get("openai")
         or settings.agents.llm.api_key
+        or os.environ.get("OPENAI_API_KEY")
     )
     if not api_key:
         raise HTTPException(400, "OpenAI API key not configured")

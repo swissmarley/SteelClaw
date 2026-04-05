@@ -63,16 +63,31 @@ class DiscordConnector(BaseConnector):
     async def send_typing(self, chat_id: str) -> None:
         if self._client is None:
             return
-        channel = self._client.get_channel(int(chat_id))
+        channel_id = int(chat_id)
+        channel = self._client.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await self._client.fetch_channel(channel_id)
+            except Exception:
+                return
         if channel and hasattr(channel, "typing"):
             try:
-                await channel.typing()
+                async with channel.typing():
+                    pass
             except Exception:
                 logger.debug("Failed to send typing indicator to %s", chat_id)
 
     async def send(self, message: OutboundMessage) -> None:
         if self._client is None:
             return
-        channel = self._client.get_channel(int(message.platform_chat_id))
-        if channel and hasattr(channel, "send"):
+        channel_id = int(message.platform_chat_id)
+        channel = self._client.get_channel(channel_id)
+        if channel is None:
+            # DM channels are often not in the cache — fetch from API
+            try:
+                channel = await self._client.fetch_channel(channel_id)
+            except Exception:
+                logger.warning("Discord: could not resolve channel %s", channel_id)
+                return
+        if hasattr(channel, "send"):
             await channel.send(message.content)

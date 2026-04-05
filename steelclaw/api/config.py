@@ -178,7 +178,19 @@ async def update_scheduler_config(request: Request) -> dict:
 async def update_connector_config(platform: str, request: Request) -> dict:
     body = await request.json()
     data = _read_config()
-    data.setdefault("gateway", {}).setdefault("connectors", {})[platform] = body
+
+    # Merge incoming body with existing config, preserving real secret values
+    # when the client sends back a masked placeholder (e.g. "xoxb****5678").
+    existing = data.get("gateway", {}).get("connectors", {}).get(platform, {})
+    merged = dict(existing)
+    for k, v in body.items():
+        if k.lower() in _SECRET_KEYS and isinstance(v, str) and "****" in v:
+            # Looks like a masked value — keep whatever is already stored
+            pass
+        else:
+            merged[k] = v
+
+    data.setdefault("gateway", {}).setdefault("connectors", {})[platform] = merged
     _write_config(data)
 
     from steelclaw.gateway.registry import ConnectorRegistry
@@ -186,11 +198,11 @@ async def update_connector_config(platform: str, request: Request) -> dict:
 
     registry: ConnectorRegistry = request.app.state.registry
 
-    if body.get("enabled"):
+    if merged.get("enabled"):
         try:
-            conf = ConnectorConfig.model_validate(body)
+            conf = ConnectorConfig.model_validate(merged)
         except Exception:
-            conf = ConnectorConfig(enabled=True, token=body.get("token"))
+            conf = ConnectorConfig(enabled=True, token=merged.get("token"))
         connector, error = await registry.start_connector(platform, conf)
         if error:
             return {"status": "error", "message": error, "section": f"connectors.{platform}"}
@@ -258,14 +270,16 @@ async def remove_approval(pattern: str, request: Request) -> dict:
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 
+_SECRET_KEYS = {"token", "app_token", "api_key", "password", "secret", "signing_secret", "app_password"}
+
+
 def _mask_secrets(data: dict) -> dict:
     """Recursively mask values whose keys look like secrets."""
-    secret_keys = {"token", "api_key", "password", "secret", "signing_secret", "app_password"}
     masked = {}
     for k, v in data.items():
         if isinstance(v, dict):
             masked[k] = _mask_secrets(v)
-        elif k.lower() in secret_keys and isinstance(v, str) and len(v) > 8:
+        elif k.lower() in _SECRET_KEYS and isinstance(v, str) and len(v) > 8:
             masked[k] = v[:4] + "****" + v[-4:]
         else:
             masked[k] = v
