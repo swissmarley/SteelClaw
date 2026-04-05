@@ -4,20 +4,22 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 
 _LOGO_LINES = [
-    r"   ______          __  _______",
-    r"  / __/ /____ ___ / / / ___/ /__ _    __",
-    r" _\ \/ __/ -_) -_) / / /__/ / _ `/ |/| /",
-    r"/___/\__/\__/\__/_/  \___/_/\_,_/|__/|__/",
+    r" /$$$$$$   /$$                         /$$  /$$$$$$  /$$                        ",
+    r"/$$__  $$ | $$                        | $$ /$$__  $$| $$                        ",
+    r"| $$  \__//$$$$$$    /$$$$$$   /$$$$$$ | $$| $$  \__/| $$  /$$$$$$  /$$  /$$  /$$",
+    r"|  $$$$$$|_  $$_/   /$$__  $$ /$$__  $$| $$| $$      | $$ |____  $$| $$ | $$ | $$",
+    r" \____  $$ | $$    | $$$$$$$$| $$$$$$$$| $$| $$      | $$  /$$$$$$$| $$ | $$ | $$",
+    r" /$$  \ $$ | $$ /$$| $$_____/| $$_____/| $$| $$    $$| $$ /$$__  $$| $$ | $$ | $$",
+    r"|  $$$$$$/ |  $$$$/|  $$$$$$$|  $$$$$$$| $$|  $$$$$$/| $$|  $$$$$$$|  $$$$$/$$$$/",
+    r" \______/   \___/   \_______/ \_______/|__/ \______/ |__/ \_______/ \_____/\___/ ",
 ]
 
-_TAGLINE_BOX = [
-    "    ╔═══════════════════════════════════╗",
-    "    ║  ⚙  Autonomous AI Agent Engine  ⚙  ║",
-    "    ╚═══════════════════════════════════╝",
-]
+_TAGLINE = "⚙  Autonomous AI Agent Engine  ⚙"
+
+# Inner box width: widest logo line + 4 chars padding (2 each side)
+_BOX_W = max(len(line) for line in _LOGO_LINES) + 4
 
 
 def _use_color() -> bool:
@@ -25,17 +27,6 @@ def _use_color() -> bool:
     if os.environ.get("NO_COLOR"):
         return False
     if not sys.stdout.isatty():
-        return False
-    return True
-
-
-def _use_animation() -> bool:
-    """Return True if animation should be shown (TTY, not NO_COLOR, not CI)."""
-    if not sys.stdout.isatty():
-        return False
-    if os.environ.get("NO_COLOR"):
-        return False
-    if os.environ.get("CI"):
         return False
     return True
 
@@ -61,74 +52,25 @@ def _print_static(color: bool = True) -> None:
 
     version = _get_version()
 
-    print(cyan)
+    top = "╔" + "═" * _BOX_W + "╗"
+    sep = "╠" + "═" * _BOX_W + "╣"
+    bot = "╚" + "═" * _BOX_W + "╝"
+
+    def row(text: str) -> str:
+        return "║  " + text.ljust(_BOX_W - 2) + "║"
+
+    tagline_row = "║" + _TAGLINE.center(_BOX_W) + "║"
+
+    print(cyan + top)
     for line in _LOGO_LINES:
-        print(line)
-    print()
-    for line in _TAGLINE_BOX:
-        print(line)
-    print(reset, end="")
+        print(row(line))
+    print(sep)
+    print(tagline_row)
+    print(bot + reset)
     print(f"{dim}  v{version}  |  Run `steelclaw --help` for usage{reset}")
     print()
 
 
-def _animate_typewriter(color: bool = True) -> None:
-    """Typewriter reveal: print each logo line character by character."""
-    cyan = "\033[96m" if color else ""
-    reset = "\033[0m" if color else ""
-    dim = "\033[2m" if color else ""
-
-    version = _get_version()
-
-    # Total animation budget: ~1.5 s for logo lines, rest for tagline
-    all_lines = _LOGO_LINES + [""] + _TAGLINE_BOX
-    total_chars = sum(len(l) for l in all_lines)
-    delay = 1.5 / max(total_chars, 1)
-
-    print(cyan, end="", flush=True)
-    for line in _LOGO_LINES:
-        for ch in line:
-            sys.stdout.write(ch)
-            sys.stdout.flush()
-            time.sleep(delay)
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-
-    print()
-
-    for line in _TAGLINE_BOX:
-        for ch in line:
-            sys.stdout.write(ch)
-            sys.stdout.flush()
-            time.sleep(delay)
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-
-    print(reset, end="")
-    print(f"{dim}  v{version}  |  Run `steelclaw --help` for usage{reset}")
-    print()
-
-
-def print_banner(animated: bool = True) -> None:
-    """Print the SteelClaw startup banner.
-
-    Parameters
-    ----------
-    animated:
-        When *True* (default) a typewriter animation is shown in interactive
-        TTY sessions.  Animations are automatically disabled when ``NO_COLOR``
-        is set, when stdout is not a TTY, or when the ``CI`` variable is set.
-        Pass *False* to always show the static logo (equivalent to
-        ``--static-logo``).
-    """
-    color = _use_color()
-
-    if animated and _use_animation():
-        try:
-            _animate_typewriter(color=color)
-        except KeyboardInterrupt:
-            # User pressed Ctrl-C to skip animation — fall back to static
-            sys.stdout.write("\n")
-            _print_static(color=color)
-    else:
-        _print_static(color=color)
+def print_banner() -> None:
+    """Print the SteelClaw startup banner."""
+    _print_static(color=_use_color())
