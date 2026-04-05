@@ -78,9 +78,17 @@ async def test_voice_message_dispatched_after_transcription():
 
 
 @pytest.mark.asyncio
-async def test_non_text_non_voice_message_ignored():
-    """Messages with neither text nor voice (e.g. stickers) should be ignored."""
+async def test_sticker_dispatched_as_image_attachment():
+    """Sticker messages are now handled as image attachments and dispatched."""
+    from steelclaw.gateway.attachments import build_attachment_dict
+
     connector = _make_connector()
+
+    async def fake_download(file_id, filename, mime):
+        return build_attachment_dict(filename, mime, data=b"\x00")
+
+    connector._download_attachment = fake_download
+
     update = {
         "update_id": 4,
         "message": {
@@ -88,6 +96,26 @@ async def test_non_text_non_voice_message_ignored():
             "chat": {"id": 111, "type": "private"},
             "from": {"id": 222},
             "sticker": {"file_id": "sticker_abc"},
+        },
+    }
+    await connector._handle_update(update)
+    connector._handler.assert_awaited_once()
+    inbound = connector._handler.call_args[0][0]
+    assert inbound.attachments is not None
+    assert inbound.attachments[0]["category"] == "image"
+
+
+@pytest.mark.asyncio
+async def test_truly_empty_message_ignored():
+    """Messages with no text, voice, or any recognised attachment type are ignored."""
+    connector = _make_connector()
+    update = {
+        "update_id": 5,
+        "message": {
+            "message_id": 14,
+            "chat": {"id": 111, "type": "private"},
+            "from": {"id": 222},
+            # No text, voice, photo, document, audio, video, animation, or sticker
         },
     }
     await connector._handle_update(update)
