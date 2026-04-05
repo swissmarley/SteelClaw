@@ -327,18 +327,28 @@ async def create_realtime_session(
     parts = [p for p in [persona_prompt, system_prompt, memory_context] if p]
     full_instructions = "\n\n".join(parts)
 
+    vad_type = getattr(voice_settings, "realtime_vad_type", "semantic_vad")
+    if vad_type == "semantic_vad":
+        turn_detection = {
+            "type": "semantic_vad",
+            "eagerness": getattr(voice_settings, "realtime_vad_eagerness", "auto"),
+            "prefix_padding_ms": voice_settings.realtime_prefix_padding_ms,
+        }
+    else:
+        turn_detection = {
+            "type": "server_vad",
+            "threshold": voice_settings.realtime_vad_threshold,
+            "silence_duration_ms": voice_settings.realtime_silence_ms,
+            "prefix_padding_ms": voice_settings.realtime_prefix_padding_ms,
+        }
+
     payload = {
         "model": voice_settings.realtime_model,
         "modalities": ["audio", "text"],
         "voice": body.voice or voice_settings.realtime_voice,
         "instructions": full_instructions,
         "input_audio_transcription": {"model": "whisper-1"},
-        "turn_detection": {
-            "type": "server_vad",
-            "threshold": voice_settings.realtime_vad_threshold,
-            "silence_duration_ms": voice_settings.realtime_silence_ms,
-            "prefix_padding_ms": voice_settings.realtime_prefix_padding_ms,
-        },
+        "turn_detection": turn_detection,
     }
 
     async with httpx.AsyncClient() as client:
