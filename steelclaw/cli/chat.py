@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -28,20 +29,53 @@ TOOL_FRAMES = ["◐", "◓", "◑", "◒"]
 CONNECT_FRAMES = ["◜ ", " ◝", " ◞", "◟ "]
 
 # ── Slash commands — single source of truth ────────────────────────────────
+# Grouped: chat-native commands first, then CLI passthrough commands.
 
 SLASH_COMMANDS: list[tuple[str, str]] = [
-    ("/help",    "Show available commands"),
-    ("/exit",    "Exit the chat"),
-    ("/quit",    "Exit the chat"),
-    ("/clear",   "Clear conversation history"),
-    ("/status",  "Connection and session info"),
-    ("/history", "Show conversation history"),
-    ("/compact", "Show history (compact, last 10)"),
-    ("/model",   "Show current model info"),
-    ("/stats",   "Show session statistics"),
-    ("/new",     "Start a new conversation"),
-    ("/export",  "Export chat to file"),
+    # ── Chat-native ────────────────────────────────────────────────────
+    ("/help",        "Show available commands"),
+    ("/exit",        "Exit the chat"),
+    ("/quit",        "Exit the chat"),
+    ("/clear",       "Clear conversation history"),
+    ("/status",      "Connection and session info"),
+    ("/history",     "Show conversation history"),
+    ("/compact",     "Show history (compact, last 10)"),
+    ("/model",       "Show current model info"),
+    ("/stats",       "Show session statistics"),
+    ("/new",         "Start a new conversation"),
+    ("/export",      "Export chat to file"),
+    # ── Server / daemon ────────────────────────────────────────────────
+    ("/serve",       "Start the API server in foreground"),
+    ("/start",       "Start SteelClaw as background daemon"),
+    ("/stop",        "Stop the background daemon"),
+    ("/restart",     "Restart the background daemon"),
+    # ── Data & config ──────────────────────────────────────────────────
+    ("/migrate",     "Run database migrations"),
+    ("/sessions",    "Manage sessions  [list|reset|delete]"),
+    ("/memory",      "Manage persistent memory  [status|search|clear]"),
+    ("/agents",      "Manage agents  [list|add|delete|status]"),
+    ("/skills",      "Manage skills  [list|install|enable|disable|configure]"),
+    ("/persona",     "Configure agent persona interactively"),
+    ("/onboard",     "Run the interactive onboarding wizard"),
+    ("/setup",       "Alias for /onboard"),
+    # ── Infrastructure ─────────────────────────────────────────────────
+    ("/logs",        "View daemon logs  [-f to follow]"),
+    ("/gateway",     "Manage gateway connectors  [start|stop|restart]"),
+    ("/connectors",  "Manage connectors  [list|configure|enable|disable|status]"),
 ]
+
+# Commands resolved entirely within the chat loop (no subprocess).
+_CHAT_NATIVE: frozenset[str] = frozenset({
+    "/help", "/exit", "/quit", "/clear", "/status",
+    "/history", "/compact", "/model", "/stats", "/new", "/export",
+})
+
+# Commands delegated to `steelclaw <subcommand> [args]` as a subprocess.
+_CLI_PASSTHROUGH: frozenset[str] = frozenset({
+    "/serve", "/start", "/stop", "/restart", "/migrate",
+    "/sessions", "/memory", "/agents", "/skills", "/logs",
+    "/gateway", "/connectors", "/persona", "/onboard", "/setup",
+})
 
 
 # ── prompt_toolkit autocomplete ────────────────────────────────────────────
@@ -317,6 +351,18 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                     console.print(f"[success]  ✓ Exported to {fname}[/success]")
                 except Exception as e:
                     console.print(f"[error]  ✗ Export failed: {e}[/error]")
+                continue
+
+            if cmd_name in _CLI_PASSTHROUGH:
+                # Strip the leading "/" and forward all remaining args to the CLI.
+                subcmd = cmd_name[1:]
+                extra = cmd_parts[1].split() if len(cmd_parts) > 1 else []
+                cli_cmd = ["steelclaw", subcmd] + extra
+                console.print(f"[dim]  Running:[/dim] [accent]{' '.join(cli_cmd)}[/accent]\n")
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda c=cli_cmd: subprocess.run(c)
+                )
+                console.print()
                 continue
 
             if cmd.startswith("/"):
