@@ -319,39 +319,113 @@ body {
 }
 .voice-btn:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
 .voice-btn.recording { color: var(--red); border-color: var(--red); animation: pulse 1.5s infinite; box-shadow: 0 0 12px rgba(239,68,68,0.3); }
-.voice-btn.voice-chat-active { color: var(--green); border-color: var(--green); box-shadow: 0 0 12px rgba(16,185,129,0.3); }
+.voice-btn.voice-active { color: var(--green); border-color: var(--green); box-shadow: 0 0 12px rgba(16,185,129,0.3); }
 
-/* ── Voice Chat Bar ──────────────────────── */
-#voice-chat-bar { display:none; align-items:center; gap:8px; padding:8px 20px; background:var(--glass); backdrop-filter:blur(20px); border-bottom:1px solid var(--glass-border); font-size:12px; color:var(--text-secondary); }
-#voice-chat-bar.active { display:flex; }
-#voice-chat-bar .vc-indicator { width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 1.5s infinite; box-shadow:0 0 8px var(--green); }
-#voice-chat-bar button { background:var(--glass-elevated); border:1px solid var(--glass-border); border-radius:8px; padding:4px 12px; cursor:pointer; color:var(--text-secondary); font-size:11px; margin-left:auto; font-family:inherit; }
-#voice-chat-bar button:hover { color:var(--red); border-color:var(--red); }
-
-/* ── Voice Chat Panel (Overlay) ──────────── */
-#voice-panel {
-  display:none; position:fixed; bottom:0; left:0; right:0; z-index:200;
-  height:50vh; min-height:360px;
-  background:var(--glass-elevated); backdrop-filter:blur(40px); -webkit-backdrop-filter:blur(40px);
-  border-top:1px solid var(--glass-border);
-  border-radius:24px 24px 0 0;
-  flex-direction:column; align-items:center; justify-content:center; gap:20px;
-  transition:transform 0.4s cubic-bezier(0.16,1,0.3,1);
-  transform:translateY(100%);
+/* ── Voice Overlay (Full-Screen) ─────────── */
+#voice-overlay {
+  display:none; position:fixed; inset:0; z-index:500;
+  background:linear-gradient(180deg,#080810 0%,#0d0816 100%);
+  flex-direction:column; align-items:center; justify-content:center;
 }
-#voice-panel.open { display:flex; transform:translateY(0); }
-#voice-panel .orb {
+.voice-agent-name { position:absolute; top:20px; left:24px; font-size:13px; color:rgba(255,255,255,0.3); }
+.voice-esc-hint { position:absolute; top:20px; right:24px; font-size:12px; color:rgba(255,255,255,0.2); }
+.voice-ambient {
+  position:absolute; width:500px; height:500px; border-radius:50%; pointer-events:none;
+  background:radial-gradient(circle,rgba(139,92,246,0.08) 0%,transparent 70%);
+  top:50%; left:50%; transform:translate(-50%,-50%); transition:background 0.6s;
+}
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-ambient {
+  background:radial-gradient(circle,rgba(16,185,129,0.1) 0%,transparent 70%);
+  animation:ambientPulse 0.8s ease-in-out infinite;
+}
+#voice-overlay[data-voice-state="LISTENING"] .voice-ambient { animation:ambientPulse 2s ease-in-out infinite; }
+.voice-state-label {
+  font-size:11px; letter-spacing:3px; text-transform:uppercase;
+  color:rgba(139,92,246,0.7); margin-bottom:32px; position:relative; z-index:2;
+  min-height:16px; transition:color 0.3s;
+}
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-state-label { color:rgba(16,185,129,0.7); }
+#voice-overlay[data-voice-state="CONNECTING"] .voice-state-label,
+#voice-overlay[data-voice-state="INTERRUPTED"] .voice-state-label { color:rgba(245,158,11,0.7); }
+.voice-orb-wrap { position:relative; z-index:2; margin-bottom:32px; }
+.voice-orb {
   width:140px; height:140px; border-radius:50%;
-  background:var(--accent-gradient);
-  box-shadow:0 0 60px var(--accent-glow), 0 0 120px var(--accent-glow);
-  animation:orbPulse 3s ease-in-out infinite;
+  background:linear-gradient(135deg,#8b5cf6,#6366f1);
+  box-shadow:0 0 40px rgba(139,92,246,0.5);
+  display:flex; align-items:center; justify-content:center; position:relative;
+  transition:background 0.4s, box-shadow 0.4s;
 }
-#voice-panel.listening .orb { animation:orbListen 1s ease-in-out infinite; }
-#voice-panel.speaking .orb { animation:orbSpeak 2s linear infinite; }
-#voice-panel canvas { width:200px; height:60px; }
-#voice-panel .transcript { max-width:600px; text-align:center; color:var(--text-secondary); font-size:14px; max-height:80px; overflow-y:auto; padding:0 20px; }
-#voice-panel .close-voice { position:absolute; top:16px; right:20px; background:var(--glass); border:1px solid var(--glass-border); border-radius:10px; padding:6px 14px; cursor:pointer; color:var(--text-secondary); font-size:12px; font-family:inherit; }
-#voice-panel .close-voice:hover { color:var(--red); border-color:var(--red); }
+#voice-overlay[data-voice-state="LISTENING"] .voice-orb { animation:orbPulse 2s ease-in-out infinite; }
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-orb {
+  background:linear-gradient(135deg,#10b981,#34d399); box-shadow:0 0 60px rgba(16,185,129,0.4);
+  animation:orbSpeak 0.6s ease-in-out infinite alternate;
+}
+#voice-overlay[data-voice-state="CONNECTING"] .voice-orb {
+  background:linear-gradient(135deg,#f59e0b,#f97316); box-shadow:0 0 30px rgba(245,158,11,0.3);
+  animation:orbSpin 2s linear infinite;
+}
+#voice-overlay[data-voice-state="INTERRUPTED"] .voice-orb {
+  background:linear-gradient(135deg,#f59e0b,#f97316); box-shadow:0 0 30px rgba(245,158,11,0.3);
+}
+.voice-orb-ring, .voice-orb-ring-2 { position:absolute; border-radius:50%; opacity:0; transition:opacity 0.3s; }
+.voice-orb-ring { inset:-12px; border:2px solid rgba(139,92,246,0.3); }
+.voice-orb-ring-2 { inset:-24px; border:1px solid rgba(139,92,246,0.15); }
+#voice-overlay[data-voice-state="LISTENING"] .voice-orb-ring { opacity:1; animation:ringExpand 2s ease-out infinite; }
+#voice-overlay[data-voice-state="LISTENING"] .voice-orb-ring-2 { opacity:1; animation:ringExpand 2s ease-out 0.5s infinite; }
+.voice-orb-icon { font-size:48px; line-height:1; position:relative; z-index:1; }
+.voice-waveform {
+  display:flex; align-items:center; gap:4px; height:40px;
+  position:relative; z-index:2; margin-bottom:20px; opacity:0; transition:opacity 0.3s;
+}
+#voice-overlay[data-voice-state="LISTENING"] .voice-waveform,
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-waveform { opacity:1; }
+.voice-waveform .vbar { width:3px; background:rgba(139,92,246,0.8); border-radius:2px; }
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-waveform .vbar { background:rgba(16,185,129,0.8); }
+@keyframes vbarDance { 0%,100%{height:4px} 50%{height:var(--h,20px)} }
+.voice-selector {
+  display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
+  position:relative; z-index:2; margin-bottom:24px;
+  opacity:0; pointer-events:none; transition:opacity 0.3s;
+}
+#voice-overlay[data-voice-state="CONNECTING"] .voice-selector { opacity:1; pointer-events:auto; }
+.voice-chip {
+  padding:6px 14px; border-radius:20px; border:1px solid rgba(255,255,255,0.1);
+  font-size:12px; color:rgba(255,255,255,0.5); cursor:pointer; background:transparent;
+  font-family:inherit; transition:all 0.2s;
+}
+.voice-chip.active, .voice-chip:focus { border-color:rgba(139,92,246,0.5); color:#a78bfa; background:rgba(139,92,246,0.1); outline:none; }
+.voice-transcript-wrap { position:relative; z-index:2; max-width:520px; text-align:center; min-height:48px; margin-bottom:32px; padding:0 32px; }
+.voice-transcript-text { font-size:15px; color:rgba(255,255,255,0.7); line-height:1.6; }
+.voice-controls { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; gap:14px; }
+.voice-controls-row { display:flex; align-items:center; gap:12px; }
+.voice-btn-interrupt {
+  padding:10px 22px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3);
+  border-radius:12px; color:#f59e0b; font-size:13px; cursor:pointer; font-family:inherit;
+  opacity:0; pointer-events:none; transition:opacity 0.25s;
+}
+#voice-overlay[data-voice-state="AGENT_SPEAKING"] .voice-btn-interrupt { opacity:1; pointer-events:auto; }
+.voice-btn-mute {
+  padding:10px 18px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+  border-radius:12px; color:rgba(255,255,255,0.5); font-size:13px; cursor:pointer; font-family:inherit;
+  transition:all 0.2s;
+}
+.voice-btn-mute:hover { border-color:rgba(255,255,255,0.2); color:rgba(255,255,255,0.8); }
+.voice-btn-end {
+  padding:12px 36px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.25);
+  border-radius:14px; color:#ef4444; font-size:14px; font-weight:500; cursor:pointer; font-family:inherit;
+  transition:all 0.2s;
+}
+.voice-btn-end:hover { background:rgba(239,68,68,0.2); border-color:rgba(239,68,68,0.4); }
+/* Voice session transcript block in chat history */
+.voice-session-block .lbl { color:var(--accent); }
+.voice-turns { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.voice-turn { font-size:13px; line-height:1.5; }
+.voice-turn-label { font-weight:600; color:var(--text-secondary); }
+.voice-turn-text { color:var(--text); }
+/* Additional keyframes for voice */
+@keyframes orbSpin { to { transform:rotate(360deg); } }
+@keyframes orbSpeak { 0%{transform:scale(1)} 100%{transform:scale(1.1)} }
+@keyframes ringExpand { 0%{transform:scale(0.9);opacity:0.6} 100%{transform:scale(1.2);opacity:0} }
 
 /* ── Cards ───────────────────────────────── */
 .card {
@@ -617,16 +691,11 @@ body {
 
   <!-- Chat Page -->
   <div class="page active" id="page-chat">
-    <div id="voice-chat-bar">
-      <span class="vc-indicator"></span>
-      <span>Voice Chat active — responses will be spoken aloud</span>
-      <button onclick="toggleVoiceChatMode()">End Voice Chat</button>
-    </div>
     <div id="chat-messages"></div>
     <div id="chat-attachments"></div>
     <div id="chat-input-area">
-      <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Push to talk (single message)">🎙</button>
-      <button class="voice-btn" id="voice-chat-btn" onclick="openVoicePanel()" title="Voice Chat mode (continuous)">🎧</button>
+      <button class="voice-btn" id="voice-btn" onclick="toggleVoice()" title="Push to talk (single message)" aria-label="Push to talk">🎙</button>
+      <button class="voice-btn" id="voice-chat-btn" onclick="voiceMode.start()" title="Voice Talk mode" aria-label="Start Voice Talk mode">🎧</button>
       <button class="attach-btn" id="attach-btn" onclick="document.getElementById('file-upload').click()" title="Attach files (images, documents, audio)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
       </button>
@@ -703,12 +772,44 @@ body {
 
 </div>
 
-<!-- Voice Chat Panel -->
-<div id="voice-panel">
-  <button class="close-voice" onclick="closeVoicePanel()">Close</button>
-  <div class="orb" onclick="toggleVoicePanelRecording()" style="cursor:pointer" title="Click to start/stop recording"></div>
-  <canvas id="voice-canvas" width="200" height="60"></canvas>
-  <div class="transcript" id="voice-transcript">Tap orb to start speaking...</div>
+<!-- Voice Mode Overlay (Full-Screen) -->
+<div id="voice-overlay" style="display:none" role="dialog" aria-label="Voice Mode" aria-modal="true">
+  <span class="voice-agent-name">SteelClaw</span>
+  <span class="voice-esc-hint" aria-hidden="true">Esc to exit</span>
+  <div class="voice-ambient" aria-hidden="true"></div>
+  <div class="voice-state-label" id="voice-state-label" aria-live="polite"></div>
+  <div class="voice-orb-wrap" aria-hidden="true">
+    <div class="voice-orb" id="voice-orb">
+      <div class="voice-orb-ring"></div>
+      <div class="voice-orb-ring-2"></div>
+      <div class="voice-orb-icon" id="voice-orb-icon">🎙</div>
+    </div>
+  </div>
+  <div class="voice-waveform" id="voice-waveform" aria-hidden="true"></div>
+  <div class="voice-selector" id="voice-selector" aria-label="Voice selection">
+    <button class="voice-chip active" onclick="voiceMode.setVoice('alloy');updateVoiceChips(this)" aria-pressed="true">alloy</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('ash');updateVoiceChips(this)" aria-pressed="false">ash</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('ballad');updateVoiceChips(this)" aria-pressed="false">ballad</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('coral');updateVoiceChips(this)" aria-pressed="false">coral</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('echo');updateVoiceChips(this)" aria-pressed="false">echo</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('sage');updateVoiceChips(this)" aria-pressed="false">sage</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('shimmer');updateVoiceChips(this)" aria-pressed="false">shimmer</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('verse');updateVoiceChips(this)" aria-pressed="false">verse</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('marin');updateVoiceChips(this)" aria-pressed="false">marin</button>
+    <button class="voice-chip" onclick="voiceMode.setVoice('cedar');updateVoiceChips(this)" aria-pressed="false">cedar</button>
+  </div>
+  <div class="voice-transcript-wrap">
+    <div class="voice-transcript-text" id="voice-transcript-text" aria-live="polite" aria-label="Voice transcript"></div>
+  </div>
+  <div class="voice-controls">
+    <div class="voice-controls-row">
+      <button class="voice-btn-interrupt" id="voice-interrupt-btn" onclick="voiceMode.interrupt()" aria-label="Interrupt agent speech">✋ Interrupt</button>
+    </div>
+    <div class="voice-controls-row">
+      <button class="voice-btn-mute" id="voice-mute-btn" onclick="voiceMode.mute()" aria-label="Toggle microphone mute" aria-pressed="false">🔇 Mute</button>
+      <button class="voice-btn-end" onclick="voiceMode.stop()" aria-label="End voice conversation">End Conversation</button>
+    </div>
+  </div>
 </div>
 
 <!-- Command Palette -->
@@ -873,7 +974,6 @@ function _finalizeStream(fullContent) {
   _streamingMsgEl._copyBtn.onclick = () => { navigator.clipboard.writeText(finalText).then(()=>toast('Copied!')); };
   _streamingMsgEl._actionsEl.style.display = '';
   msgEl.scrollTop = msgEl.scrollHeight;
-  if (voiceChatMode) speakResponse(finalText);
   _streamingMsgEl = null;
   _streamingContent = '';
 }
@@ -906,7 +1006,6 @@ function wsConnect() {
       removeTyping();
       const txt = d.content || JSON.stringify(d);
       addMsg('assistant', txt);
-      if (voiceChatMode) speakResponse(txt);
     }
   };
 }
@@ -1196,35 +1295,18 @@ function handlePaletteKey(e) {
   else if (e.key==='Escape') { closePalette(); }
 }
 
-// ── Voice Mode ────────────────────────────────────────────
+// ── Push-to-Talk (single-message Whisper mode) ────────────
+// Voice Talk mode (continuous) is handled by VoiceModeManager in voice-mode.js
 let voiceRecording = false;
 let mediaRecorder = null;
-let voiceChatMode = false;
-let ttsAudio = null;
-let voiceAudioCtx = null;
-let voiceAnalyser = null;
 let voiceStream = null;
-let silenceTimer = null;
-let voiceAutoSubmit = true;
-let silenceThreshold = 500;
-let playbackSpeed = 1.0;
-
-function loadVoicePrefs() {
-  voiceAutoSubmit = localStorage.getItem('steelclaw-voice-autosubmit') !== 'false';
-  silenceThreshold = parseInt(localStorage.getItem('steelclaw-silence-threshold')) || 500;
-  playbackSpeed = parseFloat(localStorage.getItem('steelclaw-playback-speed')) || 1.0;
-}
-loadVoicePrefs();
 
 async function checkVoiceEnabled() {
   try {
-    const status = await fetch('/api/voice/status').then(r=>r.json());
-    if (!status.enabled) {
-      toast('Voice mode is disabled. Enable it in Settings.', 'error');
-      return false;
-    }
+    const status = await fetch('/api/voice/status').then(r => r.json());
+    if (!status.enabled) { toast('Voice mode is disabled. Enable it in Settings.', 'error'); return false; }
     return true;
-  } catch(e) { return true; }
+  } catch (_) { return true; }
 }
 
 async function toggleVoice() {
@@ -1236,257 +1318,34 @@ async function toggleVoice() {
     return;
   }
   if (!(await checkVoiceEnabled())) return;
-  await startRecording(false);
-}
-
-async function startRecording(continuous) {
-  const btn = document.getElementById('voice-btn');
   try {
-    voiceStream = await navigator.mediaDevices.getUserMedia({audio:true});
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(voiceStream);
     const chunks = [];
-
-    // Set up analyser for silence detection and visualization
-    if (!voiceAudioCtx) voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = voiceAudioCtx.createMediaStreamSource(voiceStream);
-    voiceAnalyser = voiceAudioCtx.createAnalyser();
-    voiceAnalyser.fftSize = 256;
-    source.connect(voiceAnalyser);
-
-    if (voiceChatMode) drawVoiceWaveform();
-    if (voiceChatMode && voiceAutoSubmit) startSilenceDetection();
-
     mediaRecorder.ondataavailable = e => chunks.push(e.data);
     mediaRecorder.onstop = async () => {
-      stopSilenceDetection();
-      voiceStream.getTracks().forEach(t=>t.stop());
+      voiceStream.getTracks().forEach(t => t.stop());
       voiceStream = null;
-      const blob = new Blob(chunks, {type:'audio/webm'});
+      const blob = new Blob(chunks, { type: 'audio/webm' });
       const form = new FormData();
       form.append('file', blob, 'recording.webm');
       try {
-        const resp = await fetch('/api/voice/transcribe', {method:'POST', body:form});
+        const resp = await fetch('/api/voice/transcribe', { method: 'POST', body: form });
         const data = await resp.json();
         if (data.text) {
-          if (voiceChatMode) document.getElementById('voice-transcript').textContent = data.text;
           addMsg('user', data.text);
-          ws.send(JSON.stringify({content:data.text, stream:true}));
+          ws.send(JSON.stringify({ content: data.text, stream: true }));
           showTyping();
         } else if (data.error) {
-          toast('Transcription: '+data.error, 'error');
+          toast('Transcription: ' + data.error, 'error');
         }
-      } catch(e) { toast('Voice error: '+e.message, 'error'); }
+      } catch (e) { toast('Voice error: ' + e.message, 'error'); }
     };
     mediaRecorder.start();
     voiceRecording = true;
     btn.classList.add('recording');
-    if (voiceChatMode) document.getElementById('voice-panel').className = 'open listening';
-    if (!continuous) toast('Recording... click mic again to stop');
-  } catch(e) { toast('Microphone access denied', 'error'); }
-}
-
-function startSilenceDetection() {
-  if (!voiceAnalyser) return;
-  const bufferLength = voiceAnalyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  let silentSince = null;
-
-  function check() {
-    if (!voiceRecording || !voiceAnalyser) return;
-    voiceAnalyser.getByteFrequencyData(dataArray);
-    const avg = dataArray.reduce((a,b)=>a+b,0) / bufferLength;
-    if (avg < 10) {
-      if (!silentSince) silentSince = Date.now();
-      else if (Date.now() - silentSince > silenceThreshold) {
-        // Auto-submit
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-          voiceRecording = false;
-          document.getElementById('voice-btn').classList.remove('recording');
-          mediaRecorder.stop();
-        }
-        return;
-      }
-    } else {
-      silentSince = null;
-    }
-    silenceTimer = requestAnimationFrame(check);
-  }
-  check();
-}
-
-function stopSilenceDetection() {
-  if (silenceTimer) { cancelAnimationFrame(silenceTimer); silenceTimer = null; }
-}
-
-function drawVoiceWaveform() {
-  const canvas = document.getElementById('voice-canvas');
-  if (!canvas || !voiceAnalyser) return;
-  const ctx = canvas.getContext('2d');
-  const bufferLength = voiceAnalyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-
-  function draw() {
-    if (!voiceRecording && !voiceChatMode) return;
-    requestAnimationFrame(draw);
-    voiceAnalyser.getByteTimeDomainData(dataArray);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.lineWidth = 2;
-    const style = getComputedStyle(document.documentElement);
-    ctx.strokeStyle = style.getPropertyValue('--accent').trim() || '#8b5cf6';
-    ctx.beginPath();
-    const sliceWidth = canvas.width / bufferLength;
-    let x = 0;
-    for (let i = 0; i < bufferLength; i++) {
-      const v = dataArray[i] / 128.0;
-      const y = v * canvas.height / 2;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-      x += sliceWidth;
-    }
-    ctx.lineTo(canvas.width, canvas.height / 2);
-    ctx.stroke();
-  }
-  draw();
-}
-
-function toggleVoicePanelRecording() {
-  if (!voiceChatMode) return;
-  if (voiceRecording) {
-    voiceRecording = false;
-    document.getElementById('voice-btn').classList.remove('recording');
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  } else {
-    startRecording(true);
-  }
-}
-
-// ── Voice Chat Panel ─────────────────────────────────────
-function openVoicePanel() {
-  if (voiceChatMode) { closeVoicePanel(); return; }
-  checkVoiceEnabled().then(ok => {
-    if (!ok) return;
-    voiceChatMode = true;
-    document.getElementById('voice-panel').classList.add('open');
-    document.getElementById('voice-chat-bar').classList.add('active');
-    document.getElementById('voice-chat-btn').classList.add('voice-chat-active');
-    document.getElementById('voice-transcript').textContent = 'Tap mic to start speaking...';
-    toast('Voice Chat active');
-  });
-}
-
-function closeVoicePanel() {
-  voiceChatMode = false;
-  document.getElementById('voice-panel').classList.remove('open','listening','speaking');
-  document.getElementById('voice-chat-bar').classList.remove('active');
-  document.getElementById('voice-chat-btn').classList.remove('voice-chat-active');
-  if (voiceRecording) {
-    voiceRecording = false;
-    document.getElementById('voice-btn').classList.remove('recording');
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  }
-  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
-  stopSilenceDetection();
-  toast('Voice Chat ended');
-}
-
-async function toggleVoiceChatMode() {
-  if (voiceChatMode) { closeVoicePanel(); return; }
-  openVoicePanel();
-}
-
-async function speakResponse(text) {
-  if (!voiceChatMode) return;
-  const panel = document.getElementById('voice-panel');
-  panel.className = 'open speaking';
-  try {
-    // Try streaming first
-    const resp = await fetch('/api/voice/synthesize-stream', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text: text.substring(0, 4000)}),
-    });
-    if (!resp.ok) {
-      // Fall back to non-streaming
-      const resp2 = await fetch('/api/voice/synthesize', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text: text.substring(0, 4000)}),
-      });
-      if (!resp2.ok) { panel.className = 'open'; return; }
-      const blob = await resp2.blob();
-      const url = URL.createObjectURL(blob);
-      ttsAudio = new Audio(url);
-      ttsAudio.playbackRate = playbackSpeed;
-      ttsAudio.onended = () => {
-        URL.revokeObjectURL(url);
-        ttsAudio = null;
-        panel.className = 'open';
-        if (voiceChatMode && !voiceRecording) { startRecording(true); }
-      };
-      ttsAudio.play();
-      return;
-    }
-    // Progressive streaming playback — play each chunk as it arrives
-    if (!voiceAudioCtx) voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const reader = resp.body.getReader();
-    let chunkBuffer = new Uint8Array(0);
-    let nextPlayTime = voiceAudioCtx.currentTime;
-    let chunksPlayed = 0;
-    let streamDone = false;
-
-    // MP3 frames start with sync word 0xFFE0+ ; accumulate until we have a decodable segment
-    async function tryDecodeAndPlay(data, isLast) {
-      try {
-        const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-        const audioBuffer = await voiceAudioCtx.decodeAudioData(ab);
-        const source = voiceAudioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.playbackRate.value = playbackSpeed;
-        source.connect(voiceAudioCtx.destination);
-        // Schedule this chunk right after the previous one ends
-        if (nextPlayTime < voiceAudioCtx.currentTime) nextPlayTime = voiceAudioCtx.currentTime;
-        source.start(nextPlayTime);
-        nextPlayTime += audioBuffer.duration / playbackSpeed;
-        chunksPlayed++;
-        if (isLast) {
-          source.onended = () => {
-            panel.className = 'open';
-            if (voiceChatMode && !voiceRecording) { startRecording(true); }
-          };
-        }
-        return true;
-      } catch(e) { return false; }
-    }
-
-    while (!streamDone) {
-      const {value, done: d} = await reader.read();
-      streamDone = d;
-      if (value) {
-        // Append to buffer
-        const merged = new Uint8Array(chunkBuffer.length + value.length);
-        merged.set(chunkBuffer); merged.set(value, chunkBuffer.length);
-        chunkBuffer = merged;
-        // Try to decode what we have so far (each TTS chunk is a complete MP3 segment)
-        if (await tryDecodeAndPlay(chunkBuffer, false)) {
-          chunkBuffer = new Uint8Array(0); // successfully played, clear buffer
-        }
-      }
-    }
-    // Play any remaining buffered data
-    if (chunkBuffer.length > 0) {
-      await tryDecodeAndPlay(chunkBuffer, true);
-    } else if (chunksPlayed > 0) {
-      // Set onended on last source — schedule panel reset after last chunk finishes
-      const remaining = nextPlayTime - voiceAudioCtx.currentTime;
-      setTimeout(() => {
-        panel.className = 'open';
-        if (voiceChatMode && !voiceRecording) { startRecording(true); }
-      }, Math.max(0, remaining * 1000));
-    }
-  } catch(e) {
-    panel.className = 'open';
-    // TTS failed silently
-  }
+    toast('Recording... click mic again to stop');
+  } catch (_) { toast('Microphone access denied', 'error'); }
 }
 
 // ── Global Keyboard Shortcuts ─────────────────────────────
@@ -1686,25 +1545,21 @@ loaders.settings = async () => {
             <div class="form-group"><label>STT Provider / Model</label><input id="s-voice-stt" value="${esc(voice.transcription_model)||'whisper-1'}"></div>
             <div class="form-group"><label>TTS Model</label><input id="s-voice-tts" value="${esc(voice.tts_model)||'tts-1'}"></div>
           </div>
-          <div class="form-group"><label>TTS Voice</label>
-            <select id="s-voice-voice">
-              ${['alloy','echo','fable','onyx','nova','shimmer'].map(v=>`<option${(voice.tts_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
-            </select>
+          <div class="form-row">
+            <div class="form-group"><label>TTS Voice</label>
+              <select id="s-voice-voice">
+                ${['alloy','echo','fable','onyx','nova','shimmer'].map(v=>`<option${(voice.tts_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
+              </select>
+              <div class="hint">Used for REST TTS endpoint</div>
+            </div>
+            <div class="form-group"><label>Realtime Voice</label>
+              <select id="s-voice-realtime-voice">
+                ${['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar'].map(v=>`<option${(voice.realtime_voice||'alloy')===v?' selected':''}>${v}</option>`).join('')}
+              </select>
+              <div class="hint">Used for WebRTC Talk mode</div>
+            </div>
           </div>
           <button class="btn btn-primary" onclick="saveVoice()">Save Voice Settings</button>
-        </div>
-        <div class="card">
-          <h3>Voice Chat Options</h3>
-          <div class="toggle-row"><input type="checkbox" id="s-voice-autosubmit" ${voiceAutoSubmit?'checked':''} onchange="localStorage.setItem('steelclaw-voice-autosubmit',this.checked);voiceAutoSubmit=this.checked"><label for="s-voice-autosubmit">Auto-submit on silence</label></div>
-          <div class="range-group">
-            <label><span>Silence Threshold</span><span id="silence-val">${silenceThreshold}ms</span></label>
-            <input type="range" min="300" max="1500" step="50" value="${silenceThreshold}" oninput="silenceThreshold=parseInt(this.value);localStorage.setItem('steelclaw-silence-threshold',this.value);document.getElementById('silence-val').textContent=this.value+'ms'">
-          </div>
-          <div class="form-group"><label>Playback Speed</label>
-            <select id="s-playback-speed" onchange="playbackSpeed=parseFloat(this.value);localStorage.setItem('steelclaw-playback-speed',this.value)">
-              ${['0.75','1','1.25','1.5'].map(s=>`<option value="${s}"${parseFloat(s)===playbackSpeed?' selected':''}>${s}x</option>`).join('')}
-            </select>
-          </div>
         </div>
       </div>
 
@@ -1925,6 +1780,7 @@ async function saveVoice() {
     transcription_model: document.getElementById('s-voice-stt').value,
     tts_model: document.getElementById('s-voice-tts').value,
     tts_voice: document.getElementById('s-voice-voice').value,
+    realtime_voice: document.getElementById('s-voice-realtime-voice').value,
   })});
   toast('Voice settings saved');
 }
@@ -2481,5 +2337,31 @@ function exportCSV() {
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/static/voice-mode.js"></script>
+<script>
+// ── Voice overlay init ─────────────────────────────────────
+(function initVoiceOverlay() {
+  // Build animated waveform bars
+  const wf = document.getElementById('voice-waveform');
+  if (wf) {
+    const heights = [8,14,20,28,36,28,20,32,16,24,36,20,14,26,18,10,22,32,18,12];
+    heights.forEach((h, i) => {
+      const b = document.createElement('div');
+      b.className = 'vbar';
+      b.style.cssText = `--h:${h}px;height:${Math.round(h/2)}px;animation:vbarDance ${0.5+(i%5)*0.1}s ease-in-out infinite;animation-delay:${i*0.05}s;`;
+      wf.appendChild(b);
+    });
+  }
+  // Restore selected voice from localStorage
+  const saved = localStorage.getItem('steelclaw-realtime-voice');
+  if (saved) {
+    document.querySelectorAll('#voice-selector .voice-chip').forEach(btn => {
+      const active = btn.textContent.trim() === saved;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+  }
+})();
+</script>
 </body>
 </html>

@@ -25,6 +25,7 @@ class BaseConnector(ABC):
         self._handler = handler
         self._task: asyncio.Task | None = None
         self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id → typing loop task
+        self.last_error: str | None = None
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._run(), name=f"connector-{self.platform_name}")
@@ -42,6 +43,19 @@ class BaseConnector(ABC):
             task.cancel()
         self._typing_tasks.clear()
         logger.info("Connector %s stopped", self.platform_name)
+
+    @property
+    def is_running(self) -> bool:
+        """True if the connector task is active and has not finished."""
+        return self._task is not None and not self._task.done()
+
+    async def verify(self) -> str | None:
+        """Pre-flight health check. Return None if OK, an error string if not.
+
+        Subclasses override this to validate tokens before the connector starts.
+        Called by ConnectorRegistry.start_connector() before creating the asyncio task.
+        """
+        return None
 
     @abstractmethod
     async def _run(self) -> None:

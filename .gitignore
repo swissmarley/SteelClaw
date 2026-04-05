@@ -22,6 +22,7 @@ env/
 *~
 .DS_Store
 .claude
+.superpowers
 docs
 
 # SteelClaw runtime data

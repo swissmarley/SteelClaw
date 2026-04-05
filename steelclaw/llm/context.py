@@ -145,7 +145,9 @@ class ContextBuilder:
 
     def build_assistant_tool_call_message(self, content: str | None, tool_calls: list) -> dict:
         """Build the assistant message that contains tool calls."""
-        msg: Dict[str, Any] = {"role": "assistant", "content": content or ""}
+        # Use None (not "") for content when there are tool calls — required by OpenAI spec
+        # and needed for correct LiteLLM transformation to Anthropic/other provider formats.
+        msg: Dict[str, Any] = {"role": "assistant", "content": content if content else None}
         msg["tool_calls"] = [
             {
                 "id": tc.id,

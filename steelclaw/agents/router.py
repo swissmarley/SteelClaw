@@ -377,16 +377,12 @@ class AgentRouter:
                     td = chunk.tool_call_delta
                     idx = td.get("index", 0)
                     if idx not in tool_call_buffers:
-                        tool_call_buffers[idx] = {
-                            "id": td.get("id", ""),
-                            "name": td.get("name", ""),
-                            "arguments_str": "",
-                        }
+                        tool_call_buffers[idx] = {"id": "", "name": "", "arguments_str": ""}
                     buf = tool_call_buffers[idx]
                     if td.get("id"):
                         buf["id"] = td["id"]
                     if td.get("name"):
-                        buf["name"] = (buf["name"] or "") + td["name"]
+                        buf["name"] += td["name"]
                     if td.get("arguments"):
                         buf["arguments_str"] += td["arguments"]
 
@@ -462,5 +458,7 @@ class AgentRouter:
 
         logger.info("Executing tool: %s(%s)", tc.name, json.dumps(tc.arguments)[:200])
         result = await self._skills.execute_tool(tc.name, tc.arguments)
-        logger.debug("Tool result: %s", result[:500])
+        if result is None:
+            result = f"Tool '{tc.name}' returned no output."
+        logger.debug("Tool result for %s: %s", tc.name, str(result)[:200])
         return result

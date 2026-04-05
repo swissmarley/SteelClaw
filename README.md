@@ -191,15 +191,29 @@ Example — enable Telegram:
 
 ## Voice Chat
 
-SteelClaw supports voice interaction via the dashboard. Click the microphone button to speak — your audio is transcribed via OpenAI Whisper, processed by the agent, and spoken back using streaming TTS.
+SteelClaw supports real-time voice interaction via the OpenAI Realtime API over WebRTC — direct browser-to-OpenAI connection with sub-2-second latency and true interruption support (like ChatGPT Voice).
 
-- **Chunked TTS streaming** — audio plays as the first sentence is generated, no waiting for the full response
-- **Progressive playback** — each TTS chunk is decoded and scheduled via Web Audio API for seamless, low-latency output
-- **Voice chat mode** — continuous conversation loop (speak → listen → speak) without clicking buttons
-- **Playback speed control** — adjust from 0.5x to 2.0x
-- **Animated waveform** — visual feedback for listening and speaking states
+- **WebRTC peer connection** — browser connects directly to OpenAI's Realtime API without server audio relay
+- **Sub-2-second latency** — real-time speech-to-text, LLM response, and text-to-speech pipeline
+- **Interruption support** — speak at any time during agent response to naturally interrupt and redirect conversation
+- **Server-side VAD** — voice activity detection and silence thresholds for automatic turn-taking
+- **Full-screen overlay UI** — animated visual state (IDLE → CONNECTING → LISTENING → AGENT_SPEAKING → INTERRUPTED) with animated orb, rings, and waveform
+- **Voice selection** — choose from 6 voice options (alloy, echo, fable, onyx, nova, shimmer) via integrated chip selector
+- **Configurable realtime settings** — VAD threshold, silence duration, prefix audio padding for natural conversation flow
 
-**Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. Supports configurable STT/TTS models and voice selection (alloy, echo, fable, onyx, nova, shimmer).
+**How to use:**
+1. Click the microphone button (🎧) in the chat header to start
+2. Speak naturally — your voice is streamed and processed in real-time
+3. Agent responds with voice — you can interrupt at any time by speaking
+4. Click the microphone button again or press Escape to stop
+
+**Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. The system uses OpenAI's `gpt-4o-realtime-preview` model by default, fully configurable.
+
+**Advanced settings (Settings > Voice/Audio):**
+- Realtime model selection (defaults to `gpt-4o-realtime-preview`)
+- VAD threshold (0.0-1.0, default 0.5)
+- Silence timeout in milliseconds (default 600ms)
+- Prefix padding for audio continuity (default 300ms)
 
 ## Streaming Responses
 
@@ -527,6 +541,7 @@ Full interactive API docs at [http://localhost:8000/docs](http://localhost:8000/
 | `/api/voice/transcribe` | POST | Speech-to-text (Whisper) |
 | `/api/voice/synthesize` | POST | Text-to-speech (single response) |
 | `/api/voice/synthesize-stream` | POST | Chunked TTS streaming |
+| `/api/voice/realtime-session` | POST | Create ephemeral OpenAI Realtime API session token (WebRTC) |
 | `/api/voice/status` | GET | Voice service status |
 | `/api/config/voice` | GET/PUT | Voice settings |
 | `/api/config/skills` | GET/PUT | Skill settings |

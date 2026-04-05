@@ -205,3 +205,126 @@ class TestDefaultEnabledFlag:
             registry.load_all()
         assert registry.get_skill("other_skill") is None
         assert "other_skill" in registry.disabled_skills
+
+
+def test_is_skill_configured_disk_fallback(tmp_path, monkeypatch):
+    """_is_skill_configured falls back to disk when in-memory setting is empty."""
+    from steelclaw.skills.registry import SkillRegistry
+    from steelclaw.settings import SkillSettings
+    from steelclaw.skills.loader import Skill
+    from steelclaw.skills.parser import SkillMetadata
+
+    # Build a minimal skill with one required credential
+    meta = SkillMetadata(
+        name="myskill",
+        description="test",
+        tools=[],
+        triggers=[],
+        system_prompt="",
+        version="1.0",
+        author="test",
+    )
+    skill = Skill(
+        metadata=meta,
+        path=tmp_path,
+        scope="global",
+        required_credentials=[{"key": "api_key", "label": "API Key", "type": "password"}],
+    )
+
+    settings = SkillSettings()
+    # In-memory skill_configs is empty (simulating server loaded before CLI set creds)
+    assert "myskill" not in settings.skill_configs
+
+    registry = SkillRegistry(settings)
+    registry._all_skills["myskill"] = skill
+    registry._skills["myskill"] = skill
+
+    # Write credential to disk (as CLI would)
+    import json
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "agents": {"skills": {"skill_configs": {"myskill": {"api_key": "sk-diskvalue"}}}}
+    }))
+
+    # Patch PROJECT_ROOT so credential_store reads from tmp_path
+    import steelclaw.paths as paths_module
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path)
+
+    # Should find the credential via disk fallback
+    assert registry._is_skill_configured(skill) is True
+
+
+def test_get_skill_credentials_disk_fallback(tmp_path, monkeypatch):
+    """get_skill_credentials shows is_set=True when cred is on disk but not in memory."""
+    from steelclaw.skills.registry import SkillRegistry
+    from steelclaw.settings import SkillSettings
+    from steelclaw.skills.loader import Skill
+    from steelclaw.skills.parser import SkillMetadata
+
+    meta = SkillMetadata(
+        name="myskill",
+        description="test",
+        tools=[],
+        triggers=[],
+        system_prompt="",
+        version="1.0",
+        author="test",
+    )
+    skill = Skill(
+        metadata=meta,
+        path=tmp_path,
+        scope="global",
+        required_credentials=[{"key": "api_key", "label": "API Key", "type": "password"}],
+    )
+
+    settings = SkillSettings()
+    registry = SkillRegistry(settings)
+    registry._all_skills["myskill"] = skill
+
+    import json
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "agents": {"skills": {"skill_configs": {"myskill": {"api_key": "sk-xyz1234"}}}}
+    }))
+
+    import steelclaw.paths as paths_module
+    monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path)
+
+    creds = registry.get_skill_credentials("myskill")
+    assert creds is not None
+    assert creds[0]["is_set"] is True
+    assert creds[0]["value"] == "****1234"
+
+
+def test_configure_skill_interactive_no_server(monkeypatch):
+    """Interactive configure exits gracefully when server is not running."""
+    import pytest
+    import httpx
+    from unittest.mock import patch
+    from steelclaw.cli.skills_cmd import _configure_skill
+
+    with patch("steelclaw.cli.skills_cmd.httpx.get", side_effect=httpx.ConnectError("no server")):
+        with pytest.raises(SystemExit):
+            _configure_skill(None)
+
+
+def test_configure_skill_named_writes_key_value(tmp_path, monkeypatch):
+    """Named configure (fallback mode) writes key=value pairs to config.json."""
+    import json
+    from unittest.mock import patch, MagicMock
+    from steelclaw.cli.skills_cmd import _configure_skill
+
+    # Make server connection fail so it uses the fallback file-write path
+    import httpx
+    import steelclaw.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "PROJECT_ROOT", tmp_path)
+
+    inputs = iter(["api_key=sk-testvalue", ""])
+    with patch("steelclaw.cli.skills_cmd.httpx.get", side_effect=httpx.ConnectError("no server")), \
+         patch("steelclaw.cli.skills_cmd.console") as mock_console:
+        mock_console.input.side_effect = lambda _: next(inputs)
+        _configure_skill("testskill")
+
+    config_path = tmp_path / "config.json"
+    cfg = json.loads(config_path.read_text())
+    assert cfg["agents"]["skills"]["skill_configs"]["testskill"]["api_key"] == "sk-testvalue"

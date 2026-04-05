@@ -44,8 +44,8 @@ def _gateway_status() -> None:
         console.print("[bold]Gateway Status[/bold]")
         connectors = info.get("connectors", {})
         for name, status in connectors.items():
-            style = "green" if status.get("running") else "red"
-            console.print(f"  {name}: [{style}]{status.get('status', 'unknown')}[/{style}]")
+            style = "green" if status == "running" else "red"
+            console.print(f"  {name}: [{style}]{status}[/{style}]")
     except httpx.ConnectError:
         console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
         sys.exit(1)
