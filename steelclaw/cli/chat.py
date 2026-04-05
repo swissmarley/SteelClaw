@@ -27,6 +27,73 @@ THINKING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇"
 TOOL_FRAMES = ["◐", "◓", "◑", "◒"]
 CONNECT_FRAMES = ["◜ ", " ◝", " ◞", "◟ "]
 
+# ── Slash commands — single source of truth ────────────────────────────────
+
+SLASH_COMMANDS: list[tuple[str, str]] = [
+    ("/help",    "Show available commands"),
+    ("/exit",    "Exit the chat"),
+    ("/quit",    "Exit the chat"),
+    ("/clear",   "Clear conversation history"),
+    ("/status",  "Connection and session info"),
+    ("/history", "Show conversation history"),
+    ("/compact", "Show history (compact, last 10)"),
+    ("/model",   "Show current model info"),
+    ("/stats",   "Show session statistics"),
+    ("/new",     "Start a new conversation"),
+    ("/export",  "Export chat to file"),
+]
+
+
+# ── prompt_toolkit autocomplete ────────────────────────────────────────────
+
+def _build_prompt_session():
+    """Return a prompt_toolkit PromptSession with slash-command autocomplete.
+
+    Returns None if prompt_toolkit is unavailable or stdin is not a TTY.
+    """
+    if not sys.stdin.isatty():
+        return None
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import Completer, Completion
+        from prompt_toolkit.styles import Style
+        from prompt_toolkit.formatted_text import HTML
+
+        class SlashCompleter(Completer):
+            def get_completions(self, document, complete_event):
+                text = document.text_before_cursor
+                if not text.startswith("/"):
+                    return
+                # Fuzzy prefix: typed chars after "/" must all appear in order
+                typed = text.lower()
+                for cmd, desc in SLASH_COMMANDS:
+                    if cmd.startswith(typed):
+                        display = f"{cmd:<12} {desc}"
+                        yield Completion(
+                            cmd,
+                            start_position=-len(text),
+                            display=display,
+                        )
+
+        style = Style.from_dict({
+            "prompt":              "bold ansicyan",
+            "completion-menu.completion":          "bg:#1a1a2e fg:#e0e0e0",
+            "completion-menu.completion.current":  "bg:#16213e fg:#00d4ff bold",
+            "completion-menu.meta.completion":     "bg:#1a1a2e fg:#888888",
+            "scrollbar.background":                "bg:#1a1a2e",
+            "scrollbar.button":                    "bg:#16213e",
+        })
+
+        session: PromptSession = PromptSession(
+            completer=SlashCompleter(),
+            complete_while_typing=True,
+            style=style,
+            reserve_space_for_menu=6,
+        )
+        return session
+    except ImportError:
+        return None
+
 
 async def _chat_loop(server_url: str, user_id: str) -> None:
     try:
@@ -62,35 +129,19 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
     start_time = time.time()
     msg_count = 0
 
-    def _render_banner() -> Panel:
-        banner_text = Text()
-        banner_text.append("   ______          __  _______\n", style="bold cyan")
-        banner_text.append("  / __/ /____ ___ / / / ___/ /__ _    __\n", style="bold cyan")
-        banner_text.append(" _\\ \\/ __/ -_) -_) / / /__/ / _ `/ |/| /\n", style="bold cyan")
-        banner_text.append("/___/\\__/\\__/\\__/_/  \\___/_/\\_,_/|__/|__/\n", style="bold cyan")
-        banner_text.append("\n", style="dim")
-        banner_text.append("    Autonomous AI Agent Engine", style="bold white")
-        return Panel(
-            banner_text,
-            border_style="cyan",
-            box=box.DOUBLE,
-            padding=(0, 1),
-        )
+    # Build the prompt_toolkit session (None if non-interactive)
+    pt_session = _build_prompt_session()
+
+    def _render_banner() -> None:
+        from steelclaw.cli.banner import print_banner
+        print_banner()
 
     def _render_help() -> Panel:
         tbl = Table(show_header=True, box=box.SIMPLE_HEAVY, padding=(0, 2))
         tbl.add_column("Command", style="accent", min_width=20)
         tbl.add_column("Description", style="dim")
-        tbl.add_row("/help", "Show this help")
-        tbl.add_row("/exit, /quit", "Exit the chat")
-        tbl.add_row("/clear", "Clear conversation history")
-        tbl.add_row("/status", "Connection and session info")
-        tbl.add_row("/history", "Show conversation history")
-        tbl.add_row("/compact", "Show history (compact, last 10)")
-        tbl.add_row("/model", "Show current model info")
-        tbl.add_row("/stats", "Show session statistics")
-        tbl.add_row("/new", "Start a new conversation")
-        tbl.add_row("/export [file]", "Export chat to file")
+        for cmd, desc in SLASH_COMMANDS:
+            tbl.add_row(cmd, desc)
         tbl.add_row("Ctrl+C", "Exit immediately")
         return Panel(tbl, title="[accent] Commands [/]", border_style="blue", box=box.ROUNDED)
 
@@ -145,14 +196,29 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
         tbl.add_row("Chars received", f"{total_chars:,}")
         return Panel(tbl, title="[accent] Statistics [/]", border_style="blue", box=box.ROUNDED)
 
+    async def _get_input() -> str:
+        """Get a line of user input.
+
+        Uses prompt_toolkit (with slash autocomplete) when running in an
+        interactive terminal; falls back to a plain Rich prompt otherwise.
+        """
+        if pt_session is not None:
+            from prompt_toolkit.formatted_text import HTML
+            prompt_text = HTML("<ansicyan><b>❯</b></ansicyan> ")
+            return await pt_session.prompt_async(prompt_text)
+        # Non-interactive fallback
+        return await asyncio.get_event_loop().run_in_executor(
+            None, lambda: console.input("[bold cyan]❯[/bold cyan] ")
+        )
+
     # ── Main UI ────────────────────────────────────────────────────────
-    console.print(_render_banner())
+    _render_banner()
     console.print()
-    console.print(
-        "[dim]  Type a message to chat  ·  "
-        "[accent]/help[/accent] for commands  ·  "
-        "[accent]/exit[/accent] to quit[/dim]"
-    )
+    if pt_session:
+        hint = "[dim]  Type a message to chat  ·  type [accent]/[/accent] for autocomplete  ·  [accent]/exit[/accent] to quit[/dim]"
+    else:
+        hint = "[dim]  Type a message to chat  ·  [accent]/help[/accent] for commands  ·  [accent]/exit[/accent] to quit[/dim]"
+    console.print(hint)
     console.print()
 
     # Connection animation
@@ -174,9 +240,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
     try:
         while True:
             try:
-                user_input = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: console.input("[bold cyan]❯[/bold cyan] ")
-                )
+                user_input = await _get_input()
             except EOFError:
                 break
 
@@ -197,7 +261,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             if cmd == "/clear":
                 messages.clear()
                 console.clear()
-                console.print(_render_banner())
+                _render_banner()
                 console.print("[dim]  Chat cleared.[/dim]\n")
                 continue
 

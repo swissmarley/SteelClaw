@@ -24,6 +24,8 @@ env/
 .claude
 .superpowers
 docs
+CLAUDE.md
+.claudeignore
 
 # SteelClaw runtime data
 config.json

@@ -2,7 +2,7 @@
 
 Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
 
-**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), 60+ skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
+**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), 61 skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -22,8 +22,6 @@ pip install -e ".[all]"
 
 ```bash
 steelclaw onboard
-# or
-python -m steelclaw onboard
 ```
 
 The wizard uses arrow-key selection for provider, model, connector, memory backend, permission tier, and temperature presets. It shows a confirmation summary before writing `config.json`.
@@ -73,7 +71,7 @@ steelclaw restart   # restart
 steelclaw logs -f   # follow logs
 ```
 
-SteelClaw resolves all paths relative to its installation directory, so you can run `python3 -m steelclaw start` from any working directory.
+SteelClaw resolves all paths relative to its installation directory, so you can run `steelclaw start` from any working directory.
 
 **Open the Control UI dashboard:**
 
@@ -85,7 +83,11 @@ Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. Th
 steelclaw chat
 ```
 
-The TUI chat supports streaming responses — text appears token-by-token as the LLM generates it, with live tool-call status indicators. Uses Rich for styled panels and Markdown rendering. Commands: `/help`, `/clear`, `/status`, `/history`, `/quit`.
+The TUI chat supports streaming responses — text appears token-by-token as the LLM generates it, with live tool-call status indicators. Uses Rich for styled panels and Markdown rendering.
+
+**Slash command autocomplete:** Type `/` in the prompt to open an interactive inline dropdown of all available commands. Use arrow keys to navigate, Enter to select, Escape to dismiss. Typing narrows the list in real time (e.g. `/st` matches `/status` and `/stats`). Falls back to plain input in non-interactive (piped/CI) environments.
+
+Available commands: `/help`, `/clear`, `/status`, `/history`, `/compact`, `/model`, `/stats`, `/new`, `/export`, `/quit`.
 
 ## CLI Commands
 
@@ -207,10 +209,10 @@ SteelClaw supports real-time voice interaction via the OpenAI Realtime API over 
 3. Agent responds with voice — you can interrupt at any time by speaking
 4. Click the microphone button again or press Escape to stop
 
-**Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. The system uses OpenAI's `gpt-4o-realtime-preview` model by default, fully configurable.
+**Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. The system uses OpenAI's `gpt-realtime-1.5` model by default with semantic VAD for natural turn-taking, fully configurable.
 
 **Advanced settings (Settings > Voice/Audio):**
-- Realtime model selection (defaults to `gpt-4o-realtime-preview`)
+- Realtime model selection (defaults to `gpt-realtime-1.5`)
 - VAD threshold (0.0-1.0, default 0.5)
 - Silence timeout in milliseconds (default 600ms)
 - Prefix padding for audio continuity (default 300ms)
