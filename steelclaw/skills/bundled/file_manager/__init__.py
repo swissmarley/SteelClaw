@@ -75,6 +75,8 @@ async def tool_move_file(source: str, destination: str) -> str:
 
     if not src.exists():
         return f"Error: source not found: {source}"
+    if not src.is_file():
+        return f"Error: source is not a file: {source}"
 
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)

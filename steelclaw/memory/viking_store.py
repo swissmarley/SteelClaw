@@ -104,7 +104,6 @@ class VikingStore:
                 "OpenViking connection failed (%s) — memory disabled", exc
             )
             self._client = None
-            self._client = None
 
     @property
     def available(self) -> bool:

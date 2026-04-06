@@ -256,8 +256,8 @@ class AgentRouter:
                             "skill": skill_name,
                             "label": skill_label,
                         })
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("on_tool_event(tool_start) handler error: %s", exc)
                 t0 = time.monotonic()
                 result = await self._execute_tool_call(tc)
                 duration_ms = int((time.monotonic() - t0) * 1000)
@@ -269,8 +269,8 @@ class AgentRouter:
                             "id": tc.id,
                             "duration_ms": duration_ms,
                         })
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("on_tool_event(tool_end) handler error: %s", exc)
                 messages.append(
                     self._context.build_tool_result_message(tc.id, result)
                 )

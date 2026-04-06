@@ -416,7 +416,7 @@ class MultiAgentOrchestrator:
             )
             avail_result = await db.execute(available_stmt)
             available = [a.name for a in avail_result.scalars().all()]
-            hint = f" Available sub-agents: {available}." if available else " No sub-agents exist yet — use create_subagent to create one."
+            hint = f" Available sub-agents: {', '.join(available)}." if available else " No sub-agents exist yet — use create_subagent to create one."
             return f"Error: sub-agent '{agent_name}' not found or inactive.{hint}"
 
         if profile.is_main:
