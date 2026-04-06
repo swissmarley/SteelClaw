@@ -255,6 +255,7 @@ class AgentRouter:
                             "id": tc.id,
                             "skill": skill_name,
                             "label": skill_label,
+                            "arguments": tc.arguments,
                         })
                     except Exception as exc:
                         logger.debug("on_tool_event(tool_start) handler error: %s", exc, exc_info=True)

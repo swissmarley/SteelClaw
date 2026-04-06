@@ -78,7 +78,7 @@ async def tool_move_file(source: str, destination: str) -> str:
         return f"Error: source not found: {source}"
 
     try:
-        dst.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(dst.parent.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread(shutil.move, str(src), str(dst))
         return f"Moved {src} → {dst}"
     except Exception as e:
