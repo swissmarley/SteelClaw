@@ -54,7 +54,8 @@ class TelegramConnector(BaseConnector):
 
         chat = msg_data["chat"]
         is_group = chat["type"] in ("group", "supergroup")
-        entities = msg_data.get("entities", [])
+        # Check both entities (text messages) and caption_entities (media messages)
+        entities = msg_data.get("entities", []) + msg_data.get("caption_entities", [])
         is_mention = any(e["type"] in ("mention", "text_mention") for e in entities)
         sender = msg_data.get("from", {})
 

@@ -448,3 +448,118 @@ def test_slack_regular_subtype_still_ignored():
 
     assert "message_changed" not in _HANDLED_SUBTYPES
     assert "bot_message" not in _HANDLED_SUBTYPES
+
+
+# ── Regression: CSV content reaches LLM via context builder ─────────────────
+
+
+def test_context_builder_csv_attachment_included_in_user_message():
+    """CSV attachments must appear as text blocks in the LLM message (fix review comment 1)."""
+    from steelclaw.llm.context import ContextBuilder
+    from steelclaw.settings import LLMSettings
+
+    cb = ContextBuilder(LLMSettings())
+    att = {
+        "filename": "report.csv",
+        "mime": "text/csv",
+        "category": "csv",
+        "text_content": "name,score\nAlice,95\nBob,87",
+    }
+    msg = cb._build_user_message("Analyse this file", attachments=[att])
+
+    # Content must be a list (multimodal format)
+    assert isinstance(msg["content"], list)
+    text_parts = [p["text"] for p in msg["content"] if p.get("type") == "text"]
+    combined = "\n".join(text_parts)
+    # CSV preview must be present
+    assert "report.csv" in combined
+    assert "Alice" in combined
+
+
+def test_context_builder_csv_without_text_content_shows_fallback():
+    """CSV attachment with no extracted text shows the 'could not be extracted' fallback."""
+    from steelclaw.llm.context import ContextBuilder
+    from steelclaw.settings import LLMSettings
+
+    cb = ContextBuilder(LLMSettings())
+    att = {"filename": "empty.csv", "mime": "text/csv", "category": "csv"}
+    msg = cb._build_user_message("see attached", attachments=[att])
+
+    text_parts = [p["text"] for p in msg["content"] if p.get("type") == "text"]
+    combined = "\n".join(text_parts)
+    assert "could not be extracted" in combined
+
+
+# ── Regression: Telegram caption_entities mention detection ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_telegram_caption_mention_detected():
+    """Bot mention in caption_entities (media messages) must set is_mention=True (fix review comment 2)."""
+    from steelclaw.gateway.connectors.telegram import TelegramConnector
+    from steelclaw.settings import ConnectorConfig
+
+    handler = AsyncMock()
+    conn = TelegramConnector(
+        config=ConnectorConfig(enabled=True, token="tok"),
+        handler=handler,
+    )
+
+    async def fake_download(file_id, filename, mime):
+        return build_attachment_dict(filename, mime, data=b"\xff\xd8\xff")
+
+    conn._download_attachment = fake_download
+
+    update = {
+        "update_id": 10,
+        "message": {
+            "message_id": 50,
+            "chat": {"id": 200, "type": "supergroup"},
+            "from": {"id": 99},
+            "caption": "@mybot check this",
+            "caption_entities": [{"type": "mention", "offset": 0, "length": 7}],
+            "photo": [{"file_id": "img_id", "width": 800, "height": 600}],
+        },
+    }
+
+    await conn._handle_update(update)
+
+    handler.assert_awaited_once()
+    inbound = handler.await_args[0][0]
+    assert inbound.is_mention is True
+
+
+@pytest.mark.asyncio
+async def test_telegram_no_caption_entities_not_mention():
+    """A media message without caption_entities should not be flagged as a mention."""
+    from steelclaw.gateway.connectors.telegram import TelegramConnector
+    from steelclaw.settings import ConnectorConfig
+
+    handler = AsyncMock()
+    conn = TelegramConnector(
+        config=ConnectorConfig(enabled=True, token="tok"),
+        handler=handler,
+    )
+
+    async def fake_download(file_id, filename, mime):
+        return build_attachment_dict(filename, mime, data=b"\xff\xd8\xff")
+
+    conn._download_attachment = fake_download
+
+    update = {
+        "update_id": 11,
+        "message": {
+            "message_id": 51,
+            "chat": {"id": 200, "type": "supergroup"},
+            "from": {"id": 99},
+            "caption": "look at this cool photo",
+            "photo": [{"file_id": "img_id2", "width": 800, "height": 600}],
+            # No caption_entities or entities
+        },
+    }
+
+    await conn._handle_update(update)
+
+    handler.assert_awaited_once()
+    inbound = handler.await_args[0][0]
+    assert inbound.is_mention is False
