@@ -9,9 +9,13 @@ import logging
 import httpx
 
 from steelclaw.gateway.base import BaseConnector
+from steelclaw.gateway.attachments import build_attachment_dict
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
 logger = logging.getLogger("steelclaw.gateway.slack")
+
+# Subtypes we handle (file_share) in addition to plain messages (no subtype)
+_HANDLED_SUBTYPES = frozenset({"file_share"})
 
 
 class SlackConnector(BaseConnector):
@@ -121,6 +125,7 @@ class SlackConnector(BaseConnector):
                 event = event_payload.get("event", {}) if isinstance(event_payload, dict) else {}
                 event_type = event.get("type")
                 channel_type = event.get("channel_type", "")
+                subtype = event.get("subtype")
 
                 logger.info(
                     "Slack event: event_type=%s channel=%s channel_type=%s user=%s bot_id=%s subtype=%s",
@@ -129,18 +134,41 @@ class SlackConnector(BaseConnector):
                     channel_type,
                     event.get("user"),
                     event.get("bot_id"),
-                    event.get("subtype"),
+                    subtype,
                 )
 
-                if event_type == "message" and not event.get("bot_id") and not event.get("subtype"):
+                # Handle regular messages and file_share subtypes; ignore bot messages and other subtypes
+                is_handled_subtype = subtype in _HANDLED_SUBTYPES
+                if (
+                    event_type == "message"
+                    and not event.get("bot_id")
+                    and (subtype is None or is_handled_subtype)
+                ):
                     is_group = channel_type not in ("im", "mpim", "app_home")
                     text = event.get("text", "")
+
+                    # Collect any file attachments
+                    attachments = await _collect_slack_attachments(
+                        event.get("files") or [],
+                        bot_token=token,
+                    )
+
+                    # Skip if neither text nor attachments were found
+                    if not text and not attachments:
+                        continue
+
+                    # Placeholder when file arrives without text
+                    if not text and attachments:
+                        names = ", ".join(a["filename"] for a in attachments)
+                        text = f"[File attachment: {names}]"
+
                     logger.info(
-                        "Slack dispatching: channel=%s is_group=%s is_mention=%s text=%r",
+                        "Slack dispatching: channel=%s is_group=%s is_mention=%s text=%r attachments=%d",
                         event.get("channel"),
                         is_group,
                         "<@" in text,
                         text[:80],
+                        len(attachments),
                     )
                     inbound = InboundMessage(
                         platform="slack",
@@ -148,6 +176,7 @@ class SlackConnector(BaseConnector):
                         platform_user_id=event.get("user", ""),
                         platform_message_id=event.get("ts", ""),
                         content=text,
+                        attachments=attachments if attachments else None,
                         is_group=is_group,
                         is_mention="<@" in text,
                     )
@@ -175,3 +204,38 @@ class SlackConnector(BaseConnector):
                 logger.info("Slack send OK to channel=%s", message.platform_chat_id)
             else:
                 logger.error("Slack send failed: %s (channel=%s)", data.get("error"), message.platform_chat_id)
+
+
+# ── Attachment helpers ───────────────────────────────────────────────────────
+
+async def _collect_slack_attachments(files: list[dict], bot_token: str) -> list[dict]:
+    """Download Slack file objects and return normalised attachment dicts.
+
+    Each entry in ``files`` is a Slack file object with keys like
+    ``name``, ``mimetype``, ``url_private_download``, etc.
+    """
+    result: list[dict] = []
+    for file_obj in files:
+        filename = file_obj.get("name") or file_obj.get("title") or "file"
+        mime = file_obj.get("mimetype")
+        url = file_obj.get("url_private_download") or file_obj.get("url_private")
+
+        if not url:
+            # Include metadata-only entry so the agent knows a file was sent
+            result.append(build_attachment_dict(filename=filename, mime=mime, data=None))
+            continue
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(
+                    url,
+                    headers={"Authorization": f"Bearer {bot_token}"},
+                )
+                resp.raise_for_status()
+                data = resp.content
+            result.append(build_attachment_dict(filename=filename, mime=mime, data=data))
+        except Exception:
+            logger.exception("Failed to download Slack file '%s'", filename)
+            result.append(build_attachment_dict(filename=filename, mime=mime, data=None))
+
+    return result

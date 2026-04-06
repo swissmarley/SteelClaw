@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -356,7 +357,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             if cmd_name in _CLI_PASSTHROUGH:
                 # Strip the leading "/" and forward all remaining args to the CLI.
                 subcmd = cmd_name[1:]
-                extra = cmd_parts[1].split() if len(cmd_parts) > 1 else []
+                extra = shlex.split(cmd_parts[1]) if len(cmd_parts) > 1 else []
                 cli_cmd = ["steelclaw", subcmd] + extra
                 console.print(f"[dim]  Running:[/dim] [accent]{' '.join(cli_cmd)}[/accent]\n")
                 await asyncio.get_event_loop().run_in_executor(

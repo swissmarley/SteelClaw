@@ -8,6 +8,7 @@ import tempfile
 import os
 
 from steelclaw.gateway.base import BaseConnector
+from steelclaw.gateway.attachments import build_attachment_dict
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
 logger = logging.getLogger("steelclaw.gateway.telegram")
@@ -53,18 +54,29 @@ class TelegramConnector(BaseConnector):
 
         chat = msg_data["chat"]
         is_group = chat["type"] in ("group", "supergroup")
-        entities = msg_data.get("entities", [])
+        # Check both entities (text messages) and caption_entities (media messages)
+        entities = msg_data.get("entities", []) + msg_data.get("caption_entities", [])
         is_mention = any(e["type"] in ("mention", "text_mention") for e in entities)
         sender = msg_data.get("from", {})
 
-        # Determine message content — text or transcribed voice
-        content = msg_data.get("text")
+        # Determine text content
+        content = msg_data.get("text") or msg_data.get("caption") or ""
 
-        if content is None and msg_data.get("voice"):
-            content = await self._transcribe_voice(msg_data["voice"])
+        # Handle voice → transcribe to text
+        if not content and msg_data.get("voice"):
+            content = await self._transcribe_voice(msg_data["voice"]) or ""
 
-        if not content:
+        # Handle file attachments (photo, document, audio, video, animation, sticker)
+        attachments = await self._extract_attachments(msg_data)
+
+        # Skip if neither text nor attachments were found
+        if not content and not attachments:
             return
+
+        # Use descriptive placeholder when file arrives without caption
+        if not content and attachments:
+            names = ", ".join(a["filename"] for a in attachments)
+            content = f"[File attachment: {names}]"
 
         inbound = InboundMessage(
             platform="telegram",
@@ -73,11 +85,137 @@ class TelegramConnector(BaseConnector):
             platform_message_id=str(msg_data["message_id"]),
             platform_username=sender.get("username"),
             content=content,
+            attachments=attachments if attachments else None,
             is_group=is_group,
             is_mention=is_mention,
             raw=update,
         )
         await self.dispatch(inbound)
+
+    # ── Attachment extraction ────────────────────────────────────────────────
+
+    async def _extract_attachments(self, msg_data: dict) -> list[dict]:
+        """Detect and download any file attachments from a Telegram message."""
+        attachments: list[dict] = []
+
+        # Photo — take the largest size (last element in the array)
+        if msg_data.get("photo"):
+            photo_sizes = msg_data["photo"]
+            best = photo_sizes[-1]  # largest resolution
+            att = await self._download_attachment(
+                file_id=best["file_id"],
+                filename="photo.jpg",
+                mime="image/jpeg",
+            )
+            if att:
+                attachments.append(att)
+
+        # Document (PDF, CSV, Word, plain text, etc.)
+        elif msg_data.get("document"):
+            doc = msg_data["document"]
+            filename = doc.get("file_name") or "document"
+            mime = doc.get("mime_type")
+            att = await self._download_attachment(
+                file_id=doc["file_id"],
+                filename=filename,
+                mime=mime,
+            )
+            if att:
+                attachments.append(att)
+
+        # Audio file
+        elif msg_data.get("audio"):
+            audio = msg_data["audio"]
+            filename = audio.get("file_name") or "audio.mp3"
+            mime = audio.get("mime_type") or "audio/mpeg"
+            att = await self._download_attachment(
+                file_id=audio["file_id"],
+                filename=filename,
+                mime=mime,
+            )
+            if att:
+                attachments.append(att)
+
+        # Video file
+        elif msg_data.get("video"):
+            video = msg_data["video"]
+            filename = video.get("file_name") or "video.mp4"
+            mime = video.get("mime_type") or "video/mp4"
+            att = await self._download_attachment(
+                file_id=video["file_id"],
+                filename=filename,
+                mime=mime,
+            )
+            if att:
+                attachments.append(att)
+
+        # Animation (GIF)
+        elif msg_data.get("animation"):
+            anim = msg_data["animation"]
+            filename = anim.get("file_name") or "animation.gif"
+            mime = anim.get("mime_type") or "image/gif"
+            att = await self._download_attachment(
+                file_id=anim["file_id"],
+                filename=filename,
+                mime=mime,
+            )
+            if att:
+                attachments.append(att)
+
+        # Sticker (WebP image)
+        elif msg_data.get("sticker"):
+            sticker = msg_data["sticker"]
+            att = await self._download_attachment(
+                file_id=sticker["file_id"],
+                filename="sticker.webp",
+                mime="image/webp",
+            )
+            if att:
+                attachments.append(att)
+
+        return attachments
+
+    async def _download_attachment(
+        self,
+        file_id: str,
+        filename: str,
+        mime: str | None,
+    ) -> dict | None:
+        """Download a Telegram file and return a normalised attachment dict."""
+        import httpx
+
+        token = self.config.token
+        if not token:
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                # Resolve file path
+                resp = await client.get(
+                    f"https://api.telegram.org/bot{token}/getFile",
+                    params={"file_id": file_id},
+                )
+                resp.raise_for_status()
+                file_path = resp.json().get("result", {}).get("file_path")
+                if not file_path:
+                    logger.warning("Telegram getFile returned no file_path for %s", file_id)
+                    return None
+
+                # Download file bytes
+                file_resp = await client.get(
+                    f"https://api.telegram.org/file/bot{token}/{file_path}",
+                )
+                file_resp.raise_for_status()
+                data = file_resp.content
+
+            return build_attachment_dict(filename=filename, mime=mime, data=data)
+
+        except Exception:
+            logger.exception("Failed to download Telegram file %s", file_id)
+            # Return metadata-only attachment so the agent still knows a file was sent
+            return build_attachment_dict(filename=filename, mime=mime, data=None)
+
+    # ── Voice transcription ──────────────────────────────────────────────────
 
     async def _transcribe_voice(self, voice: dict) -> str | None:
         """Download a Telegram voice message and transcribe it via Whisper."""

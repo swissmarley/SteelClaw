@@ -80,7 +80,7 @@ class ContextBuilder:
                         "url": f"data:{att['mime']};base64,{att['base64']}",
                     },
                 })
-            elif category in ("document", "audio"):
+            elif category in ("document", "audio", "csv"):
                 # Send extracted text as a text block
                 file_text = att.get("text_content", "")
                 if file_text:
