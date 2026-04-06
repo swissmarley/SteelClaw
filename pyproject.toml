@@ -35,7 +35,8 @@ matrix = ["matrix-nio>=0.24"]
 voice = ["openai>=1.0"]
 browser = ["playwright>=1.40"]
 memory = ["chromadb>=0.4"]
-all = ["steelclaw[telegram,discord,slack,matrix,voice,browser,memory]"]
+office = ["python-docx>=1.0", "openpyxl>=3.1", "python-pptx>=0.6"]
+all = ["steelclaw[telegram,discord,slack,matrix,voice,browser,memory,office]"]
 dev = [
     "pytest>=7",
     "pytest-asyncio>=0.21",
