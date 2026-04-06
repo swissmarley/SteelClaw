@@ -738,3 +738,100 @@ async def test_slack_audio_transcription_wired():
     assert len(result) == 1
     assert result[0]["category"] == "audio"
     assert result[0]["text_content"] == "Hello from Slack voice memo"
+
+
+# ── file_manager: copy_file, move_file, create_directory, delete_file ────────
+
+
+@pytest.mark.asyncio
+async def test_file_manager_copy_file_binary():
+    """copy_file correctly copies binary data (e.g. an image attachment)."""
+    import os, tempfile
+    from steelclaw.skills.bundled.file_manager import tool_copy_file
+
+    data = b"\xff\xd8\xff\xe0" + b"\x00" * 100  # JPEG-like binary
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as src:
+        src.write(data)
+        src_path = src.name
+
+    with tempfile.TemporaryDirectory() as dst_dir:
+        dst_path = os.path.join(dst_dir, "output.jpg")
+        result = await tool_copy_file(src_path, dst_path)
+        assert "output.jpg" in result
+        assert os.path.exists(dst_path)
+        assert open(dst_path, "rb").read() == data
+
+    os.unlink(src_path)
+
+
+@pytest.mark.asyncio
+async def test_file_manager_copy_file_creates_parents():
+    """copy_file creates missing parent directories automatically."""
+    import os, tempfile
+    from steelclaw.skills.bundled.file_manager import tool_copy_file
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as src:
+        src.write(b"hello")
+        src_path = src.name
+
+    with tempfile.TemporaryDirectory() as base:
+        dst_path = os.path.join(base, "a", "b", "c", "out.txt")
+        result = await tool_copy_file(src_path, dst_path)
+        assert os.path.exists(dst_path)
+        assert "out.txt" in result
+
+    os.unlink(src_path)
+
+
+@pytest.mark.asyncio
+async def test_file_manager_copy_file_missing_source():
+    """copy_file returns an error when the source does not exist."""
+    from steelclaw.skills.bundled.file_manager import tool_copy_file
+    result = await tool_copy_file("/nonexistent/path.jpg", "/tmp/out.jpg")
+    assert "Error" in result
+
+
+@pytest.mark.asyncio
+async def test_file_manager_create_directory():
+    """create_directory makes nested directories without error."""
+    import os, tempfile
+    from steelclaw.skills.bundled.file_manager import tool_create_directory
+
+    with tempfile.TemporaryDirectory() as base:
+        new_dir = os.path.join(base, "Bea", "Photos")
+        result = await tool_create_directory(new_dir)
+        assert "created" in result.lower() or "Directory" in result
+        assert os.path.isdir(new_dir)
+
+
+@pytest.mark.asyncio
+async def test_file_manager_move_file():
+    """move_file relocates a file and removes the original."""
+    import os, tempfile
+    from steelclaw.skills.bundled.file_manager import tool_move_file
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as src:
+        src.write(b"move me")
+        src_path = src.name
+
+    with tempfile.TemporaryDirectory() as dst_dir:
+        dst_path = os.path.join(dst_dir, "moved.txt")
+        result = await tool_move_file(src_path, dst_path)
+        assert os.path.exists(dst_path)
+        assert not os.path.exists(src_path)
+        assert "moved.txt" in result
+
+
+@pytest.mark.asyncio
+async def test_file_manager_delete_file():
+    """delete_file removes a file and reports success."""
+    import os, tempfile
+    from steelclaw.skills.bundled.file_manager import tool_delete_file
+
+    with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as f:
+        f.write(b"bye")
+        tmp_path = f.name
+
+    result = await tool_delete_file(tmp_path)
+    assert not os.path.exists(tmp_path)
+    assert "Deleted" in result
