@@ -58,7 +58,7 @@ def test_viking_store_unavailable_when_openviking_missing():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _make_store(mock_session, tier="L1"):
+def _make_store(mock_client, tier="L1"):
     """Build a VikingStore bypassing actual openviking import."""
     from steelclaw.memory.viking_store import VikingStore
     settings = MemorySettings(
@@ -69,56 +69,55 @@ def _make_store(mock_session, tier="L1"):
     )
     store = VikingStore.__new__(VikingStore)
     store._settings = settings
-    store._client = MagicMock()
-    store._session = mock_session
+    store._client = mock_client
+    store._session_id = "steelclaw-test_ws"
     return store
 
 
-# ── Functional tests with mocked session ─────────────────────────────────────
+# ── Functional tests with mocked client ──────────────────────────────────────
 
-def test_available_is_true_with_mock_session():
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
+def test_available_is_true_with_mock_client():
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
     assert store.available is True
 
 
-def test_add_calls_session_add_with_uri():
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
+def test_add_calls_client_add_message():
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
     result = store.add(text="Hello world", metadata={"session_id": "s1"})
     assert result is not None
-    mock_session.add.assert_called_once()
-    kwargs = mock_session.add.call_args.kwargs
-    assert kwargs["uri"].startswith("viking://memory/")
+    mock_client.add_message.assert_called_once()
+    kwargs = mock_client.add_message.call_args.kwargs
+    assert kwargs["session_id"] == "steelclaw-test_ws"
     assert kwargs["content"] == "Hello world"
 
 
-def test_add_profile_text_uses_profile_category():
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
-    store.add(text="I am a software developer", metadata={})
-    uri = mock_session.add.call_args.kwargs["uri"]
-    assert "/profile/" in uri
+def test_add_returns_doc_id():
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
+    result = store.add(text="I am a software developer", metadata={})
+    assert result is not None
 
 
-def test_add_returns_none_on_session_error():
-    mock_session = MagicMock()
-    mock_session.add.side_effect = RuntimeError("server error")
-    store = _make_store(mock_session)
+def test_add_returns_none_on_client_error():
+    mock_client = MagicMock()
+    mock_client.add_message.side_effect = RuntimeError("server error")
+    store = _make_store(mock_client)
     assert store.add(text="some text") is None
 
 
 def test_query_returns_formatted_dicts():
-    mock_session = MagicMock()
-    mock_session.search.return_value = [
+    mock_client = MagicMock()
+    mock_client.search.return_value = [
         {
-            "uri": "viking://memory/events/abc123",
+            "id": "abc123",
             "content": "User: hi\nAssistant: hello",
             "metadata": {"session_id": "s1"},
             "score": 0.9,
         }
     ]
-    store = _make_store(mock_session)
+    store = _make_store(mock_client)
     results = store.query("hello", n_results=3)
     assert len(results) == 1
     r = results[0]
@@ -128,55 +127,60 @@ def test_query_returns_formatted_dicts():
     assert abs(r["distance"] - 0.1) < 1e-9  # 1.0 - 0.9 = 0.1
 
 
-def test_query_passes_tier_from_settings():
-    mock_session = MagicMock()
-    mock_session.search.return_value = []
-    store = _make_store(mock_session, tier="L2")
+def test_query_passes_correct_args_to_client():
+    mock_client = MagicMock()
+    mock_client.search.return_value = []
+    store = _make_store(mock_client, tier="L2")
     store.query("test", n_results=5)
-    mock_session.search.assert_called_once_with("test", n=5, tier="L2")
+    mock_client.search.assert_called_once_with(
+        query="test",
+        session_id="steelclaw-test_ws",
+        limit=5,
+    )
 
 
 def test_query_returns_empty_on_error():
-    mock_session = MagicMock()
-    mock_session.search.side_effect = RuntimeError("server error")
-    store = _make_store(mock_session)
+    mock_client = MagicMock()
+    mock_client.search.side_effect = RuntimeError("server error")
+    store = _make_store(mock_client)
     assert store.query("test") == []
 
 
-def test_delete_iterates_all_categories():
-    from steelclaw.memory.viking_store import VALID_CATEGORIES
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
+def test_delete_is_noop():
+    """delete() is not fully implemented — should not raise and not call client delete."""
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
     store.delete(["doc1"])
-    assert mock_session.delete.call_count == len(VALID_CATEGORIES)
+    mock_client.delete.assert_not_called()
 
 
-def test_count_delegates_to_session():
-    mock_session = MagicMock()
-    mock_session.count.return_value = 42
-    store = _make_store(mock_session)
+def test_count_delegates_to_client():
+    mock_client = MagicMock()
+    mock_client.get_status.return_value = {"total_messages": 42}
+    store = _make_store(mock_client)
     assert store.count() == 42
 
 
 def test_count_returns_zero_on_error():
-    mock_session = MagicMock()
-    mock_session.count.side_effect = RuntimeError("error")
-    store = _make_store(mock_session)
+    mock_client = MagicMock()
+    mock_client.get_status.side_effect = RuntimeError("error")
+    store = _make_store(mock_client)
     assert store.count() == 0
 
 
-def test_clear_delegates_to_session():
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
+def test_clear_delegates_to_client():
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
     store.clear()
-    mock_session.clear.assert_called_once()
+    mock_client.delete_session.assert_called_once_with("steelclaw-test_ws")
+    mock_client.create_session.assert_called_once_with("steelclaw-test_ws")
 
 
 def test_commit_session_delegates():
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
     store.commit_session()
-    mock_session.commit.assert_called_once()
+    mock_client.commit_session.assert_called_once_with("steelclaw-test_ws")
 
 
 def test_commit_session_no_op_when_unavailable():
@@ -199,16 +203,16 @@ def test_no_op_methods_when_unavailable():
 
 def test_memory_ingestor_accepts_viking_store():
     from steelclaw.memory.ingestion import MemoryIngestor
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
     ingestor = MemoryIngestor(store)
     assert ingestor._store is store
 
 
 def test_memory_retriever_accepts_viking_store():
     from steelclaw.memory.retrieval import MemoryRetriever
-    mock_session = MagicMock()
-    store = _make_store(mock_session)
+    mock_client = MagicMock()
+    store = _make_store(mock_client)
     retriever = MemoryRetriever(store)
     assert retriever._store is store
 
@@ -219,17 +223,17 @@ def test_memory_retriever_accepts_viking_store():
 async def test_ingest_and_retrieve_round_trip():
     from steelclaw.memory.ingestion import MemoryIngestor
     from steelclaw.memory.retrieval import MemoryRetriever
-    mock_session = MagicMock()
-    mock_session.add.return_value = None
-    mock_session.search.return_value = [
+    mock_client = MagicMock()
+    mock_client.add_message.return_value = None
+    mock_client.search.return_value = [
         {
-            "uri": "viking://memory/events/abc123",
+            "id": "abc123",
             "content": "User: what is 2+2?\nAssistant: 4",
             "metadata": {"session_id": "s1"},
             "score": 0.95,
         }
     ]
-    store = _make_store(mock_session)
+    store = _make_store(mock_client)
     ingestor = MemoryIngestor(store)
     retriever = MemoryRetriever(store)
 
@@ -238,7 +242,7 @@ async def test_ingest_and_retrieve_round_trip():
         assistant_message="4",
         session_id="s1",
     )
-    assert mock_session.add.called
+    assert mock_client.add_message.called
 
     memories = retriever.retrieve_relevant("arithmetic question")
     assert len(memories) == 1

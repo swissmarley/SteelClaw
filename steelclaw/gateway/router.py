@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from steelclaw.db.engine import get_async_session
 from steelclaw.db.models import Message as DBMessage, Session as DBSession
+from steelclaw.gateway.command_handler import dispatch_command
 from steelclaw.gateway.session_manager import SessionManager
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.settings import GatewaySettings, Settings
@@ -109,8 +110,6 @@ async def process_message(
     # Check before routing to the LLM so commands execute instantly and
     # deterministically (no token spend, no hallucinated responses).
     if inbound.content.strip().startswith("/"):
-        from steelclaw.gateway.command_handler import dispatch_command
-
         cmd_response = await dispatch_command(
             inbound.content,
             session=session,
@@ -230,8 +229,6 @@ async def process_message_streaming(
 
     # ── Slash command interception (streaming path) ─────────────────────
     if inbound.content.strip().startswith("/"):
-        from steelclaw.gateway.command_handler import dispatch_command
-
         cmd_response = await dispatch_command(
             inbound.content,
             session=session,
