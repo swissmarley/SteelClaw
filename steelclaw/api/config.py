@@ -253,8 +253,8 @@ def get_memory_stats(request: Request) -> dict:
     settings = request.app.state.settings
     memory_settings = settings.agents.memory
 
-    if hasattr(request.app.state, "vector_store"):
-        store = request.app.state.vector_store
+    store = getattr(request.app.state, "vector_store", None)
+    if store:
         count = store.count() if store.available else 0
         return {
             "backend": memory_settings.backend,
