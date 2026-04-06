@@ -72,6 +72,8 @@ class ContextBuilder:
             category = att.get("category", "unknown")
             filename = att.get("filename", "file")
 
+            local_path = att.get("local_path")
+
             if category == "image" and att.get("base64"):
                 # Send images as base64 inline (Claude/OpenAI vision)
                 content_parts.append({
@@ -80,19 +82,33 @@ class ContextBuilder:
                         "url": f"data:{att['mime']};base64,{att['base64']}",
                     },
                 })
+                # Always follow the image with its local path so the agent can
+                # save / copy / move it via filesystem tools
+                path_note = f" — saved locally at {local_path}" if local_path else ""
+                content_parts.append({
+                    "type": "text",
+                    "text": f"[Image file: {filename}{path_note}]",
+                })
             elif category in ("document", "audio", "csv"):
-                # Send extracted text as a text block
+                # Send extracted/transcribed text as a text block
                 file_text = att.get("text_content", "")
+                path_note = f"\nLocal path: {local_path}" if local_path else ""
                 if file_text:
                     content_parts.append({
                         "type": "text",
-                        "text": f"[Attached file: {filename}]\n{file_text}",
+                        "text": f"[Attached file: {filename}]{path_note}\n{file_text}",
                     })
                 else:
                     content_parts.append({
                         "type": "text",
-                        "text": f"[Attached file: {filename} — content could not be extracted]",
+                        "text": f"[Attached file: {filename} — content could not be extracted]{path_note}",
                     })
+            elif local_path:
+                # Unknown / video category — at least surface the local path
+                content_parts.append({
+                    "type": "text",
+                    "text": f"[Attached file: {filename} — saved locally at {local_path}]",
+                })
 
         # Add the user's text message
         if text:

@@ -8,7 +8,7 @@ import logging
 import httpx
 
 from steelclaw.gateway.base import BaseConnector
-from steelclaw.gateway.attachments import build_attachment_dict
+from steelclaw.gateway.attachments import build_attachment_dict, transcribe_audio_attachment
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
 logger = logging.getLogger("steelclaw.gateway.discord")
@@ -125,9 +125,13 @@ async def _collect_discord_attachments(discord_attachments) -> list[dict]:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 data = resp.content
-            result.append(
-                build_attachment_dict(filename=filename, mime=content_type, data=data)
-            )
+            att_dict = build_attachment_dict(filename=filename, mime=content_type, data=data)
+            # Transcribe audio/voice messages (e.g. OGG voice notes)
+            if att_dict["category"] == "audio" and not att_dict.get("text_content"):
+                transcription = await transcribe_audio_attachment(data, filename)
+                if transcription:
+                    att_dict["text_content"] = transcription
+            result.append(att_dict)
         except Exception:
             logger.exception("Failed to download Discord attachment '%s'", filename)
             # Include metadata-only entry so the agent knows a file was sent

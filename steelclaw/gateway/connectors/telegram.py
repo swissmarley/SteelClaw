@@ -8,7 +8,7 @@ import tempfile
 import os
 
 from steelclaw.gateway.base import BaseConnector
-from steelclaw.gateway.attachments import build_attachment_dict
+from steelclaw.gateway.attachments import build_attachment_dict, transcribe_audio_attachment
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
 logger = logging.getLogger("steelclaw.gateway.telegram")
@@ -208,7 +208,13 @@ class TelegramConnector(BaseConnector):
                 file_resp.raise_for_status()
                 data = file_resp.content
 
-            return build_attachment_dict(filename=filename, mime=mime, data=data)
+            att_dict = build_attachment_dict(filename=filename, mime=mime, data=data)
+            # Transcribe audio files that aren't already handled by _transcribe_voice
+            if att_dict["category"] == "audio" and not att_dict.get("text_content"):
+                transcription = await transcribe_audio_attachment(data, filename)
+                if transcription:
+                    att_dict["text_content"] = transcription
+            return att_dict
 
         except Exception:
             logger.exception("Failed to download Telegram file %s", file_id)
