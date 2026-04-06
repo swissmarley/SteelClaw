@@ -66,7 +66,7 @@ async def tool_copy_file(source: str, destination: str) -> str:
 
 
 async def tool_move_file(source: str, destination: str) -> str:
-    """Move (rename) a file from source to destination.
+    """Move (rename) a file or directory from source to destination.
 
     Parent directories at the destination are created automatically.
     """
@@ -75,8 +75,6 @@ async def tool_move_file(source: str, destination: str) -> str:
 
     if not src.exists():
         return f"Error: source not found: {source}"
-    if not src.is_file():
-        return f"Error: source is not a file: {source}"
 
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)

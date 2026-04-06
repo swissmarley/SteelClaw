@@ -247,6 +247,24 @@ async def stop_openviking_server(request: Request) -> dict:
     return {"status": "not_running"}
 
 
+@router.get("/memory/stats")
+async def get_memory_stats(request: Request) -> dict:
+    """Get memory store statistics (document count and availability)."""
+    settings = request.app.state.settings
+    memory_settings = settings.agents.memory
+
+    if hasattr(request.app.state, "vector_store"):
+        store = request.app.state.vector_store
+        count = store.count() if store.available else 0
+        return {
+            "backend": memory_settings.backend,
+            "available": store.available,
+            "count": count,
+        }
+
+    return {"backend": memory_settings.backend, "available": False, "count": 0}
+
+
 @router.post("/memory/migrate")
 async def migrate_memory(request: Request) -> dict:
     """Migrate data between backends."""
