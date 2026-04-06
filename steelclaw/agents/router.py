@@ -516,6 +516,8 @@ class AgentRouter:
                     "id": tc.id,
                     "skill": skill_name,
                     "label": skill_label,
+                    # Include arguments so the orchestrator can extract delegation targets
+                    "arguments": tc.arguments,
                 }
                 t0 = time.monotonic()
                 result = await self._execute_tool_call(tc)
