@@ -248,7 +248,7 @@ async def stop_openviking_server(request: Request) -> dict:
 
 
 @router.get("/memory/stats")
-async def get_memory_stats(request: Request) -> dict:
+def get_memory_stats(request: Request) -> dict:
     """Get memory store statistics (document count and availability)."""
     settings = request.app.state.settings
     memory_settings = settings.agents.memory
