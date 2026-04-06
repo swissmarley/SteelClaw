@@ -2,7 +2,7 @@
 
 Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
 
-**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), 61 skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
+**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), intelligent file & attachment handling across Telegram/Discord/Slack (images, PDFs, CSV, audio, video), 61 skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -88,6 +88,8 @@ The TUI chat supports streaming responses — text appears token-by-token as the
 **Slash command autocomplete:** Type `/` in the prompt to open an interactive inline dropdown of all available commands. Use arrow keys to navigate, Enter to select, Escape to dismiss. Typing narrows the list in real time (e.g. `/st` matches `/status` and `/stats`). Falls back to plain input in non-interactive (piped/CI) environments.
 
 Available commands: `/help`, `/clear`, `/status`, `/history`, `/compact`, `/model`, `/stats`, `/new`, `/export`, `/quit`.
+
+**CLI passthrough commands:** Prefix any CLI subcommand with `/` to run it without leaving the chat (e.g. `/skills list`, `/memory search "error budget"`, `/connectors status`). Quoted arguments and paths with spaces are handled correctly via shell-aware parsing.
 
 ## CLI Commands
 
@@ -182,6 +184,27 @@ Example — enable Telegram:
   }
 }
 ```
+
+### File & Attachment Handling in Connectors
+
+SteelClaw intelligently handles files sent through any messaging platform — not just the web UI. When a user sends a file, the connector downloads it, classifies it, and forwards it to the LLM with appropriate context:
+
+| File Type | Platforms | What happens |
+|-----------|-----------|--------------|
+| **Images** (JPEG, PNG, GIF, WebP, etc.) | Telegram, Discord, Slack | Downloaded and base64-encoded; sent as vision input to the LLM |
+| **Documents** (PDF, TXT, Markdown, JSON, XML) | Telegram, Discord, Slack | Text extracted (PDF via pypdf/PyPDF2 if installed); included as a text block |
+| **CSV files** | Telegram, Discord, Slack | Parsed; header + row preview included in the message context |
+| **Audio** (MP3, OGG, WAV, etc.) | Telegram, Discord, Slack | Metadata surfaced to the agent (category + filename) |
+| **Video** (MP4, WebM, etc.) | Telegram, Discord, Slack | Metadata surfaced to the agent |
+| **Stickers / Animations** | Telegram | Treated as image attachments |
+
+**Telegram specifics:** Handles `photo`, `document`, `audio`, `video`, `animation`, and `sticker` message types. Caption text is preserved alongside the attachment. Bot @mentions in media captions (stored in `caption_entities`) are correctly detected.
+
+**Discord specifics:** All `discord.Attachment` objects on a message are collected and forwarded through the same pipeline.
+
+**Slack specifics:** Files attached to messages (the `files` array) are downloaded using the bot token. The `file_share` subtype is handled so file-only messages are no longer silently dropped.
+
+When a file arrives without any caption or text, a descriptive placeholder (`[File attachment: filename]`) is used so the agent always has something to reason about.
 
 ### Session Behaviour
 
@@ -619,7 +642,13 @@ steelclaw/
   agents/
     router.py         LLM agent loop with tool calling (max 10 rounds)
     persona_loader.py Persona prompt builder
-  gateway/            Messaging platform connectors
+  gateway/
+    attachments.py    File classification + download helpers (all connectors)
+    base.py           BaseConnector abstract class
+    connectors/       Platform connector implementations
+    registry.py       Connector registry
+    router.py         Central message pipeline (WebSocket + webhooks)
+    session_manager.py Session resolution
   api/                REST API endpoints
 ```
 
