@@ -76,11 +76,13 @@ async def process_message(
     if session is None:
         return None
 
-    # Update session activity
+    # Update session activity — reactivate idle OR previously-closed sessions
+    # so that returning users (e.g. Telegram after a quiet period) always have
+    # their session visible in the dashboard.
     now = datetime.now(timezone.utc)
     session.last_activity_at = now
     session.updated_at = now
-    if session.status == "idle":
+    if session.status != "active":
         session.status = "active"
 
     # Persist inbound message (with attachment metadata if present)
@@ -203,7 +205,7 @@ async def process_message_streaming(
     now = datetime.now(timezone.utc)
     session.last_activity_at = now
     session.updated_at = now
-    if session.status == "idle":
+    if session.status != "active":
         session.status = "active"
 
     # Persist inbound message

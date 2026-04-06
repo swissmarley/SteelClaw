@@ -392,6 +392,11 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             active_tool_statuses: dict[str, object] = {}
 
             def _make_tool_status_text(tool_name: str, label: str | None, skill: str | None) -> str:
+                # Delegation events are enriched by the orchestrator so tool_name
+                # is already "delegate_to_{agent_name}"; surface these distinctly.
+                if tool_name.startswith("delegate_to_"):
+                    agent_id = tool_name[len("delegate_to_"):]
+                    return f"  ◈ Delegating to: [tool]{agent_id}[/tool]"
                 parts = [f"⚙ Running: [tool]{tool_name}[/tool]"]
                 if label:
                     parts.append(f"[dim]— {label}[/dim]")
@@ -473,7 +478,13 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         active_tool_statuses.pop(call_id, None)
                         # Brief flash showing tool completed
                         dur_str = f" [{duration_ms}ms]" if duration_ms is not None else ""
-                        done_line = Text(f"\n  ✓ {tool_name} done{dur_str}", style="success")
+                        # Show agent name for delegation completions
+                        if tool_name.startswith("delegate_to_"):
+                            agent_id = tool_name[len("delegate_to_"):]
+                            done_label = f"delegate_to_{agent_id} done"
+                        else:
+                            done_label = f"{tool_name} done"
+                        done_line = Text(f"\n  ✓ {done_label}{dur_str}", style="success")
                         from rich.console import Group
                         parts = []
                         if response_text:

@@ -236,7 +236,17 @@ def main() -> None:
     # sessions
     sessions_p = sub.add_parser("sessions", help="Manage sessions")
     sessions_sub = sessions_p.add_subparsers(dest="sessions_action")
-    sessions_sub.add_parser("list", help="List active sessions")
+    sessions_list_p = sessions_sub.add_parser("list", help="List active sessions")
+    sessions_list_p.add_argument(
+        "--platform", "-p",
+        type=str, default=None,
+        help="Filter by platform (telegram, discord, slack, websocket, …)",
+    )
+    sessions_p.add_argument(
+        "--platform", "-p",
+        type=str, default=None,
+        help="Filter by platform (telegram, discord, slack, websocket, …)",
+    )
     sessions_reset_p = sessions_sub.add_parser("reset", help="Reset a session (clear messages)")
     sessions_reset_p.add_argument("session_id", help="Session ID to reset")
     sessions_delete_p = sessions_sub.add_parser("delete", help="Delete a session")

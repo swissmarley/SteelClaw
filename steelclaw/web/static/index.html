@@ -2131,11 +2131,30 @@ async function toggleSkill(name, enabled) {
 }
 
 // ── Sessions Page ──────────────────────────────────────────
-loaders.sessions = async () => {
+loaders.sessions = async (platformFilter) => {
   const body = document.getElementById('sessions-body');
-  const sessions = await api('/sessions');
+  const params = platformFilter ? `?platform=${encodeURIComponent(platformFilter)}` : '';
+  const sessions = await api('/sessions' + params);
 
-  if (!sessions.length) { body.innerHTML='<p style="color:var(--text-secondary)">No sessions yet.</p>'; return; }
+  // Collect all platform names from a full unfiltered fetch for the filter bar
+  const allSessions = platformFilter ? await api('/sessions') : sessions;
+  const allPlatforms = [...new Set(allSessions.map(s => s.platform))].sort();
+
+  // Platform filter bar
+  let filterHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+    <span style="color:var(--text-secondary);font-size:13px">Filter:</span>
+    <button class="btn btn-sm ${!platformFilter?'':'btn-outline'}" onclick="loaders.sessions()" style="${!platformFilter?'background:var(--accent-gradient);color:#fff':''}">All</button>`;
+  for (const p of allPlatforms) {
+    const active = platformFilter === p;
+    filterHtml += `<button class="btn btn-sm ${active?'':'btn-outline'}" onclick="loaders.sessions('${esc(p)}')" style="${active?'background:var(--accent-gradient);color:#fff':''}">${esc(p)}</button>`;
+  }
+  filterHtml += `</div>`;
+
+  if (!sessions.length) {
+    const msg = platformFilter ? `No active ${platformFilter} sessions.` : 'No active sessions yet.';
+    body.innerHTML = filterHtml + `<p style="color:var(--text-secondary)">${msg}</p>`;
+    return;
+  }
 
   const platforms = {};
   let active=0, idle=0, closed=0;
@@ -2145,13 +2164,16 @@ loaders.sessions = async () => {
     else if (s.status==='idle') idle++;
     else closed++;
   }
-  let html = `<div class="card"><h3>Summary</h3><table class="tbl">
+
+  const title = platformFilter ? `Sessions — ${platformFilter}` : 'All Sessions';
+  let html = filterHtml;
+  html += `<div class="card"><h3>Summary</h3><table class="tbl">
     <tr><td style="color:var(--text-secondary);width:140px">Total Sessions</td><td>${sessions.length}</td></tr>
     <tr><td style="color:var(--text-secondary)">Status</td><td><span class="badge badge-green">${active} active</span> <span class="badge badge-yellow">${idle} idle</span> <span class="badge badge-red">${closed} closed</span></td></tr>
     <tr><td style="color:var(--text-secondary)">Platforms</td><td>${Object.entries(platforms).map(([p,n])=>`${p} (${n})`).join(', ')}</td></tr>
   </table></div>`;
 
-  html += `<div class="card"><h3>All Sessions</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Connector</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead><tbody>`;
+  html += `<div class="card"><h3>${title}</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Connector</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead><tbody>`;
   for (const s of sessions) {
     const statusClass = s.status==='active'?'badge-green':s.status==='idle'?'badge-yellow':'badge-red';
     html += `<tr>

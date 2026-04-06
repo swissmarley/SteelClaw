@@ -25,6 +25,7 @@ async def list_sessions(
     limit: int = 50,
     offset: int = 0,
     status: Optional[str] = None,
+    platform: Optional[str] = None,
     db: AsyncSession = Depends(get_async_session),
 ) -> list[dict]:
     stmt = select(DBSession).order_by(DBSession.updated_at.desc()).offset(offset).limit(limit)
@@ -33,6 +34,8 @@ async def list_sessions(
     else:
         # Default: show non-closed sessions
         stmt = stmt.where(DBSession.status != "closed")
+    if platform:
+        stmt = stmt.where(DBSession.platform == platform)
     result = await db.execute(stmt)
     sessions = result.scalars().all()
     return [_serialise(s) for s in sessions]
