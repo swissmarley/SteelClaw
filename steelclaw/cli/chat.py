@@ -387,8 +387,17 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             # ── Stream response with live rendering ────────────────────
             response_text = ""
             frame_idx = 0
-            tool_active = False
             response_started = False
+            # Track active tool spinners: call_id → rich.status.Status
+            active_tool_statuses: dict[str, object] = {}
+
+            def _make_tool_status_text(tool_name: str, label: str | None, skill: str | None) -> str:
+                parts = [f"⚙ Running: [tool]{tool_name}[/tool]"]
+                if label:
+                    parts.append(f"[dim]— {label}[/dim]")
+                if skill and skill != tool_name:
+                    parts.append(f"[dim]({skill})[/dim]")
+                return "  " + " ".join(parts)
 
             with Live(
                 Text(f"  {THINKING_FRAMES[0]} Thinking...", style="dim"),
@@ -408,15 +417,20 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
 
                     if etype == "chunk":
                         response_started = True
-                        tool_active = False
                         response_text += event.get("content", "")
                         # Live-render the Markdown as it streams in
                         try:
                             rendered = Markdown(response_text)
                         except Exception:
                             rendered = Text(response_text)
+                        from rich.console import Group
+                        parts = [rendered]
+                        # Show any still-active tool indicators below content
+                        for (tn, lbl, sk) in active_tool_statuses.values():
+                            frame_idx = (frame_idx + 1) % len(TOOL_FRAMES)
+                            parts.append(Text(_make_tool_status_text(tn, lbl, sk), style="tool"))
                         live.update(Panel(
-                            rendered,
+                            Group(*parts),
                             title="[assistant] SteelClaw [/assistant]",
                             title_align="left",
                             border_style="green",
@@ -425,19 +439,26 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         ))
 
                     elif etype == "tool_start":
-                        tool_active = True
                         tool_name = event.get("name", "?")
+                        call_id = event.get("id") or tool_name
+                        label = event.get("label")
+                        skill = event.get("skill")
+                        active_tool_statuses[call_id] = (tool_name, label, skill)
                         frame_idx = (frame_idx + 1) % len(TOOL_FRAMES)
-                        indicator = Text()
+                        from rich.console import Group
+                        parts = []
                         if response_text:
                             try:
-                                indicator = Markdown(response_text)
+                                parts.append(Markdown(response_text))
                             except Exception:
-                                indicator = Text(response_text)
-                        status_line = Text(f"\n  {TOOL_FRAMES[frame_idx]} Using {tool_name}...", style="tool")
-                        from rich.console import Group
+                                parts.append(Text(response_text))
+                        for (tn, lbl, sk) in active_tool_statuses.values():
+                            parts.append(Text(
+                                f"\n  {TOOL_FRAMES[frame_idx]} {_make_tool_status_text(tn, lbl, sk)}",
+                                style="tool",
+                            ))
                         live.update(Panel(
-                            Group(indicator, status_line),
+                            Group(*parts) if len(parts) > 1 else (parts[0] if parts else Text("")),
                             title="[assistant] SteelClaw [/assistant]",
                             title_align="left",
                             border_style="green",
@@ -446,24 +467,36 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         ))
 
                     elif etype == "tool_end":
-                        tool_active = False
                         tool_name = event.get("name", "?")
+                        call_id = event.get("id") or tool_name
+                        duration_ms = event.get("duration_ms")
+                        active_tool_statuses.pop(call_id, None)
                         # Brief flash showing tool completed
+                        dur_str = f" [{duration_ms}ms]" if duration_ms is not None else ""
+                        done_line = Text(f"\n  ✓ {tool_name} done{dur_str}", style="success")
+                        from rich.console import Group
+                        parts = []
                         if response_text:
                             try:
-                                rendered = Markdown(response_text)
+                                parts.append(Markdown(response_text))
                             except Exception:
-                                rendered = Text(response_text)
-                            done_line = Text(f"\n  ✓ {tool_name} done", style="success")
-                            from rich.console import Group
-                            live.update(Panel(
-                                Group(rendered, done_line),
-                                title="[assistant] SteelClaw [/assistant]",
-                                title_align="left",
-                                border_style="green",
-                                box=box.ROUNDED,
-                                padding=(0, 1),
+                                parts.append(Text(response_text))
+                        parts.append(done_line)
+                        # Still show remaining active tools
+                        for (tn, lbl, sk) in active_tool_statuses.values():
+                            frame_idx = (frame_idx + 1) % len(TOOL_FRAMES)
+                            parts.append(Text(
+                                f"\n  {TOOL_FRAMES[frame_idx]} {_make_tool_status_text(tn, lbl, sk)}",
+                                style="tool",
                             ))
+                        live.update(Panel(
+                            Group(*parts) if len(parts) > 1 else (parts[0] if parts else Text("")),
+                            title="[assistant] SteelClaw [/assistant]",
+                            title_align="left",
+                            border_style="green",
+                            box=box.ROUNDED,
+                            padding=(0, 1),
+                        ))
 
                     elif etype == "done":
                         response_text = event.get("content", response_text)
@@ -478,8 +511,8 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         response_text = event.get("content", str(event))
                         break
 
-                    # Update thinking animation when no content yet
-                    if not response_started and not tool_active:
+                    # Update thinking animation when no content yet and no tools active
+                    if not response_started and not active_tool_statuses:
                         frame_idx = (frame_idx + 1) % len(THINKING_FRAMES)
                         live.update(Text(
                             f"  {THINKING_FRAMES[frame_idx]} Thinking...",

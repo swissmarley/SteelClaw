@@ -124,21 +124,42 @@ async def lifespan(app: FastAPI):
         from steelclaw.db.engine import get_async_session
 
         connector = registry.get(inbound.platform)
+        chat_id = inbound.platform_chat_id
 
         # Start typing indicator while processing
         if connector:
-            await connector.start_typing(inbound.platform_chat_id)
+            await connector.start_typing(chat_id)
+
+        async def _on_tool_event(event: dict) -> None:
+            """Forward tool_start/tool_end events to the connector as status messages."""
+            if connector is None:
+                return
+            etype = event.get("type")
+            if etype == "tool_start":
+                await connector.send_tool_status(
+                    chat_id=chat_id,
+                    tool_name=event.get("name", "tool"),
+                    call_id=event.get("id", event.get("name", "")),
+                    label=event.get("label"),
+                )
+            elif etype == "tool_end":
+                await connector.clear_tool_status(
+                    chat_id=chat_id,
+                    call_id=event.get("id", event.get("name", "")),
+                )
 
         outbound = None
         try:
             async for db in get_async_session():
-                outbound = await process_message(inbound, settings.gateway, db)
+                outbound = await process_message(
+                    inbound, settings.gateway, db, on_tool_event=_on_tool_event
+                )
         except Exception:
             logger.exception("Error processing connector message (%s)", inbound.platform)
         finally:
             # Stop typing indicator
             if connector:
-                connector.stop_typing(inbound.platform_chat_id)
+                connector.stop_typing(chat_id)
 
         if outbound and connector:
             await connector.send(outbound)

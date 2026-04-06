@@ -21,6 +21,8 @@ class TelegramConnector(BaseConnector):
     def __init__(self, config, handler) -> None:
         super().__init__(config, handler)
         self._offset = 0
+        # Maps (chat_id, call_id) → telegram message_id for ephemeral tool status msgs
+        self._tool_status_msgs: dict[tuple[str, str], int] = {}
 
     async def register_commands(self) -> None:
         """Register slash commands with Telegram via setMyCommands API."""
@@ -318,6 +320,48 @@ class TelegramConnector(BaseConnector):
                 )
         except Exception:
             logger.debug("Failed to send typing indicator to %s", chat_id)
+
+    async def send_tool_status(
+        self, chat_id: str, tool_name: str, call_id: str, label: str | None = None
+    ) -> None:
+        """Send an ephemeral status message showing which tool is running."""
+        import httpx
+
+        token = self.config.token
+        if not token:
+            return
+        text = f"⚙ Running: {tool_name}"
+        if label:
+            text += f"\n_{label}_"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    msg_id = data["result"]["message_id"]
+                    self._tool_status_msgs[(chat_id, call_id)] = msg_id
+        except Exception:
+            logger.debug("Failed to send tool status message to %s", chat_id)
+
+    async def clear_tool_status(self, chat_id: str, call_id: str) -> None:
+        """Delete the ephemeral tool status message."""
+        import httpx
+
+        token = self.config.token
+        msg_id = self._tool_status_msgs.pop((chat_id, call_id), None)
+        if not token or msg_id is None:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{token}/deleteMessage",
+                    json={"chat_id": chat_id, "message_id": msg_id},
+                )
+        except Exception:
+            logger.debug("Failed to delete tool status message %s in chat %s", msg_id, chat_id)
 
     async def send(self, message: OutboundMessage) -> None:
         import httpx

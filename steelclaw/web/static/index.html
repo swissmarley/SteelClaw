@@ -213,8 +213,12 @@ body {
 .streaming-cursor { color: var(--accent); animation: blink 0.6s step-end infinite; font-weight: bold; }
 @keyframes blink { 50% { opacity: 0; } }
 .streaming-body { min-height: 1.2em; }
-.tool-indicator { color: var(--accent); font-size: 12px; padding: 6px 0 2px; display: flex; align-items: center; gap: 6px; }
-.tool-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+.tool-indicator { color: var(--accent); font-size: 12px; padding: 5px 10px; display: flex; align-items: center; gap: 8px; background: var(--glass-elevated); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 8px; margin: 4px 0 2px; animation: toolSlideIn 0.2s ease; }
+.tool-indicator .tool-label { color: var(--text-secondary); font-size: 11px; margin-left: 2px; }
+.tool-indicator .tool-skill { font-size: 10px; color: var(--text-dim, var(--text-secondary)); opacity: 0.7; margin-left: auto; }
+.tool-indicators-stack { display: flex; flex-direction: column; gap: 2px; }
+.tool-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+@keyframes toolSlideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 .typing-dots { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
 .typing-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.4s infinite ease-in-out; }
@@ -916,7 +920,8 @@ let ws = null;
 // ── Streaming state ───────────────────────────────────────
 let _streamingMsgEl = null;   // The DOM element being streamed into
 let _streamingContent = '';    // Accumulated text so far
-let _streamingToolEl = null;   // Tool indicator element
+let _streamingToolEl = null;   // Tool indicators container element
+let _activeToolEls = {};       // call_id → individual tool indicator element
 
 function _createStreamingMsg() {
   removeTyping();
@@ -950,23 +955,44 @@ function _appendStreamChunk(text) {
   msgEl.scrollTop = msgEl.scrollHeight;
 }
 
-function _showToolIndicator(toolName) {
+function _showToolIndicator(toolName, callId, skillName, label) {
   if (!_streamingMsgEl) _createStreamingMsg();
-  if (_streamingToolEl) _streamingToolEl.remove();
-  const ind = document.createElement('div'); ind.className='tool-indicator';
-  ind.innerHTML = '<span class="tool-spinner"></span> Using <strong>' + (toolName||'tool') + '</strong>...';
-  _streamingMsgEl._bodyEl.appendChild(ind);
-  _streamingToolEl = ind;
+  // Create container stack once
+  if (!_streamingToolEl) {
+    _streamingToolEl = document.createElement('div');
+    _streamingToolEl.className = 'tool-indicators-stack';
+    _streamingMsgEl._bodyEl.appendChild(_streamingToolEl);
+  }
+  const ind = document.createElement('div'); ind.className = 'tool-indicator';
+  const displayName = toolName || 'tool';
+  let html = '<span class="tool-spinner"></span> <span>⚙ Running: <strong>' + displayName + '</strong></span>';
+  if (label) html += '<span class="tool-label">' + label + '</span>';
+  if (skillName && skillName !== displayName) html += '<span class="tool-skill">' + skillName + '</span>';
+  ind.innerHTML = html;
+  _streamingToolEl.appendChild(ind);
+  const key = callId || toolName || ('_t' + Date.now());
+  _activeToolEls[key] = ind;
   msgEl.scrollTop = msgEl.scrollHeight;
 }
 
-function _removeToolIndicator() {
-  if (_streamingToolEl) { _streamingToolEl.remove(); _streamingToolEl = null; }
+function _removeToolIndicator(callId, toolName) {
+  const key = callId || toolName;
+  if (key && _activeToolEls[key]) {
+    _activeToolEls[key].remove();
+    delete _activeToolEls[key];
+  }
+  // If no more active tools, remove the container
+  if (_streamingToolEl && Object.keys(_activeToolEls).length === 0) {
+    _streamingToolEl.remove();
+    _streamingToolEl = null;
+  }
 }
 
 function _finalizeStream(fullContent) {
   if (!_streamingMsgEl) _createStreamingMsg();
-  _removeToolIndicator();
+  // Remove all active tool indicators
+  if (_streamingToolEl) { _streamingToolEl.remove(); _streamingToolEl = null; }
+  _activeToolEls = {};
   const finalText = fullContent || _streamingContent;
   const body = _streamingMsgEl._bodyEl;
   body.innerHTML = renderMarkdown(finalText);
@@ -992,9 +1018,9 @@ function wsConnect() {
       _appendStreamChunk(d.content || '');
     } else if (etype === 'tool_start') {
       removeTyping();
-      _showToolIndicator(d.name || 'tool');
+      _showToolIndicator(d.name || 'tool', d.id, d.skill, d.label);
     } else if (etype === 'tool_end') {
-      _removeToolIndicator();
+      _removeToolIndicator(d.id, d.name);
     } else if (etype === 'done') {
       removeTyping();
       _finalizeStream(d.content);
