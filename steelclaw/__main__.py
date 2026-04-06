@@ -261,6 +261,8 @@ def main() -> None:
     agents_add_p.add_argument("--name", required=True, help="Agent name")
     agents_add_p.add_argument("--model", default=None, help="Model override")
     agents_add_p.add_argument("--persona", default=None, help="Persona config file (JSON)")
+    agents_add_p.add_argument("--parent", default=None, help="Parent agent name (creates a sub-agent)")
+    agents_add_p.add_argument("--system-prompt", default=None, dest="system_prompt", help="System prompt for this agent")
     agents_delete_p = agents_sub.add_parser("delete", help="Delete an agent")
     agents_delete_p.add_argument("name", help="Agent name to delete")
     agents_sub.add_parser("status", help="Show agent status")

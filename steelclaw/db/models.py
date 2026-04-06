@@ -127,6 +127,7 @@ class AgentProfile(SQLModel, table=True):
     temperature_override: Optional[float] = None
     memory_namespace: str = Field(default_factory=lambda: f"memory_{_uuid()[:8]}")
     is_active: bool = Field(default=True)
+    parent_agent_id: Optional[str] = Field(default=None, foreign_key="agents.id", index=True)
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 

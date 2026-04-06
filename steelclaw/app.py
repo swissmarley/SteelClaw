@@ -80,18 +80,18 @@ async def lifespan(app: FastAPI):
     app.state.memory_retriever = memory_retriever
     app.state.memory_ingestor = memory_ingestor
 
-    # ── Agent router (LLM-powered) ─────────────────────────────────────
-    from steelclaw.agents.router import AgentRouter
+    # ── Agent router (LLM-powered multi-agent orchestrator) ────────────
+    from steelclaw.agents.orchestrator import MultiAgentOrchestrator
     from steelclaw.gateway.router import set_agent_router, set_memory_ingestor
 
-    agent_router = AgentRouter(
+    orchestrator = MultiAgentOrchestrator(
         settings=settings.agents,
         skill_registry=skill_registry,
     )
-    agent_router.set_memory(memory_retriever, memory_ingestor)
-    set_agent_router(agent_router)
+    orchestrator.set_memory(memory_retriever, memory_ingestor)
+    set_agent_router(orchestrator)
     set_memory_ingestor(memory_ingestor)
-    app.state.agent_router = agent_router
+    app.state.agent_router = orchestrator
 
     # ── Ensure main agent exists ────────────────────────────────────────
     await _ensure_main_agent(settings)
@@ -180,16 +180,33 @@ async def lifespan(app: FastAPI):
 
 
 async def _ensure_main_agent(settings: Settings) -> None:
-    """Create the main agent profile if it doesn't exist yet."""
+    """Create the main agent profile if it doesn't exist yet.
+
+    Handles the case where an agent named 'main' already exists without
+    is_main=True (e.g. created by the user) by promoting it instead of
+    trying to INSERT a duplicate name, which would crash on the unique constraint.
+    """
     from sqlalchemy import select
 
     from steelclaw.db.engine import get_async_session
     from steelclaw.db.models import AgentProfile
 
     async for db in get_async_session():
+        # Check whether a main agent already exists
         stmt = select(AgentProfile).where(AgentProfile.is_main.is_(True))
         result = await db.execute(stmt)
-        if result.scalar_one_or_none() is None:
+        if result.scalar_one_or_none() is not None:
+            return  # Already set up
+
+        # Try to find an agent named "main" and promote it
+        stmt2 = select(AgentProfile).where(AgentProfile.name == "main")
+        result2 = await db.execute(stmt2)
+        existing = result2.scalar_one_or_none()
+        if existing:
+            existing.is_main = True
+            await db.commit()
+            logger.info("Promoted existing 'main' agent to main agent")
+        else:
             main_agent = AgentProfile(
                 name="main",
                 display_name="SteelClaw",

@@ -24,6 +24,7 @@ class AgentCreate(BaseModel):
     model_override: Optional[str] = None
     temperature_override: Optional[float] = None
     persona_json: Optional[str] = None
+    parent_agent_id: Optional[str] = None
 
 
 class AgentUpdate(BaseModel):
@@ -32,6 +33,7 @@ class AgentUpdate(BaseModel):
     model_override: Optional[str] = None
     temperature_override: Optional[float] = None
     is_active: Optional[bool] = None
+    parent_agent_id: Optional[str] = None
 
 
 class PersonaUpdate(BaseModel):
@@ -52,6 +54,19 @@ async def list_agents(
     return [_serialise(a) for a in result.scalars().all()]
 
 
+@router.get("/{agent_id}/subagents")
+async def list_subagents(
+    agent_id: str,
+    db: AsyncSession = Depends(get_async_session),
+) -> list[dict]:
+    """Return all direct sub-agents of the given agent."""
+    stmt = select(AgentProfile).where(
+        AgentProfile.parent_agent_id == agent_id
+    ).order_by(AgentProfile.created_at)
+    result = await db.execute(stmt)
+    return [_serialise(a) for a in result.scalars().all()]
+
+
 @router.get("/{agent_id}")
 async def get_agent(
     agent_id: str,
@@ -68,12 +83,22 @@ async def create_agent(
     body: AgentCreate,
     db: AsyncSession = Depends(get_async_session),
 ) -> dict:
+    # "main" is reserved for the system's main agent
+    if body.name == "main":
+        raise HTTPException(400, "The name 'main' is reserved for the system main agent")
+
     # Check for duplicate name
     existing = await db.execute(
         select(AgentProfile).where(AgentProfile.name == body.name)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(409, f"Agent with name '{body.name}' already exists")
+
+    # Validate parent agent if provided
+    if body.parent_agent_id is not None:
+        parent = await db.get(AgentProfile, body.parent_agent_id)
+        if not parent:
+            raise HTTPException(404, f"Parent agent '{body.parent_agent_id}' not found")
 
     agent = AgentProfile(
         name=body.name,
@@ -83,6 +108,7 @@ async def create_agent(
         temperature_override=body.temperature_override,
         persona_json=body.persona_json,
         is_main=False,
+        parent_agent_id=body.parent_agent_id,
     )
     db.add(agent)
     await db.commit()
@@ -110,6 +136,14 @@ async def update_agent(
         agent.temperature_override = body.temperature_override
     if body.is_active is not None:
         agent.is_active = body.is_active
+    if body.parent_agent_id is not None:
+        # Validate parent exists and is not self-referential
+        if body.parent_agent_id == agent_id:
+            raise HTTPException(400, "An agent cannot be its own parent")
+        parent = await db.get(AgentProfile, body.parent_agent_id)
+        if not parent:
+            raise HTTPException(404, f"Parent agent '{body.parent_agent_id}' not found")
+        agent.parent_agent_id = body.parent_agent_id
 
     agent.updated_at = datetime.now(timezone.utc)
     await db.commit()
@@ -177,6 +211,7 @@ def _serialise(agent: AgentProfile) -> dict:
         "temperature_override": agent.temperature_override,
         "memory_namespace": agent.memory_namespace,
         "is_active": agent.is_active,
+        "parent_agent_id": agent.parent_agent_id,
         "created_at": agent.created_at.isoformat(),
         "updated_at": agent.updated_at.isoformat(),
     }
