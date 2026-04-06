@@ -268,6 +268,7 @@ class AgentRouter:
                             "type": "tool_end",
                             "name": tc.name,
                             "id": tc.id,
+                            "result_preview": result[:200],
                             "duration_ms": duration_ms,
                         })
                     except Exception as exc:

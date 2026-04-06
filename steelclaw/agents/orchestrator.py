@@ -330,7 +330,7 @@ class MultiAgentOrchestrator:
         if etype == "tool_start" and event.get("name") == "delegate_to_subagent":
             args = event.get("arguments", {})
             agent_name = args.get("agent_name", "subagent")
-            call_id = event.get("id")
+            call_id = event.get("id") or "delegate_to_subagent"
             delegation_map[call_id] = agent_name
             return {
                 **event,
@@ -339,7 +339,7 @@ class MultiAgentOrchestrator:
                 "subagent": agent_name,
             }
         if etype == "tool_end" and event.get("name") == "delegate_to_subagent":
-            call_id = event.get("id")
+            call_id = event.get("id") or "delegate_to_subagent"
             agent_name = delegation_map.pop(call_id, "subagent")
             return {
                 **event,
