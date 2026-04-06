@@ -15,8 +15,11 @@ _openviking_available = False
 try:
     from openviking import SyncHTTPClient  # type: ignore[import]
     _openviking_available = True
-except ImportError:
-    pass
+except Exception as _ov_import_err:
+    import logging as _logging
+    _logging.getLogger("steelclaw.memory").debug(
+        "openviking import failed: %s: %s", type(_ov_import_err).__name__, _ov_import_err
+    )
 
 # Keywords for simple heuristic category classification
 _CATEGORY_RULES: list[tuple[str, list[str]]] = [

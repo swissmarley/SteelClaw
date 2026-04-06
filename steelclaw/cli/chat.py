@@ -394,14 +394,16 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             def _make_tool_status_text(tool_name: str, label: str | None, skill: str | None) -> str:
                 # Delegation events are enriched by the orchestrator so tool_name
                 # is already "delegate_to_{agent_name}"; surface these distinctly.
+                # NOTE: plain text only — callers wrap this in Text(...) which
+                # does not process Rich markup tags.
                 if tool_name.startswith("delegate_to_"):
                     agent_id = tool_name[len("delegate_to_"):]
-                    return f"  ◈ Delegating to: [tool]{agent_id}[/tool]"
-                parts = [f"⚙ Running: [tool]{tool_name}[/tool]"]
+                    return f"◈ Delegating → {agent_id}"
+                parts = [f"⚙ Running: {tool_name}"]
                 if label:
-                    parts.append(f"[dim]— {label}[/dim]")
+                    parts.append(f"— {label}")
                 if skill and skill != tool_name:
-                    parts.append(f"[dim]({skill})[/dim]")
+                    parts.append(f"({skill})")
                 return "  " + " ".join(parts)
 
             with Live(
@@ -481,7 +483,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         # Show agent name for delegation completions
                         if tool_name.startswith("delegate_to_"):
                             agent_id = tool_name[len("delegate_to_"):]
-                            done_label = f"delegate_to_{agent_id} done"
+                            done_label = f"◈ {agent_id} done"
                         else:
                             done_label = f"{tool_name} done"
                         done_line = Text(f"\n  ✓ {done_label}{dur_str}", style="success")

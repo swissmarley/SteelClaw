@@ -216,6 +216,7 @@ body {
 .tool-indicator { color: var(--accent); font-size: 12px; padding: 5px 10px; display: flex; align-items: center; gap: 8px; background: var(--glass-elevated); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 8px; margin: 4px 0 2px; animation: toolSlideIn 0.2s ease; }
 .tool-indicator .tool-label { color: var(--text-secondary); font-size: 11px; margin-left: 2px; }
 .tool-indicator .tool-skill { font-size: 10px; color: var(--text-dim, var(--text-secondary)); opacity: 0.7; margin-left: auto; }
+.tool-indicator .tool-delegate { color: var(--primary, #a78bfa); font-weight: 500; }
 .tool-indicators-stack { display: flex; flex-direction: column; gap: 2px; }
 .tool-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
 @keyframes toolSlideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
@@ -964,10 +965,16 @@ function _showToolIndicator(toolName, callId, skillName, label) {
     _streamingMsgEl._bodyEl.appendChild(_streamingToolEl);
   }
   const ind = document.createElement('div'); ind.className = 'tool-indicator';
-  const displayName = toolName || 'tool';
-  let html = '<span class="tool-spinner"></span> <span>⚙ Running: <strong>' + displayName + '</strong></span>';
-  if (label) html += '<span class="tool-label">' + label + '</span>';
-  if (skillName && skillName !== displayName) html += '<span class="tool-skill">' + skillName + '</span>';
+  let html;
+  if (toolName && toolName.startsWith('delegate_to_')) {
+    const agentName = toolName.slice('delegate_to_'.length);
+    html = '<span class="tool-spinner"></span> <span class="tool-delegate">◈ Delegating → <strong>' + agentName + '</strong></span>';
+  } else {
+    const displayName = toolName || 'tool';
+    html = '<span class="tool-spinner"></span> <span>⚙ Running: <strong>' + displayName + '</strong></span>';
+    if (label) html += '<span class="tool-label">' + label + '</span>';
+    if (skillName && skillName !== displayName) html += '<span class="tool-skill">' + skillName + '</span>';
+  }
   ind.innerHTML = html;
   _streamingToolEl.appendChild(ind);
   const key = callId || toolName || ('_t' + Date.now());

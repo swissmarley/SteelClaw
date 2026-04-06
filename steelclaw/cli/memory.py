@@ -79,10 +79,15 @@ def _memory_status() -> None:
         count = store.count()
         console.print(f"  Stored memories: {count}")
     else:
-        console.print(f"  [yellow]Memory backend not available[/yellow]")
+        from steelclaw.memory.viking_store import _openviking_available as _ov_avail
         if memory_settings.backend == "openviking":
-            console.print("  Install with: pip install steelclaw[openviking]")
+            if not _ov_avail:
+                console.print(f"  [red]openviking package not installed[/red]")
+                console.print("  Fix: pip install steelclaw[openviking]")
+            else:
+                console.print(f"  [yellow]Server not connected[/yellow] — start with: steelclaw start")
         else:
+            console.print(f"  [yellow]Memory backend not available[/yellow]")
             console.print("  Install with: pip install steelclaw[memory]")
 
 

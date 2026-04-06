@@ -2,7 +2,7 @@
 
 Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
 
-**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display, voice chat with streaming TTS, file upload in chat (images, PDFs, audio), intelligent file & attachment handling across Telegram/Discord/Slack (images, PDFs, CSV, audio, video), 61 skill integrations with credential management, real-time web search, persistent memory, multi-agent support, usage analytics, and a scheduler for proactive tasks.
+**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display and live tool-call indicators, voice chat with streaming TTS, file upload in chat (images, PDFs, audio, DOCX, XLSX, PPTX), intelligent file & attachment handling across Telegram/Discord/Slack, 61 skill integrations with credential management, real-time web search, persistent memory (ChromaDB or OpenViking), hierarchical multi-agent orchestration with subagent delegation, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -71,11 +71,11 @@ steelclaw restart   # restart
 steelclaw logs -f   # follow logs
 ```
 
-SteelClaw resolves all paths relative to its installation directory, so you can run `steelclaw start` from any working directory.
+SteelClaw resolves all paths relative to its installation directory, so you can run `steelclaw start` from any working directory. If you use a project-local virtual environment, the daemon automatically detects and uses the venv's Python so all optional dependencies (OpenViking, ChromaDB, etc.) are available.
 
 **Open the Control UI dashboard:**
 
-Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. The dashboard features a premium glassmorphism design with 10 pages: Chat, Settings, Sessions, Agents, Persona, Analytics, Connectors, Skills, Security, and Scheduler.
+Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. The dashboard features a premium glassmorphism design with 10 navigation pages: Chat, Settings, Sessions, Agents, Persona, Analytics, Connectors, Skills, Security, and Scheduler.
 
 **Or chat from the terminal (TUI):**
 
@@ -83,7 +83,7 @@ Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. Th
 steelclaw chat
 ```
 
-The TUI chat supports streaming responses — text appears token-by-token as the LLM generates it, with live tool-call status indicators. Uses Rich for styled panels and Markdown rendering.
+The TUI chat supports streaming responses — text appears token-by-token as the LLM generates it, with live tool-call status indicators and delegation banners for multi-agent workflows. Uses Rich for styled panels and Markdown rendering.
 
 **Slash command autocomplete:** Type `/` in the prompt to open an interactive inline dropdown of all available commands. Use arrow keys to navigate, Enter to select, Escape to dismiss. Typing narrows the list in real time (e.g. `/st` matches `/status` and `/stats`). Falls back to plain input in non-interactive (piped/CI) environments.
 
@@ -104,9 +104,9 @@ Available commands: `/help`, `/clear`, `/status`, `/history`, `/compact`, `/mode
 | `steelclaw onboard` | Interactive onboarding wizard |
 | `steelclaw setup` | Alias for `onboard` |
 | `steelclaw sessions list\|reset\|delete` | Manage sessions |
-| `steelclaw agents list\|add\|delete\|status` | Manage agents |
+| `steelclaw agents list\|add\|delete\|status` | Manage agents (supports `--parent`, `--system-prompt`) |
 | `steelclaw skills list\|install\|enable\|disable\|configure` | Manage skills |
-| `steelclaw memory status\|search\|clear` | Manage persistent memory |
+| `steelclaw memory status\|search\|clear\|start\|stop\|migrate` | Manage persistent memory |
 | `steelclaw persona` | Configure agent persona interactively |
 | `steelclaw logs [-f] [--gateway] [--app]` | View daemon logs |
 | `steelclaw migrate` | Run database migrations |
@@ -185,16 +185,27 @@ Example — enable Telegram:
 }
 ```
 
+### Slash Command Autocomplete in Connectors
+
+Telegram, Discord, and Slack connectors register slash commands with their respective platforms on startup. Users can type `/` in any connected chat to see an inline list of available commands with descriptions — no configuration required.
+
+- **Telegram** — commands registered via `setMyCommands` API; appear in the native Telegram command suggestion UI
+- **Discord** — application commands registered via the Discord API; appear as slash command suggestions
+- **Slack** — slash commands surfaced to workspace members
+
 ### File & Attachment Handling in Connectors
 
-SteelClaw intelligently handles files sent through any messaging platform — not just the web UI. When a user sends a file, the connector downloads it, classifies it, and forwards it to the LLM with appropriate context:
+SteelClaw intelligently handles files sent through any messaging platform. When a user sends a file, the connector downloads it, classifies it, and forwards it to the LLM with appropriate context:
 
 | File Type | Platforms | What happens |
 |-----------|-----------|--------------|
 | **Images** (JPEG, PNG, GIF, WebP, etc.) | Telegram, Discord, Slack | Downloaded and base64-encoded; sent as vision input to the LLM |
-| **Documents** (PDF, TXT, Markdown, JSON, XML) | Telegram, Discord, Slack | Text extracted (PDF via pypdf/PyPDF2 if installed); included as a text block |
+| **Documents** (PDF, TXT, Markdown, JSON, XML) | Telegram, Discord, Slack | Text extracted (PDF via pdfplumber/pypdf); included as a text block |
+| **DOCX / DOC** | Telegram, Discord, Slack | Text extracted via python-docx and included in message context |
+| **XLSX / XLS** | Telegram, Discord, Slack | Parsed via openpyxl; header + row preview included |
+| **PPTX / PPT** | Telegram, Discord, Slack | Slide text extracted via python-pptx and included |
 | **CSV files** | Telegram, Discord, Slack | Parsed; header + row preview included in the message context |
-| **Audio** (MP3, OGG, WAV, etc.) | Telegram, Discord, Slack | Metadata surfaced to the agent (category + filename) |
+| **Audio** (MP3, OGG, WAV, etc.) | Telegram, Discord, Slack | Transcribed to text via Whisper and included in message context |
 | **Video** (MP4, WebM, etc.) | Telegram, Discord, Slack | Metadata surfaced to the agent |
 | **Stickers / Animations** | Telegram | Treated as image attachments |
 
@@ -213,6 +224,7 @@ When a file arrives without any caption or text, a descriptive placeholder (`[Fi
 - **Allowlist** controls who can DM the bot (enable/disable in config)
 - **Session lifecycle** — sessions transition through `active` → `idle` → `closed` with configurable timeouts
 - **Heartbeat** — background job auto-detects idle and stale sessions
+- Sessions from all connectors (Telegram, Discord, Slack, etc.) are visible in the Sessions dashboard page and via the CLI
 
 ## Voice Chat
 
@@ -221,7 +233,7 @@ SteelClaw supports real-time voice interaction via the OpenAI Realtime API over 
 - **WebRTC peer connection** — browser connects directly to OpenAI's Realtime API without server audio relay
 - **Sub-2-second latency** — real-time speech-to-text, LLM response, and text-to-speech pipeline
 - **Interruption support** — speak at any time during agent response to naturally interrupt and redirect conversation
-- **Server-side VAD** — voice activity detection and silence thresholds for automatic turn-taking
+- **Server-side VAD** — semantic voice activity detection for automatic turn-taking
 - **Full-screen overlay UI** — animated visual state (IDLE → CONNECTING → LISTENING → AGENT_SPEAKING → INTERRUPTED) with animated orb, rings, and waveform
 - **Voice selection** — choose from 6 voice options (alloy, echo, fable, onyx, nova, shimmer) via integrated chip selector
 - **Configurable realtime settings** — VAD threshold, silence duration, prefix audio padding for natural conversation flow
@@ -232,23 +244,38 @@ SteelClaw supports real-time voice interaction via the OpenAI Realtime API over 
 3. Agent responds with voice — you can interrupt at any time by speaking
 4. Click the microphone button again or press Escape to stop
 
-**Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. The system uses OpenAI's `gpt-realtime-1.5` model by default with semantic VAD for natural turn-taking, fully configurable.
+**Configuration:** Set your OpenAI API key in Settings > Voice/Audio, then enable voice. The system uses OpenAI's `gpt-realtime-1.5` model by default with semantic VAD for natural turn-taking.
 
 **Advanced settings (Settings > Voice/Audio):**
 - Realtime model selection (defaults to `gpt-realtime-1.5`)
 - VAD threshold (0.0-1.0, default 0.5)
 - Silence timeout in milliseconds (default 600ms)
-- Prefix padding for audio continuity (default 300ms)
 
 ## Streaming Responses
 
 SteelClaw streams LLM responses in real time across all interfaces:
 
-- **Web UI** — tokens appear character-by-character via WebSocket with a typing indicator and live tool-call status
-- **TUI chat** — Rich live display updates as tokens arrive, with tool execution progress
-- **WebSocket API** — structured streaming events (`chunk`, `tool_start`, `tool_end`, `done`, `error`) for programmatic clients
+- **Web UI** — tokens appear character-by-character via WebSocket with a typing indicator and live tool-call status badges (glassmorphism style with slide-in animation)
+- **TUI chat** — Rich live display updates as tokens arrive, with tool execution progress and duration
+- **WebSocket API** — structured streaming events for programmatic clients
 
-Streaming is used by default for all new conversations. Token usage and model metadata are captured from the streaming response for accurate analytics and billing.
+### Streaming Event Schema
+
+```
+{ "type": "chunk",      "content": "..." }
+{ "type": "tool_start", "name": "web_search", "id": "call_abc", "skill": "Web Search", "label": "Search the web", "arguments": {...} }
+{ "type": "tool_end",   "name": "web_search", "id": "call_abc", "duration_ms": 342 }
+{ "type": "done",       "content": "...", "usage": { "model": "...", "prompt_tokens": 1200, "completion_tokens": 80 } }
+{ "type": "error",      "content": "..." }
+```
+
+Delegation events are enriched with the specific sub-agent name:
+
+```
+{ "type": "tool_start", "name": "delegate_to_research-agent", "label": "Delegating to research-agent", "subagent": "research-agent" }
+```
+
+Token usage and model metadata are captured from the streaming response for accurate analytics and billing.
 
 ## File Uploads in Chat
 
@@ -256,7 +283,8 @@ Attach files directly in the chat to have SteelClaw analyze their content:
 
 - **Images** (JPEG, PNG, GIF, WebP) — sent as inline vision to the LLM for visual analysis
 - **Documents** (PDF, TXT, CSV, JSON, Markdown, HTML, XML) — text extracted and included in the message context
-- **Audio** (MP3, WAV, WebM, OGG) — automatically transcribed via the voice system and included as text
+- **Office documents** (DOCX, XLSX, PPTX) — text/data extracted via python-docx, openpyxl, and python-pptx
+- **Audio** (MP3, WAV, WebM, OGG) — automatically transcribed via Whisper and included as text
 
 **How to attach files:**
 - Click the paperclip button next to the text input
@@ -275,6 +303,7 @@ The Control UI uses a premium glassmorphism design with:
 - Command palette (Ctrl/Cmd+K) for quick actions
 - Responsive layout with glass-effect cards and soft glow accents
 - Tabbed settings page: Appearance, Voice/Audio, Agent, Skills, Gateway, Scheduler
+- Real-time tool-call indicators during agent execution (spinner badges with slide-in animation)
 
 ## Agent Personality & Multi-Agent
 
@@ -288,21 +317,49 @@ steelclaw persona
 
 Or configure via the dashboard Persona page. Persona settings are injected into the system prompt for consistent behavior.
 
-### Multi-Agent Support
+### Hierarchical Multi-Agent Orchestration
 
-Create secondary agents with independent models, temperatures, system prompts, and memory namespaces:
+SteelClaw supports hierarchical multi-agent workflows. A main agent can delegate tasks to specialized sub-agents, each with their own model, system prompt, and memory namespace.
+
+**Creating sub-agents:**
 
 ```bash
-steelclaw agents add --name researcher --model gpt-4o
+# Via CLI
+steelclaw agents add --name researcher --model gpt-4o --system-prompt "You are a research specialist..."
+steelclaw agents add --name coder --model claude-opus-4-6 --parent researcher
+
+# List agents (shows parent relationships)
 steelclaw agents list
-steelclaw agents delete researcher
 ```
 
-Each agent gets an isolated memory namespace in ChromaDB. The main agent is auto-created on first startup.
+The main agent is auto-created on first startup. Sub-agents appear in the Agents dashboard page with their parent relationship, model, and status.
+
+**Delegation via LLM tools:**
+
+When sub-agents exist, the main agent automatically gains access to these orchestration tools:
+
+| Tool | Description |
+|------|-------------|
+| `delegate_to_subagent` | Send a task to a named sub-agent and get its response |
+| `list_subagents` | List all active sub-agents with their configuration |
+| `create_subagent` | Dynamically create a new sub-agent at runtime |
+| `update_subagent` | Modify an existing sub-agent's prompt or model |
+| `delete_subagent` | Remove a sub-agent (requires `confirm: true`) |
+
+**Delegation display:** When the main agent delegates, the TUI and web UI show a live indicator identifying the specific sub-agent being called:
+
+```
+◈ Delegating → research-agent      (spinner)
+✓ ◈ research-agent done  [1243ms]
+```
+
+**Agent hierarchy in DB:** The `agents` table includes a `parent_agent_id` self-referential foreign key, enabling full tree traversal of agent relationships via the API.
 
 ## Persistent Memory
 
-SteelClaw remembers past conversations using ChromaDB vector embeddings:
+SteelClaw supports two memory backends: **ChromaDB** (default, local vector store) and **OpenViking** (agent-native context database).
+
+### ChromaDB (default)
 
 ```bash
 # Install with memory support
@@ -321,6 +378,75 @@ steelclaw memory clear
 - Relevant past exchanges are retrieved and injected into the system prompt
 - Memory is isolated per agent namespace
 - Gracefully degrades if ChromaDB is not installed
+
+### OpenViking
+
+OpenViking is an agent-native context database with structured memory tiers (L0/L1/L2), semantic search, and automatic memory decay.
+
+**Install:**
+
+```bash
+pip install -e ".[openviking]"
+# or for all extras:
+pip install -e ".[all]"
+```
+
+**Configure `~/.openviking/ov.conf`:**
+
+```json
+{
+  "default_account": "default",
+  "default_user": "default",
+  "default_agent": "default",
+  "embedding": {
+    "dense": {
+      "api_base": "https://api.openai.com/v1",
+      "api_key": "sk-...",
+      "provider": "openai",
+      "model": "text-embedding-3-small",
+      "dimension": 1536
+    }
+  },
+  "vlm": {
+    "api_base": "https://api.openai.com/v1",
+    "api_key": "sk-...",
+    "provider": "openai",
+    "model": "gpt-4o",
+    "max_retries": 2
+  },
+  "storage": {
+    "workspace": "~/.openviking/data"
+  }
+}
+```
+
+**Enable in `config.json`:**
+
+```json
+{
+  "agents": {
+    "memory": {
+      "backend": "openviking",
+      "openviking_server_url": "http://localhost:1933",
+      "openviking_workspace": "steelclaw",
+      "openviking_context_tier": "L1",
+      "openviking_auto_start": true,
+      "openviking_port": 1933
+    }
+  }
+}
+```
+
+With `openviking_auto_start: true`, the OpenViking server is started automatically as a subprocess when SteelClaw starts and shut down cleanly on exit. Server health is verified before the memory system is activated.
+
+**CLI memory management:**
+
+```bash
+steelclaw memory status      # shows backend, server status, stored count
+steelclaw memory start       # manually start the OpenViking server
+steelclaw memory stop        # manually stop the OpenViking server
+steelclaw memory migrate     # migrate from chromadb → openviking
+```
 
 ## Usage Analytics
 
@@ -357,7 +483,7 @@ Skills are modular capabilities loaded from directories. Each skill has a `SKILL
 | Skill | Tools | Description |
 |-------|-------|-------------|
 | Calculator | `evaluate`, `convert_units` | Math evaluation and unit conversion |
-| File Manager | `read_file`, `write_file`, `list_directory` | File system operations |
+| File Manager | `read_file`, `write_file`, `list_directory`, `copy_file`, `move_file`, `create_directory`, `delete_file` | Full file system operations |
 | Shell | `execute` | Sandboxed command execution |
 | System Info | `cpu_info`, `memory_info`, `disk_info` | System monitoring |
 | Notes | `create_note`, `list_notes`, `search_notes`, `delete_note` | Note management |
@@ -547,9 +673,10 @@ Full interactive API docs at [http://localhost:8000/docs](http://localhost:8000/
 | `/api/sessions/{id}/reset` | POST | Reset session (clear messages) |
 | `/api/sessions/{id}` | DELETE | Delete session permanently |
 | `/api/history/{session_id}` | GET | Message history |
-| `/api/agents` | GET/POST | List/create agents |
+| `/api/agents` | GET/POST | List/create agents (with parent_agent_id support) |
 | `/api/agents/{id}` | GET/PUT/DELETE | Agent CRUD |
 | `/api/agents/{id}/persona` | PUT | Update agent persona |
+| `/api/agents/{id}/subagents` | GET | List sub-agents of an agent |
 | `/api/analytics/summary` | GET | Token/cost/session totals |
 | `/api/analytics/usage-over-time` | GET | Time-series usage data |
 | `/api/analytics/by-model` | GET | Usage grouped by model |
@@ -562,7 +689,7 @@ Full interactive API docs at [http://localhost:8000/docs](http://localhost:8000/
 | `/api/skills/{name}/disable` | POST | Disable a skill |
 | `/api/skills/reload` | POST | Hot-reload all skills |
 | `/api/persona` | GET/POST | Read/write persona config |
-| `/api/files/upload` | POST | Upload file attachment for chat (images, docs, audio) |
+| `/api/files/upload` | POST | Upload file attachment for chat (images, docs, audio, office) |
 | `/api/voice/transcribe` | POST | Speech-to-text (Whisper) |
 | `/api/voice/synthesize` | POST | Text-to-speech (single response) |
 | `/api/voice/synthesize-stream` | POST | Chunked TTS streaming |
@@ -592,9 +719,9 @@ steelclaw migrate
 | `messages` | Messages with token usage and cost tracking |
 | `users` | User accounts |
 | `platform_identities` | Platform-specific user identities |
-| `agents` | Agent profiles (main + secondary agents) |
+| `agents` | Agent profiles (main + sub-agents with `parent_agent_id` hierarchy) |
 | `user_facts` | Extracted user facts for personalization |
-| `memory_entries` | Memory metadata (vector data in ChromaDB) |
+| `memory_entries` | Memory metadata (vector data in ChromaDB or OpenViking) |
 | `allowlist` | DM allowlist entries |
 
 ## Project Structure
@@ -610,11 +737,11 @@ steelclaw/
   cli/
     chat.py           Rich TUI chat client
     setup.py          Interactive onboarding wizard (questionary)
-    daemon.py         Background daemon management
+    daemon.py         Background daemon management (auto-detects venv Python)
     logs.py           Log viewer
     sessions.py       Session management CLI
-    memory.py         Memory management CLI
-    agents.py         Agent management CLI
+    memory.py         Memory management CLI (start/stop/migrate for OpenViking)
+    agents.py         Agent management CLI (parent hierarchy, subagent flags)
     skills_cmd.py     Skill management CLI
     persona.py        Persona configuration wizard
     gateway_cmd.py    Gateway connector control
@@ -629,6 +756,8 @@ steelclaw/
     context.py        Context builder (persona + memory + history)
   memory/
     vector_store.py   ChromaDB wrapper (optional)
+    viking_store.py   OpenViking HTTP backend (optional)
+    openviking_manager.py OpenViking server subprocess lifecycle
     retrieval.py      Semantic memory retrieval
     ingestion.py      Memory ingestion pipeline
   skills/
@@ -641,9 +770,10 @@ steelclaw/
   scheduler/          APScheduler background tasks
   agents/
     router.py         LLM agent loop with tool calling (max 10 rounds)
+    orchestrator.py   Multi-agent orchestrator (delegation, agent management tools)
     persona_loader.py Persona prompt builder
   gateway/
-    attachments.py    File classification + download helpers (all connectors)
+    attachments.py    File classification + download + text extraction (all connectors)
     base.py           BaseConnector abstract class
     connectors/       Platform connector implementations
     registry.py       Connector registry
@@ -661,6 +791,7 @@ All settings can be set in `config.json` or via environment variables with prefi
 STEELCLAW_AGENTS__LLM__DEFAULT_MODEL=claude-sonnet-4-20250514
 STEELCLAW_SERVER__PORT=9000
 STEELCLAW_GATEWAY__DM_ALLOWLIST_ENABLED=false
+STEELCLAW_AGENTS__MEMORY__BACKEND=openviking
 ```
 
 ## License
