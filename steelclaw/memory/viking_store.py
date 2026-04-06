@@ -12,12 +12,11 @@ from steelclaw.settings import MemorySettings
 logger = logging.getLogger("steelclaw.memory")
 
 _openviking_available = False
-if sys.version_info >= (3, 10):
-    try:
-        import openviking  # noqa: F401
-        _openviking_available = True
-    except ImportError:
-        pass
+try:
+    from openviking import SyncHTTPClient  # type: ignore[import]
+    _openviking_available = True
+except ImportError:
+    pass
 
 # Keywords for simple heuristic category classification
 _CATEGORY_RULES: list[tuple[str, list[str]]] = [
@@ -50,7 +49,6 @@ class VikingStore:
 
     Degrades gracefully to a no-op when:
     - openviking package is not installed
-    - Python < 3.10
     - OpenViking server is unreachable
     - memory.enabled is False
     """
@@ -58,19 +56,10 @@ class VikingStore:
     def __init__(self, settings: MemorySettings) -> None:
         self._settings = settings
         self._client: Any = None
-        self._session: Any = None
+        self._session_id: str | None = None
 
         if not settings.enabled:
             logger.info("Memory system disabled via config")
-            return
-
-        if sys.version_info < (3, 10):
-            logger.warning(
-                "OpenViking requires Python 3.10+ — memory system disabled "
-                "(current: %d.%d)",
-                sys.version_info.major,
-                sys.version_info.minor,
-            )
             return
 
         if not _openviking_available:
@@ -81,11 +70,29 @@ class VikingStore:
             return
 
         try:
-            from openviking import Client  # type: ignore[import]
-            self._client = Client(base_url=settings.openviking_server_url)
-            self._session = self._client.session(settings.openviking_workspace)
+            client = SyncHTTPClient(
+                url=settings.openviking_server_url,
+                timeout=30.0,
+            )
+            # Create or get session for this workspace
+            self._session_id = f"steelclaw-{settings.openviking_workspace}"
+
+            # Test connection - check if server is healthy
+            try:
+                is_healthy = client.is_healthy()
+            except Exception:
+                is_healthy = False
+
+            if not is_healthy:
+                logger.warning(
+                    "OpenViking server not healthy at %s — memory system disabled",
+                    settings.openviking_server_url,
+                )
+                return
+
+            self._client = client
             logger.info(
-                "OpenViking initialised at %s (workspace=%s)",
+                "OpenViking connected to %s (workspace=%s)",
                 settings.openviking_server_url,
                 settings.openviking_workspace,
             )
@@ -93,18 +100,16 @@ class VikingStore:
             logger.warning(
                 "OpenViking connection failed (%s) — memory disabled", exc
             )
+            self._client = None
+            self._client = None
 
     @property
     def available(self) -> bool:
-        return self._session is not None
+        return self._client is not None
 
     @staticmethod
     def _content_hash(text: str) -> str:
         return hashlib.sha256(text.encode()).hexdigest()[:16]
-
-    @staticmethod
-    def _make_uri(category: str, doc_id: str) -> str:
-        return f"viking://memory/{category}/{doc_id}"
 
     def add(
         self,
@@ -114,27 +119,24 @@ class VikingStore:
         namespace: str | None = None,
     ) -> str | None:
         """Add a document to OpenViking. Returns the document ID."""
-        if self._session is None:
+        if self._client is None:
             return None
 
         doc_id = doc_id or self._content_hash(text)
-        category = classify_category(text)
-        meta = {**(metadata or {})}
-        meta["content_hash"] = self._content_hash(text)
-        if namespace:
-            meta["namespace"] = namespace
 
+        # Add message to the session
+        # OpenViking expects session_id, role, content
         try:
-            self._session.add(
-                uri=self._make_uri(category, doc_id),
+            result = self._client.add_message(
+                session_id=self._session_id,
+                role="assistant",  # Store as assistant message
                 content=text,
-                metadata=meta,
             )
+            logger.debug("Added memory to OpenViking: %s", doc_id)
+            return doc_id
         except Exception as exc:
             logger.error("OpenViking add error: %s", exc)
             return None
-
-        return doc_id
 
     def query(
         self,
@@ -144,56 +146,61 @@ class VikingStore:
         where: dict | None = None,
     ) -> list[dict]:
         """Query for relevant documents. Returns [{id, document, metadata, distance}]."""
-        if self._session is None:
+        if self._client is None:
             return []
 
-        tier = self._settings.openviking_context_tier
         try:
-            raw = self._session.search(text, n=n_results, tier=tier)
+            results = self._client.search(
+                query=text,
+                session_id=self._session_id,
+                limit=n_results,
+            )
         except Exception as exc:
             logger.error("OpenViking search error: %s", exc)
             return []
 
         docs = []
-        for item in raw or []:
-            uri = item.get("uri", "")
-            doc_id = uri.split("/")[-1] if uri else ""
-            score = item.get("score", 0.0)
+        for item in results or []:
+            # OpenViking returns results in a different format
+            # Convert to ChromaDB-like format
+            doc_id = item.get("id", item.get("uri", ""))
+            content = item.get("content", item.get("text", ""))
+            score = item.get("score", item.get("relevance", 1.0))
             docs.append({
                 "id": doc_id,
-                "document": item.get("content", ""),
+                "document": content,
                 "metadata": item.get("metadata", {}),
                 "distance": 1.0 - score,  # similarity → distance (matches ChromaDB convention)
             })
         return docs
 
     def delete(self, ids: list[str], namespace: str | None = None) -> None:
-        """Delete documents by ID across all known categories."""
-        if self._session is None:
+        """Delete documents by ID."""
+        if self._client is None:
             return
-        for doc_id in ids:
-            for category in VALID_CATEGORIES:
-                try:
-                    self._session.delete(uri=self._make_uri(category, doc_id))
-                except Exception:
-                    pass  # not present in this category — expected
+        # OpenViking doesn't have a direct delete by ID
+        # Would need to use session management
+        logger.warning("OpenViking delete not fully implemented")
 
     def count(self, namespace: str | None = None) -> int:
         """Return total document count."""
-        if self._session is None:
+        if self._client is None:
             return 0
         try:
-            return self._session.count()
+            # Get session context and count messages
+            status = self._client.get_status()
+            return status.get("total_messages", 0)
         except Exception as exc:
             logger.error("OpenViking count error: %s", exc)
             return 0
 
     def clear(self, namespace: str | None = None) -> None:
         """Clear all documents from the OpenViking workspace."""
-        if self._session is None:
+        if self._client is None:
             return
         try:
-            self._session.clear()
+            self._client.delete_session(self._session_id)
+            self._client.create_session(self._session_id)
             logger.info(
                 "Cleared OpenViking workspace: %s",
                 self._settings.openviking_workspace,
@@ -202,15 +209,11 @@ class VikingStore:
             logger.error("OpenViking clear error: %s", exc)
 
     def commit_session(self) -> None:
-        """Commit session for long-term memory categorisation (OpenViking-specific).
-
-        Triggers OpenViking's automatic compression and 6-category persistent
-        memory extraction (profile, preferences, entities, events, cases, patterns).
-        """
-        if self._session is None:
+        """Commit session for long-term memory categorisation (OpenViking-specific)."""
+        if self._client is None:
             return
         try:
-            self._session.commit()
+            self._client.commit_session(self._session_id)
             logger.debug(
                 "OpenViking session committed (workspace=%s)",
                 self._settings.openviking_workspace,

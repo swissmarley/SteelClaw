@@ -24,6 +24,21 @@ def _create_memory_store(memory_settings):
     return VectorStore(memory_settings)
 
 
+async def _start_openviking_server(memory_settings) -> "OpenVikingManager | None":
+    """Start OpenViking server if configured and auto-start enabled."""
+    if memory_settings.backend != "openviking":
+        return None
+    if not memory_settings.openviking_auto_start:
+        return None
+
+    from steelclaw.memory.openviking_manager import OpenVikingManager
+
+    manager = OpenVikingManager(memory_settings)
+    if await manager.start():
+        return manager
+    return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from steelclaw.paths import resolve_path
@@ -80,6 +95,10 @@ async def lifespan(app: FastAPI):
     # ── Memory system ────────────────────────────────────────────────────
     from steelclaw.memory.ingestion import MemoryIngestor
     from steelclaw.memory.retrieval import MemoryRetriever
+
+    # Start OpenViking server if configured
+    openviking_manager = await _start_openviking_server(settings.agents.memory)
+    app.state.openviking_manager = openviking_manager
 
     vector_store = _create_memory_store(settings.agents.memory)
     memory_retriever = MemoryRetriever(vector_store)
@@ -184,6 +203,11 @@ async def lifespan(app: FastAPI):
     task_engine.stop()
     await registry.stop_all()
     await dispose_engine()
+
+    # Stop OpenViking server if we started it
+    if hasattr(app.state, "openviking_manager") and app.state.openviking_manager:
+        await app.state.openviking_manager.stop()
+
     logger.info("SteelClaw shut down")
 
 

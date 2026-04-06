@@ -1493,6 +1493,8 @@ function showSettingsTab(tab) {
   _settingsTab = tab;
   document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('.settings-section').forEach(s => s.classList.toggle('active', s.id === 'stab-'+tab));
+  // Check memory server status when memory tab is shown
+  if (tab === 'memory') checkMemoryServer();
 }
 
 loaders.settings = async () => {
@@ -1506,6 +1508,7 @@ loaders.settings = async () => {
   const skills = cfg.agents?.skills || {};
   const gw = cfg.gateway || {};
   const sec = cfg.security || {};
+  const memory = cfg.agents?.memory || {};
 
   const currentAccent = localStorage.getItem('steelclaw-accent') || 'violet';
   const currentFS = localStorage.getItem('steelclaw-fontsize') || 'medium';
@@ -1516,6 +1519,7 @@ loaders.settings = async () => {
   <div class="settings-layout">
     <div class="settings-tabs">
       <button class="settings-tab active" data-tab="appearance" onclick="showSettingsTab('appearance')">Appearance</button>
+      <button class="settings-tab" data-tab="memory" onclick="showSettingsTab('memory')">Memory</button>
       <button class="settings-tab" data-tab="voice" onclick="showSettingsTab('voice')">Voice & Audio</button>
       <button class="settings-tab" data-tab="agent" onclick="showSettingsTab('agent')">Agent Behavior</button>
       <button class="settings-tab" data-tab="tools" onclick="showSettingsTab('tools')">Tool Management</button>
@@ -1559,6 +1563,75 @@ loaders.settings = async () => {
             <input type="checkbox" id="s-density" ${currentDensity==='compact'?'checked':''} onchange="setDensity(this.checked?'compact':'comfortable')">
             <label style="font-size:13px;color:var(--text-secondary)">Compact</label>
           </div>
+        </div>
+      </div>
+
+      <!-- Memory Tab -->
+      <div class="settings-section" id="stab-memory">
+        <div class="card">
+          <h3>Memory Backend</h3>
+          <div class="form-group">
+            <label>Backend Type</label>
+            <select id="s-mem-backend">
+              <option value="chromadb"${(memory.backend||'chromadb')==='chromadb'?' selected':''}>ChromaDB (Local Vector Store)</option>
+              <option value="openviking"${memory.backend==='openviking'?' selected':''}>OpenViking (Server)</option>
+            </select>
+            <div class="hint">ChromaDB runs locally. OpenViking requires a running server.</div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="s-mem-enabled" ${memory.enabled!==false?'checked':''}>
+            <label for="s-mem-enabled">Enable persistent memory</label>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Top K Results</label><input id="s-mem-topk" type="number" value="${memory.top_k||5}"><div class="hint">Number of memories to inject</div></div>
+          </div>
+        </div>
+        <div class="card" id="mem-chromadb-card" style="${memory.backend==='openviking'?'display:none':''}">
+          <h3>ChromaDB Settings</h3>
+          <div class="form-row">
+            <div class="form-group"><label>Storage Path</label><input id="s-mem-path" value="${esc(memory.chromadb_path)||'~/.steelclaw/chromadb'}"><div class="hint">Local directory for vector data</div></div>
+            <div class="form-group"><label>Collection Name</label><input id="s-mem-collection" value="${esc(memory.collection_name)||'steelclaw_memory'}"></div>
+          </div>
+        </div>
+        <div class="card" id="mem-openviking-card" style="${memory.backend!=='openviking'?'display:none':''}">
+          <h3>OpenViking Settings</h3>
+          <div class="form-row">
+            <div class="form-group"><label>Server URL</label><input id="s-mem-url" value="${esc(memory.openviking_server_url)||'http://localhost:1933'}"><div class="hint">OpenViking server endpoint</div></div>
+            <div class="form-group"><label>Port</label><input id="s-mem-port" type="number" value="${memory.openviking_port||1933}"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Workspace</label><input id="s-mem-workspace" value="${esc(memory.openviking_workspace)||'steelclaw'}"><div class="hint">Isolated memory namespace</div></div>
+            <div class="form-group"><label>Context Tier</label>
+              <select id="s-mem-tier">
+                <option value="L0"${memory.openviking_context_tier==='L0'?' selected':''}>L0 (Short-term)</option>
+                <option value="L1"${(memory.openviking_context_tier||'L1')==='L1'?' selected':''}>L1 (Working)</option>
+                <option value="L2"${memory.openviking_context_tier==='L2'?' selected':''}>L2 (Long-term)</option>
+              </select>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="s-mem-autostart" ${memory.openviking_auto_start!==false?'checked':''}>
+            <label for="s-mem-autostart">Auto-start OpenViking server</label>
+          </div>
+          <div class="form-group">
+            <label>Log Level</label>
+            <select id="s-mem-loglevel">
+              ${['debug','info','warning','error'].map(l=>`<option${(memory.openviking_log_level||'info')===l?' selected':''}>${l}</option>`).join('')}
+            </select>
+          </div>
+          <div id="mem-server-status" style="margin-top:12px;padding:10px;background:var(--glass);border-radius:8px;font-size:12px">
+            <span style="color:var(--text-secondary)">Server Status: </span>
+            <span id="mem-status-indicator" style="color:var(--yellow)">Checking...</span>
+          </div>
+          <div class="btn-group" style="margin-top:12px">
+            <button class="btn btn-outline btn-sm" onclick="checkMemoryServer()">Refresh Status</button>
+            <button class="btn btn-outline btn-sm" onclick="startMemoryServer()">Start Server</button>
+            <button class="btn btn-outline btn-sm" onclick="stopMemoryServer()">Stop Server</button>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="saveMemory()">Save Memory Settings</button>
+          <button class="btn btn-outline" onclick="checkMemoryServer()">Refresh Status</button>
         </div>
       </div>
 
@@ -1810,6 +1883,74 @@ async function saveVoice() {
   })});
   toast('Voice settings saved');
 }
+
+async function saveMemory() {
+  const backend = document.getElementById('s-mem-backend').value;
+  await api('/config/memory', {method:'PUT', body:JSON.stringify({
+    enabled: document.getElementById('s-mem-enabled').checked,
+    backend: backend,
+    top_k: parseInt(document.getElementById('s-mem-topk').value) || 5,
+    chromadb_path: document.getElementById('s-mem-path').value,
+    collection_name: document.getElementById('s-mem-collection').value,
+    openviking_server_url: document.getElementById('s-mem-url').value,
+    openviking_workspace: document.getElementById('s-mem-workspace').value,
+    openviking_context_tier: document.getElementById('s-mem-tier').value,
+    openviking_auto_start: document.getElementById('s-mem-autostart').checked,
+    openviking_port: parseInt(document.getElementById('s-mem-port').value) || 1933,
+    openviking_log_level: document.getElementById('s-mem-loglevel').value,
+  })});
+  toast('Memory settings saved. Restart server for backend changes.');
+  // Toggle visibility of backend-specific cards
+  document.getElementById('mem-chromadb-card').style.display = backend === 'chromadb' ? '' : 'none';
+  document.getElementById('mem-openviking-card').style.display = backend === 'openviking' ? '' : 'none';
+}
+
+async function checkMemoryServer() {
+  const indicator = document.getElementById('mem-status-indicator');
+  if (!indicator) return;
+  indicator.textContent = 'Checking...';
+  indicator.style.color = 'var(--yellow)';
+  try {
+    const data = await api('/config/memory');
+    const status = data.memory?.server_status || 'unknown';
+    indicator.textContent = status === 'running' ? 'Running' : status === 'unhealthy' ? 'Unhealthy' : status === 'not_reachable' ? 'Not Reachable' : status;
+    indicator.style.color = status === 'running' ? 'var(--green)' : 'var(--red)';
+  } catch (e) {
+    indicator.textContent = 'Error';
+    indicator.style.color = 'var(--red)';
+  }
+}
+
+async function startMemoryServer() {
+  toast('Starting OpenViking server...');
+  try {
+    const data = await api('/config/memory/start', {method:'POST'});
+    if (data.status === 'started') {
+      toast('OpenViking server started on port ' + data.port);
+      checkMemoryServer();
+    } else {
+      toast(data.message || 'Failed to start server', 'error');
+    }
+  } catch (e) {
+    toast('Failed to start server', 'error');
+  }
+}
+
+async function stopMemoryServer() {
+  try {
+    await api('/config/memory/stop', {method:'POST'});
+    toast('OpenViking server stopped');
+    checkMemoryServer();
+  } catch (e) {
+    toast('Failed to stop server', 'error');
+  }
+}
+
+// Toggle backend-specific cards when dropdown changes
+document.getElementById('s-mem-backend')?.addEventListener('change', function() {
+  document.getElementById('mem-chromadb-card').style.display = this.value === 'chromadb' ? '' : 'none';
+  document.getElementById('mem-openviking-card').style.display = this.value === 'openviking' ? '' : 'none';
+});
 
 async function saveSkillConfig() {
   await api('/config/skills', {method:'PUT', body:JSON.stringify({

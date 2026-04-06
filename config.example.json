@@ -101,7 +101,10 @@
       "top_k": 5,
       "openviking_server_url": "http://localhost:1933",
       "openviking_workspace": "steelclaw",
-      "openviking_context_tier": "L1"
+      "openviking_context_tier": "L1",
+      "openviking_auto_start": true,
+      "openviking_port": 1933,
+      "openviking_log_level": "info"
     }
   }
 }

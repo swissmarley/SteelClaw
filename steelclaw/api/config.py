@@ -174,6 +174,208 @@ async def update_scheduler_config(request: Request) -> dict:
     return {"status": "saved", "section": "scheduler"}
 
 
+# ── Memory configuration ─────────────────────────────────────────────────
+
+
+@router.get("/memory")
+async def get_memory_config(request: Request) -> dict:
+    """Return current memory configuration with server status."""
+    data = _read_config()
+    memory = data.get("agents", {}).get("memory", {})
+
+    # Add server status for OpenViking
+    backend = memory.get("backend", "chromadb")
+    if backend == "openviking":
+        import httpx
+        server_url = memory.get("openviking_server_url", "http://localhost:1933")
+        try:
+            resp = httpx.get(f"{server_url.rstrip('/')}/health", timeout=2.0)
+            memory["server_status"] = "running" if resp.status_code == 200 else "unhealthy"
+        except Exception:
+            memory["server_status"] = "not_reachable"
+    else:
+        memory["server_status"] = "not_applicable"
+
+    return {"memory": memory}
+
+
+@router.put("/memory")
+async def update_memory_config(request: Request) -> dict:
+    """Update memory configuration."""
+    body = await request.json()
+    data = _read_config()
+    data.setdefault("agents", {})["memory"] = body
+    _write_config(data)
+    return {"status": "saved", "section": "memory", "note": "Restart server for backend changes to take effect."}
+
+
+@router.post("/memory/start")
+async def start_openviking_server(request: Request) -> dict:
+    """Manually start OpenViking server."""
+    settings = request.app.state.settings
+    memory_settings = settings.agents.memory
+
+    if memory_settings.backend != "openviking":
+        return {"status": "error", "message": "Current backend is not OpenViking"}
+
+    from steelclaw.memory.openviking_manager import OpenVikingManager
+
+    manager = OpenVikingManager(memory_settings)
+    success = await manager.start()
+    if success:
+        return {"status": "started", "port": memory_settings.openviking_port}
+    return {"status": "error", "message": "Failed to start OpenViking server"}
+
+
+@router.post("/memory/stop")
+async def stop_openviking_server(request: Request) -> dict:
+    """Stop OpenViking server."""
+    settings = request.app.state.settings
+    memory_settings = settings.agents.memory
+
+    from steelclaw.memory.openviking_manager import OpenVikingManager
+
+    manager = OpenVikingManager(memory_settings)
+    await manager.stop()
+    return {"status": "stopped"}
+
+
+@router.get("/memory/stats")
+async def get_memory_stats(request: Request) -> dict:
+    """Get memory store statistics."""
+    settings = request.app.state.settings
+    memory_settings = settings.agents.memory
+
+    # Get the current store from app state
+    if hasattr(request.app.state, "vector_store"):
+        store = request.app.state.vector_store
+        count = store.count() if store.available else 0
+        return {
+            "backend": memory_settings.backend,
+            "available": store.available,
+            "count": count,
+        }
+
+    return {"backend": memory_settings.backend, "available": False, "count": 0}
+
+
+# ── Memory config ───────────────────────────────────────────────────────────
+
+
+@router.get("/memory")
+async def get_memory_config(request: Request) -> dict:
+    """Get memory configuration with server status."""
+    data = _read_config()
+    memory = data.get("agents", {}).get("memory", {})
+
+    # Check OpenViking server status if backend is openviking
+    server_status = None
+    backend = memory.get("backend", "chromadb")
+    if backend == "openviking":
+        import httpx
+        server_url = memory.get("openviking_server_url", "http://localhost:1933")
+        try:
+            resp = httpx.get(f"{server_url.rstrip('/')}/health", timeout=2.0)
+            if resp.status_code == 200:
+                server_status = "running"
+            else:
+                server_status = f"unhealthy ({resp.status_code})"
+        except Exception:
+            server_status = "not_reachable"
+
+    return {
+        "memory": memory,
+        "server_status": server_status,
+    }
+
+
+@router.put("/memory")
+async def update_memory_config(request: Request) -> dict:
+    """Update memory configuration."""
+    body = await request.json()
+    data = _read_config()
+    data.setdefault("agents", {})["memory"] = body
+    _write_config(data)
+    return {"status": "saved", "section": "memory", "note": "Restart required for backend changes"}
+
+
+@router.post("/memory/start")
+async def start_openviking_server(request: Request) -> dict:
+    """Manually start OpenViking server."""
+    import asyncio
+
+    settings = request.app.state.settings
+    memory_settings = settings.agents.memory
+
+    if memory_settings.backend != "openviking":
+        return {"status": "error", "message": "Backend is not openviking"}
+
+    from steelclaw.memory.openviking_manager import OpenVikingManager
+
+    manager = OpenVikingManager(memory_settings)
+    success = await manager.start()
+    if success:
+        # Store manager reference for shutdown
+        request.app.state.openviking_manager = manager
+        return {"status": "started", "port": memory_settings.openviking_port}
+    return {"status": "error", "message": "Failed to start OpenViking server"}
+
+
+@router.post("/memory/stop")
+async def stop_openviking_server(request: Request) -> dict:
+    """Stop OpenViking server."""
+    manager = getattr(request.app.state, "openviking_manager", None)
+    if manager:
+        await manager.stop()
+        request.app.state.openviking_manager = None
+        return {"status": "stopped"}
+    return {"status": "not_running"}
+
+
+@router.post("/memory/migrate")
+async def migrate_memory(request: Request) -> dict:
+    """Migrate data between backends."""
+    body = await request.json() if request.headers.get("content-type") else {}
+    from_backend = body.get("from", "chromadb")
+    to_backend = body.get("to", "openviking")
+
+    settings = request.app.state.settings
+
+    # This is a simplified synchronous migration
+    # For large datasets, this should be a background task
+    source = _get_store(settings, from_backend)
+
+    orig_backend = settings.agents.memory.backend
+    settings.agents.memory.backend = to_backend
+    dest = _get_store(settings, to_backend)
+    settings.agents.memory.backend = orig_backend
+
+    if not source.available:
+        return {"status": "error", "message": f"Source backend ({from_backend}) not available"}
+    if not dest.available:
+        return {"status": "error", "message": f"Destination backend ({to_backend}) not available"}
+
+    docs = source.query("", n_results=10000)
+    count = 0
+    for doc in docs or []:
+        dest.add(text=doc["document"], metadata=doc.get("metadata"), doc_id=doc.get("id"))
+        count += 1
+
+    if hasattr(dest, "commit_session"):
+        dest.commit_session()
+
+    return {"status": "migrated", "count": count, "from": from_backend, "to": to_backend}
+
+
+def _get_store(settings, backend: str):
+    """Get memory store by backend type."""
+    if backend == "openviking":
+        from steelclaw.memory.viking_store import VikingStore
+        return VikingStore(settings.agents.memory)
+    from steelclaw.memory.vector_store import VectorStore
+    return VectorStore(settings.agents.memory)
+
+
 @router.put("/connectors/{platform}")
 async def update_connector_config(platform: str, request: Request) -> dict:
     body = await request.json()

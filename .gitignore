@@ -26,6 +26,7 @@ env/
 docs
 CLAUDE.md
 .claudeignore
+docs/
 
 # SteelClaw runtime data
 config.json

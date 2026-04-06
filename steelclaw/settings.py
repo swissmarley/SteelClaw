@@ -88,6 +88,16 @@ class MemorySettings(BaseModel):
     openviking_workspace: str = "steelclaw"
     openviking_context_tier: str = "L1"  # "L0" | "L1" | "L2"
 
+    # OpenViking subprocess management
+    openviking_auto_start: bool = True  # Auto-start server when backend=openviking
+    openviking_port: int = 1933  # Port for OpenViking server
+    openviking_log_level: str = "info"  # Log level for OpenViking server
+
+    # OpenViking subprocess management
+    openviking_auto_start: bool = True  # Auto-start server when backend=openviking
+    openviking_port: int = 1933  # Port for OpenViking server
+    openviking_log_level: str = "info"  # Log level for OpenViking server
+
 
 class SessionLifecycleSettings(BaseModel):
     """Session heartbeat and lifecycle configuration."""

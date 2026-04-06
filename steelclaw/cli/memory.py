@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 
 from rich.console import Console
@@ -19,35 +20,96 @@ def handle_memory(args: argparse.Namespace) -> None:
         _memory_search(args.query, args.limit)
     elif action == "clear":
         _memory_clear(user=getattr(args, "user", None), session=getattr(args, "session", None))
+    elif action == "start":
+        asyncio.run(_memory_start())
+    elif action == "stop":
+        asyncio.run(_memory_stop())
+    elif action == "backend":
+        _memory_backend()
+    elif action == "migrate":
+        asyncio.run(_memory_migrate(
+            from_backend=getattr(args, "from_backend", "chromadb"),
+            to_backend=getattr(args, "to_backend", "openviking"),
+        ))
     else:
         _memory_status()
 
 
-def _memory_status() -> None:
+def _get_store(settings):
+    """Factory: returns the configured memory backend."""
+    memory_settings = settings.agents.memory
+    if memory_settings.backend == "openviking":
+        from steelclaw.memory.viking_store import VikingStore
+        return VikingStore(memory_settings)
     from steelclaw.memory.vector_store import VectorStore
+    return VectorStore(memory_settings)
+
+
+def _memory_status() -> None:
     from steelclaw.settings import Settings
 
     settings = Settings()
-    store = VectorStore(settings.agents.memory)
+    memory_settings = settings.agents.memory
+    store = _get_store(settings)
 
-    if not store.available:
-        console.print("[yellow]Memory system is not available[/yellow]")
-        console.print("Install ChromaDB: pip install steelclaw[memory]")
-        return
+    console.print(f"[green]Memory system status[/green]")
+    console.print(f"  Backend: {memory_settings.backend}")
 
-    count = store.count()
-    console.print(f"[green]Memory system active[/green]")
-    console.print(f"  Stored memories: {count}")
-    console.print(f"  Backend: ChromaDB")
-    console.print(f"  Path: {settings.agents.memory.chromadb_path}")
+    if memory_settings.backend == "openviking":
+        console.print(f"  Server URL: {memory_settings.openviking_server_url}")
+        console.print(f"  Workspace: {memory_settings.openviking_workspace}")
+        console.print(f"  Context tier: {memory_settings.openviking_context_tier}")
+        console.print(f"  Auto-start: {memory_settings.openviking_auto_start}")
+
+        # Check server status
+        import httpx
+        try:
+            resp = httpx.get(f"{memory_settings.openviking_server_url.rstrip('/')}/health", timeout=2.0)
+            if resp.status_code == 200:
+                console.print(f"  Server status: [green]running[/green]")
+            else:
+                console.print(f"  Server status: [yellow]unhealthy (status {resp.status_code})[/yellow]")
+        except Exception as e:
+            console.print(f"  Server status: [red]not reachable[/red] ({e})")
+    else:
+        console.print(f"  Path: {memory_settings.chromadb_path}")
+        console.print(f"  Collection: {memory_settings.collection_name}")
+
+    if store.available:
+        count = store.count()
+        console.print(f"  Stored memories: {count}")
+    else:
+        console.print(f"  [yellow]Memory backend not available[/yellow]")
+        if memory_settings.backend == "openviking":
+            console.print("  Install with: pip install steelclaw[openviking]")
+        else:
+            console.print("  Install with: pip install steelclaw[memory]")
+
+
+def _memory_backend() -> None:
+    """Show current memory backend configuration."""
+    from steelclaw.settings import Settings
+
+    settings = Settings()
+    memory_settings = settings.agents.memory
+
+    console.print(f"[green]Current memory backend:[/green] {memory_settings.backend}")
+    if memory_settings.backend == "openviking":
+        console.print(f"  Server: {memory_settings.openviking_server_url}")
+        console.print(f"  Workspace: {memory_settings.openviking_workspace}")
+    else:
+        console.print(f"  Path: {memory_settings.chromadb_path}")
+        console.print(f"  Collection: {memory_settings.collection_name}")
+
+    console.print("\n[dim]To change backend, edit config.json:[/dim]")
+    console.print('[dim]  {"agents": {"memory": {"backend": "openviking"}}}[/dim]')
 
 
 def _memory_search(query: str, limit: int = 5) -> None:
-    from steelclaw.memory.vector_store import VectorStore
     from steelclaw.settings import Settings
 
     settings = Settings()
-    store = VectorStore(settings.agents.memory)
+    store = _get_store(settings)
 
     if not store.available:
         console.print("[yellow]Memory system is not available[/yellow]")
@@ -72,11 +134,10 @@ def _memory_search(query: str, limit: int = 5) -> None:
 
 
 def _memory_clear(user: str | None = None, session: str | None = None) -> None:
-    from steelclaw.memory.vector_store import VectorStore
     from steelclaw.settings import Settings
 
     settings = Settings()
-    store = VectorStore(settings.agents.memory)
+    store = _get_store(settings)
 
     if not store.available:
         console.print("[yellow]Memory system is not available[/yellow]")
@@ -90,3 +151,119 @@ def _memory_clear(user: str | None = None, session: str | None = None) -> None:
 
     store.clear()
     console.print("[green]Memory cleared[/green]")
+
+
+async def _memory_start() -> None:
+    """Start the OpenViking server manually."""
+    from steelclaw.memory.openviking_manager import OpenVikingManager
+    from steelclaw.settings import Settings
+
+    settings = Settings()
+    memory_settings = settings.agents.memory
+
+    if memory_settings.backend != "openviking":
+        console.print("[yellow]Current backend is not OpenViking[/yellow]")
+        console.print("Change backend in config.json: {\"agents\": {\"memory\": {\"backend\": \"openviking\"}}}")
+        return
+
+    manager = OpenVikingManager(memory_settings)
+    success = await manager.start()
+    if success:
+        console.print(f"[green]OpenViking server started on port {memory_settings.openviking_port}[/green]")
+    else:
+        console.print("[red]Failed to start OpenViking server[/red]")
+        console.print("Check logs for details or run: openviking-server --port 1933")
+
+
+async def _memory_stop() -> None:
+    """Stop the OpenViking server."""
+    from steelclaw.memory.openviking_manager import OpenVikingManager
+    from steelclaw.settings import Settings
+
+    settings = Settings()
+    memory_settings = settings.agents.memory
+
+    if memory_settings.backend != "openviking":
+        console.print("[yellow]Current backend is not OpenViking[/yellow]")
+        return
+
+    manager = OpenVikingManager(memory_settings)
+    await manager.stop()
+    console.print("[green]OpenViking server stopped[/green]")
+
+
+async def _memory_migrate(from_backend: str, to_backend: str) -> None:
+    """Migrate memories from one backend to another."""
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+
+    from steelclaw.settings import Settings
+
+    settings = Settings()
+
+    console.print(f"[blue]Migrating memories from {from_backend} to {to_backend}...[/blue]")
+
+    # Get source store
+    if from_backend == "openviking":
+        from steelclaw.memory.viking_store import VikingStore
+        source = VikingStore(settings.agents.memory)
+    else:
+        from steelclaw.memory.vector_store import VectorStore
+        source = VectorStore(settings.agents.memory)
+
+    # Temporarily switch backend for destination
+    orig_backend = settings.agents.memory.backend
+    settings.agents.memory.backend = to_backend
+
+    if to_backend == "openviking":
+        from steelclaw.memory.viking_store import VikingStore
+        dest = VikingStore(settings.agents.memory)
+    else:
+        from steelclaw.memory.vector_store import VectorStore
+        dest = VectorStore(settings.agents.memory)
+
+    # Restore original backend
+    settings.agents.memory.backend = orig_backend
+
+    if not source.available:
+        console.print(f"[red]Source backend ({from_backend}) is not available[/red]")
+        return
+    if not dest.available:
+        console.print(f"[red]Destination backend ({to_backend}) is not available[/red]")
+        return
+
+    # Get all documents from source
+    # Note: This is a simplified migration - real implementation would need
+    # to handle pagination for large datasets
+    console.print("[dim]Fetching documents from source...[/dim]")
+
+    # We need to query all documents - use empty query to get everything
+    all_docs = source.query("", n_results=10000)
+
+    if not all_docs:
+        console.print("[yellow]No documents to migrate[/yellow]")
+        return
+
+    console.print(f"[dim]Migrating {len(all_docs)} documents...[/dim]")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Migrating", total=len(all_docs))
+
+        for doc in all_docs:
+            dest.add(
+                text=doc["document"],
+                metadata=doc.get("metadata"),
+                doc_id=doc.get("id"),
+            )
+            progress.advance(task)
+
+    # Commit if OpenViking destination
+    if to_backend == "openviking" and hasattr(dest, "commit_session"):
+        dest.commit_session()
+
+    console.print(f"[green]Migration complete: {len(all_docs)} documents migrated[/green]")
+    console.print(f"[dim]Update config.json to use {to_backend} as default backend[/dim]")
