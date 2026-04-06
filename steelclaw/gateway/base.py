@@ -28,6 +28,7 @@ class BaseConnector(ABC):
         self.last_error: str | None = None
 
     async def start(self) -> None:
+        await self.register_commands()
         self._task = asyncio.create_task(self._run(), name=f"connector-{self.platform_name}")
         logger.info("Connector %s started", self.platform_name)
 
@@ -66,6 +67,16 @@ class BaseConnector(ABC):
     async def send(self, message: OutboundMessage) -> None:
         """Translate an ``OutboundMessage`` into the platform's native API call."""
         ...
+
+    async def register_commands(self) -> None:
+        """Register slash commands with the platform for autocomplete menus.
+
+        Subclasses override this to call their platform's command-registration
+        API (e.g. Telegram setMyCommands, Discord application commands).
+        The default implementation is a no-op so connectors that don't support
+        slash command registration are unaffected.
+        """
+        pass
 
     async def send_typing(self, chat_id: str) -> None:
         """Send a one-shot typing indicator. Override in subclasses that support it."""

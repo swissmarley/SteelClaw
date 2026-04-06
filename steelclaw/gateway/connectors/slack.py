@@ -10,6 +10,7 @@ import httpx
 
 from steelclaw.gateway.base import BaseConnector
 from steelclaw.gateway.attachments import build_attachment_dict, transcribe_audio_attachment
+from steelclaw.gateway.commands import SLASH_COMMANDS
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
 logger = logging.getLogger("steelclaw.gateway.slack")
@@ -20,6 +21,19 @@ _HANDLED_SUBTYPES = frozenset({"file_share"})
 
 class SlackConnector(BaseConnector):
     platform_name = "slack"
+
+    async def register_commands(self) -> None:
+        """Log the slash commands that must be configured in the Slack app manifest.
+
+        Slack slash commands are registered via the app configuration (App Manifest /
+        Slash Commands settings page) rather than at runtime via the API.  This method
+        emits an INFO log listing every command so that operators know exactly which
+        commands to add when setting up the Slack app.
+        """
+        names = ", ".join(f"/{cmd['name']}" for cmd in SLASH_COMMANDS)
+        logger.info(
+            "Slack: configure the following slash commands in your Slack app settings: %s", names
+        )
 
     async def verify(self) -> str | None:
         """Validate Slack tokens via auth.test before starting the connector."""
@@ -137,6 +151,11 @@ class SlackConnector(BaseConnector):
                     subtype,
                 )
 
+                # Handle incoming slash command invocations
+                if isinstance(event_payload, dict) and event_payload.get("type") == "slash_commands":
+                    await self._handle_slash_command(event_payload)
+                    continue
+
                 # Handle regular messages and file_share subtypes; ignore bot messages and other subtypes
                 is_handled_subtype = subtype in _HANDLED_SUBTYPES
                 if (
@@ -181,6 +200,45 @@ class SlackConnector(BaseConnector):
                         is_mention="<@" in text,
                     )
                     await self.dispatch(inbound)
+
+    async def _handle_slash_command(self, payload: dict) -> None:
+        """Dispatch an incoming Slack slash command as a regular inbound message.
+
+        Slack delivers slash command invocations (e.g. ``/help``) as a
+        ``slash_commands`` payload over Socket Mode.  We normalise these into an
+        :class:`InboundMessage` so the agent pipeline handles them identically to
+        plain text messages.
+        """
+        command = payload.get("command", "")        # e.g. "/help"
+        text = payload.get("text", "").strip()      # arguments after the command
+        channel_id = payload.get("channel_id", "")
+        user_id = payload.get("user_id", "")
+        username = payload.get("user_name", "")
+        trigger_id = payload.get("trigger_id", "")
+
+        # Build a natural-language content string from the slash command
+        content = command if not text else f"{command} {text}"
+
+        logger.info(
+            "Slack slash command: command=%s text=%r channel=%s user=%s trigger_id=%s",
+            command,
+            text,
+            channel_id,
+            user_id,
+            trigger_id,
+        )
+
+        inbound = InboundMessage(
+            platform="slack",
+            platform_chat_id=channel_id,
+            platform_user_id=user_id,
+            platform_username=username,
+            platform_message_id=trigger_id,
+            content=content,
+            is_group=False,
+            is_mention=False,
+        )
+        await self.dispatch(inbound)
 
     async def send(self, message: OutboundMessage) -> None:
         token = self.config.token
