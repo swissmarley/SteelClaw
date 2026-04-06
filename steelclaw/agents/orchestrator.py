@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Dict, Optional
@@ -331,21 +330,19 @@ class MultiAgentOrchestrator:
         if etype == "tool_start" and event.get("name") == "delegate_to_subagent":
             args = event.get("arguments", {})
             agent_name = args.get("agent_name", "subagent")
-            call_id = event.get("id") or str(uuid.uuid4())
+            call_id = event.get("id")
             delegation_map[call_id] = agent_name
             return {
                 **event,
-                "id": call_id,
                 "name": f"delegate_to_{agent_name}",
                 "label": f"Delegating to {agent_name}",
                 "subagent": agent_name,
             }
         if etype == "tool_end" and event.get("name") == "delegate_to_subagent":
-            call_id = event.get("id") or str(uuid.uuid4())
+            call_id = event.get("id")
             agent_name = delegation_map.pop(call_id, "subagent")
             return {
                 **event,
-                "id": call_id,
                 "name": f"delegate_to_{agent_name}",
                 "subagent": agent_name,
             }
