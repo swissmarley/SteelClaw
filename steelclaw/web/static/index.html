@@ -2165,30 +2165,63 @@ loaders.agents = async () => {
   const body = document.getElementById('agents-body');
   const agents = await fetch('/api/agents').then(r=>r.json()).catch(()=>[]);
 
+  // Build id → name lookup for parent resolution
+  const idToName = {};
+  for (const a of agents) idToName[a.id] = a.name;
+
+  // Build parent options for create form
+  const parentOptions = agents.map(a =>
+    `<option value="${esc(a.id)}">${esc(a.name)}${a.is_main?' (main)':''}</option>`
+  ).join('');
+
   let html = `<div class="card">
     <h3>Create Agent</h3>
     <div class="form-row-3">
-      <div class="form-group"><label>Name</label><input id="agent-name" placeholder="e.g. ResearchBot"></div>
+      <div class="form-group"><label>Name</label><input id="agent-name" placeholder="e.g. research-bot"></div>
       <div class="form-group"><label>Display Name</label><input id="agent-display" placeholder="e.g. Research Assistant"></div>
-      <div class="form-group"><label>Model Override</label><input id="agent-model" placeholder="e.g. claude-sonnet-4-20250514"></div>
+      <div class="form-group"><label>Model Override</label><input id="agent-model" placeholder="e.g. gpt-4o"></div>
     </div>
-    <div class="form-group"><label>System Prompt</label><textarea id="agent-prompt" rows="2" placeholder="Custom instructions for this agent..."></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>System Prompt</label><textarea id="agent-prompt" rows="2" placeholder="Custom instructions for this agent..."></textarea></div>
+      <div class="form-group"><label>Parent Agent <span style="font-size:11px;color:var(--text-secondary)">(optional — makes this a sub-agent)</span></label>
+        <select id="agent-parent"><option value="">— None (top-level) —</option>${parentOptions}</select>
+      </div>
+    </div>
     <button class="btn btn-success" onclick="createAgent()">Create Agent</button>
   </div>`;
 
   if (!agents.length) {
     html += '<p style="color:var(--text-secondary)">No agents configured yet.</p>';
   } else {
-    html += `<div class="card"><h3>All Agents</h3><table class="tbl"><thead><tr><th>Name</th><th>Display</th><th>Model</th><th>Main</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead><tbody>`;
+    const mainAgents = agents.filter(a => a.is_main);
+    const subAgents = agents.filter(a => !a.is_main);
+    const subCount = subAgents.length;
+    html += `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3>All Agents</h3>
+        <span style="font-size:12px;color:var(--text-secondary)">${agents.length} agent${agents.length!==1?'s':''} · ${subCount} sub-agent${subCount!==1?'s':''}</span>
+      </div>
+      <table class="tbl"><thead><tr>
+        <th>Name</th><th>Display</th><th>Model</th><th>Role</th><th>Parent</th><th>Active</th><th>Created</th><th>Actions</th>
+      </tr></thead><tbody>`;
     for (const a of agents) {
+      const parentName = a.parent_agent_id ? (idToName[a.parent_agent_id] || a.parent_agent_id) : '—';
+      const roleBadge = a.is_main
+        ? '<span class="badge badge-green">Main</span>'
+        : '<span class="badge" style="background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent)">Sub-agent</span>';
+      const actions = a.is_main
+        ? `<button class="btn btn-sm" style="background:var(--glass-elevated)" onclick="editAgent('${a.id}','${esc(a.name)}','${esc(a.display_name||'')}','${esc(a.model_override||'')}',\`${(a.system_prompt||'').replace(/`/g,'\\`')}\`,${a.is_active})">Edit</button>`
+        : `<button class="btn btn-sm" style="background:var(--glass-elevated)" onclick="editAgent('${a.id}','${esc(a.name)}','${esc(a.display_name||'')}','${esc(a.model_override||'')}',\`${(a.system_prompt||'').replace(/`/g,'\\`')}\`,${a.is_active})">Edit</button>
+           <button class="btn btn-danger btn-sm" onclick="deleteAgent('${a.id}')">Delete</button>`;
       html += `<tr>
         <td style="font-weight:600">${esc(a.name)}</td>
         <td>${esc(a.display_name)}</td>
         <td style="font-size:12px;font-family:'JetBrains Mono',monospace">${esc(a.model_override||'default')}</td>
-        <td>${a.is_main?'<span class="badge badge-green">Main</span>':''}</td>
+        <td>${roleBadge}</td>
+        <td style="font-size:12px;color:var(--text-secondary)">${esc(parentName)}</td>
         <td>${a.is_active?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-red">No</span>'}</td>
         <td style="font-size:12px;color:var(--text-secondary)">${a.created_at?new Date(a.created_at).toLocaleDateString():'—'}</td>
-        <td>${a.is_main?'':'<button class="btn btn-danger btn-sm" onclick="deleteAgent(\''+a.id+'\')">Delete</button>'}</td>
+        <td style="display:flex;gap:6px">${actions}</td>
       </tr>`;
     }
     html += '</tbody></table></div>';
@@ -2199,21 +2232,42 @@ loaders.agents = async () => {
 async function createAgent() {
   const name = document.getElementById('agent-name').value.trim();
   if (!name) { toast('Agent name is required','error'); return; }
-  const body = { name, display_name: document.getElementById('agent-display').value || name };
+  const body = { name, display_name: document.getElementById('agent-display').value.trim() || name };
   const model = document.getElementById('agent-model').value.trim();
   if (model) body.model_override = model;
   const prompt = document.getElementById('agent-prompt').value.trim();
   if (prompt) body.system_prompt = prompt;
+  const parentId = document.getElementById('agent-parent').value;
+  if (parentId) body.parent_agent_id = parentId;
   const r = await fetch('/api/agents', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if (r.ok) { toast('Agent created'); loaders.agents(); }
   else { const d = await r.json(); toast(d.detail||'Error creating agent','error'); }
 }
 
+async function editAgent(id, name, displayName, model, systemPrompt, isActive) {
+  const newDisplay = window.prompt(`Display name for "${name}":`, displayName);
+  if (newDisplay === null) return;
+  const newModel = window.prompt('Model override (leave blank for default):', model);
+  if (newModel === null) return;
+  const newPrompt = window.prompt('System prompt:', systemPrompt);
+  if (newPrompt === null) return;
+  const newActive = window.confirm(`Is agent "${name}" active?`);
+  const payload = {
+    display_name: newDisplay || name,
+    model_override: newModel || null,
+    system_prompt: newPrompt,
+    is_active: newActive,
+  };
+  const r = await fetch('/api/agents/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  if (r.ok) { toast('Agent updated'); loaders.agents(); }
+  else { const d = await r.json(); toast(d.detail||'Error updating agent','error'); }
+}
+
 async function deleteAgent(id) {
   if (!confirm('Delete this agent?')) return;
-  await fetch('/api/agents/'+id, {method:'DELETE'});
-  toast('Agent deleted');
-  loaders.agents();
+  const r = await fetch('/api/agents/'+id, {method:'DELETE'});
+  if (r.ok) { toast('Agent deleted'); loaders.agents(); }
+  else { const d = await r.json().catch(()=>({})); toast(d.detail||'Error deleting agent','error'); }
 }
 
 // ── Persona Page ──────────────────────────────────────────

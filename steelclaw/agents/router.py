@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -53,13 +54,26 @@ class AgentRouter:
         self,
         settings: AgentSettings,
         skill_registry: SkillRegistry | None = None,
+        agent_profile=None,  # Optional[AgentProfile] — uses DB-stored model/prompt/persona
     ) -> None:
         self._settings = settings
-        self._provider = LLMProvider(settings.llm)
-        self._context = ContextBuilder(settings.llm)
+        self._profile = agent_profile
         self._skills = skill_registry
         self._memory_retriever = None
         self._memory_ingestor = None
+
+        # Apply per-agent model/temperature overrides when a profile is provided
+        llm_settings = settings.llm
+        if agent_profile is not None:
+            if agent_profile.model_override or agent_profile.temperature_override is not None:
+                llm_settings = copy(settings.llm)
+                if agent_profile.model_override:
+                    llm_settings.default_model = agent_profile.model_override
+                if agent_profile.temperature_override is not None:
+                    llm_settings.temperature = agent_profile.temperature_override
+
+        self._provider = LLMProvider(llm_settings)
+        self._context = ContextBuilder(llm_settings)
 
     def set_memory(self, retriever, ingestor) -> None:
         """Inject memory components after initialisation."""
@@ -82,16 +96,20 @@ class AgentRouter:
         session: DBSession,
         db: AsyncSession | None = None,
         on_tool_event=None,
+        extra_tools: list[dict] | None = None,
     ) -> AgentResponse:
         """Process a message and return response with usage metadata.
 
         ``on_tool_event`` is an optional async callable invoked with a dict
         matching the same tool_start / tool_end schema used by the streaming
         layer, enabling platform connectors to show real-time tool feedback.
+
+        ``extra_tools`` is an optional list of additional tool schemas to prepend
+        (e.g. the orchestrator's ``delegate_to_subagent`` tool).
         """
         try:
             response_text, usage = await self._run_agent_loop(
-                message, session, db, on_tool_event=on_tool_event
+                message, session, db, on_tool_event=on_tool_event, extra_tools=extra_tools
             )
         except Exception as e:
             logger.exception("Agent error for session %s", session.id)
@@ -123,12 +141,17 @@ class AgentRouter:
         session: DBSession,
         db: AsyncSession | None = None,
         on_tool_event=None,
+        extra_tools: list[dict] | None = None,
     ) -> tuple[str, dict]:
         """Run the agentic loop. Returns (response_text, accumulated_usage)."""
 
         # Build context with optional memory injection
         skill_context = self._skills.get_combined_system_context() if self._skills else None
         tools_schema = self._skills.get_all_tools_schema() if self._skills else []
+
+        # Prepend extra tools (e.g. delegate_to_subagent from the orchestrator)
+        if extra_tools:
+            tools_schema = list(extra_tools) + tools_schema
 
         # Cap tools at MAX_TOOLS to avoid API errors (OpenAI limit is 128)
         if len(tools_schema) > MAX_TOOLS:
@@ -147,8 +170,14 @@ class AgentRouter:
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
 
-        # Build persona prompt fresh every turn (survives context resets)
-        persona_prompt = build_persona_system_prompt()
+        # Build persona prompt — use agent profile if available, else global persona file
+        if self._profile is not None and (self._profile.persona_json or self._profile.system_prompt):
+            from steelclaw.agents.persona import build_persona_prompt
+            persona_prompt = build_persona_prompt(self._profile)
+            effective_system = self._profile.system_prompt or self._settings.llm.system_prompt
+        else:
+            persona_prompt = build_persona_system_prompt()
+            effective_system = self._settings.llm.system_prompt
 
         if db is not None:
             messages = await self._context.build(
@@ -162,7 +191,7 @@ class AgentRouter:
             )
         else:
             # Fallback: no DB, just persona + system + current message
-            system = f"{persona_prompt}\n\n{self._settings.llm.system_prompt}"
+            system = f"{persona_prompt}\n\n{effective_system}"
             if skill_context:
                 system = f"{system}\n\n{skill_context}"
             if memory_context:
@@ -324,6 +353,7 @@ class AgentRouter:
         message: InboundMessage,
         session: DBSession,
         db: AsyncSession | None = None,
+        extra_tools: list[dict] | None = None,
     ) -> AsyncIterator[dict]:
         """Stream agent response as chunks. Yields dicts:
 
@@ -334,7 +364,7 @@ class AgentRouter:
         - {"type": "error", "content": "..."}  — on failure
         """
         try:
-            async for event in self._stream_agent_loop(message, session, db):
+            async for event in self._stream_agent_loop(message, session, db, extra_tools=extra_tools):
                 yield event
         except Exception as e:
             logger.exception("Streaming agent error for session %s", session.id)
@@ -345,12 +375,17 @@ class AgentRouter:
         message: InboundMessage,
         session: DBSession,
         db: AsyncSession | None = None,
+        extra_tools: list[dict] | None = None,
     ) -> AsyncIterator[dict]:
         """Streaming agentic loop. Yields events as chunks arrive."""
 
         # Build context (same as non-streaming)
         skill_context = self._skills.get_combined_system_context() if self._skills else None
         tools_schema = self._skills.get_all_tools_schema() if self._skills else []
+
+        # Prepend extra tools (e.g. delegate_to_subagent from the orchestrator)
+        if extra_tools:
+            tools_schema = list(extra_tools) + tools_schema
 
         if len(tools_schema) > MAX_TOOLS:
             tools_schema = self._select_relevant_tools(message.content, tools_schema)
@@ -365,7 +400,14 @@ class AgentRouter:
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
 
-        persona_prompt = build_persona_system_prompt()
+        # Build persona prompt — use agent profile if available, else global persona file
+        if self._profile is not None and (self._profile.persona_json or self._profile.system_prompt):
+            from steelclaw.agents.persona import build_persona_prompt
+            persona_prompt = build_persona_prompt(self._profile)
+            effective_system = self._profile.system_prompt or self._settings.llm.system_prompt
+        else:
+            persona_prompt = build_persona_system_prompt()
+            effective_system = self._settings.llm.system_prompt
 
         if db is not None:
             messages = await self._context.build(
@@ -378,7 +420,7 @@ class AgentRouter:
                 attachments=message.attachments,
             )
         else:
-            system = f"{persona_prompt}\n\n{self._settings.llm.system_prompt}"
+            system = f"{persona_prompt}\n\n{effective_system}"
             if skill_context:
                 system = f"{system}\n\n{skill_context}"
             if memory_context:
