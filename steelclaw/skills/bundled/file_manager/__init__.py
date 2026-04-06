@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 
@@ -78,7 +79,7 @@ async def tool_move_file(source: str, destination: str) -> str:
 
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dst))
+        await asyncio.to_thread(shutil.move, str(src), str(dst))
         return f"Moved {src} → {dst}"
     except Exception as e:
         return f"Error moving {source} → {destination}: {e}"

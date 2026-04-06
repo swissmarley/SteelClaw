@@ -255,7 +255,10 @@ def get_memory_stats(request: Request) -> dict:
 
     store = getattr(request.app.state, "vector_store", None)
     if store:
-        count = store.count() if store.available else 0
+        try:
+            count = store.count() if store.available else 0
+        except Exception:
+            count = 0
         return {
             "backend": memory_settings.backend,
             "available": store.available,
