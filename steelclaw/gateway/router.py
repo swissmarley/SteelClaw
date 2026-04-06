@@ -97,6 +97,35 @@ async def process_message(
     db.add(db_msg)
     await db.commit()
 
+    # ── Slash command interception ──────────────────────────────────────
+    # Check before routing to the LLM so commands execute instantly and
+    # deterministically (no token spend, no hallucinated responses).
+    if inbound.content.strip().startswith("/"):
+        from steelclaw.gateway.command_handler import dispatch_command
+
+        cmd_response = await dispatch_command(
+            inbound.content,
+            session=session,
+            db=db,
+            settings=settings,
+        )
+        if cmd_response is not None:
+            outbound = OutboundMessage(
+                platform=inbound.platform,
+                platform_chat_id=inbound.platform_chat_id,
+                content=cmd_response,
+                reply_to_message_id=inbound.platform_message_id,
+            )
+            db_reply = DBMessage(
+                session_id=session.id,
+                role="assistant",
+                content=outbound.content,
+                platform=outbound.platform,
+            )
+            db.add(db_reply)
+            await db.commit()
+            return outbound
+
     # Route to agent (pass db so the agent can load conversation history)
     if _agent_router is not None:
         agent_result = await _agent_router.route_with_usage(inbound, session, db=db)
@@ -188,6 +217,28 @@ async def process_message_streaming(
     )
     db.add(db_msg)
     await db.commit()
+
+    # ── Slash command interception (streaming path) ─────────────────────
+    if inbound.content.strip().startswith("/"):
+        from steelclaw.gateway.command_handler import dispatch_command
+
+        cmd_response = await dispatch_command(
+            inbound.content,
+            session=session,
+            db=db,
+            settings=settings,
+        )
+        if cmd_response is not None:
+            db_reply = DBMessage(
+                session_id=session.id,
+                role="assistant",
+                content=cmd_response,
+                platform=inbound.platform,
+            )
+            db.add(db_reply)
+            await db.commit()
+            yield {"type": "done", "content": cmd_response, "usage": {}}
+            return
 
     if _agent_router is None:
         yield {"type": "chunk", "content": f"[echo] {inbound.content}"}
