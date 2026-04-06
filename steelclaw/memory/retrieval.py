@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from steelclaw.memory.vector_store import VectorStore
+
+if TYPE_CHECKING:
+    from steelclaw.memory.viking_store import VikingStore
 
 logger = logging.getLogger("steelclaw.memory")
 
@@ -12,7 +16,7 @@ logger = logging.getLogger("steelclaw.memory")
 class MemoryRetriever:
     """Retrieves relevant memories from the vector store to inject into context."""
 
-    def __init__(self, vector_store: VectorStore) -> None:
+    def __init__(self, vector_store: "VectorStore | VikingStore") -> None:
         self._store = vector_store
 
     def retrieve_relevant(

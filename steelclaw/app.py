@@ -15,6 +15,15 @@ from steelclaw.settings import Settings
 logger = logging.getLogger("steelclaw")
 
 
+def _create_memory_store(memory_settings):
+    """Factory: returns the configured memory backend (VectorStore or VikingStore)."""
+    if memory_settings.backend == "openviking":
+        from steelclaw.memory.viking_store import VikingStore
+        return VikingStore(memory_settings)
+    from steelclaw.memory.vector_store import VectorStore
+    return VectorStore(memory_settings)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from steelclaw.paths import resolve_path
@@ -68,12 +77,11 @@ async def lifespan(app: FastAPI):
     set_permission_manager(permission_manager)
     app.state.permission_manager = permission_manager
 
-    # ── Memory system (ChromaDB) ────────────────────────────────────────
+    # ── Memory system ────────────────────────────────────────────────────
     from steelclaw.memory.ingestion import MemoryIngestor
     from steelclaw.memory.retrieval import MemoryRetriever
-    from steelclaw.memory.vector_store import VectorStore
 
-    vector_store = VectorStore(settings.agents.memory)
+    vector_store = _create_memory_store(settings.agents.memory)
     memory_retriever = MemoryRetriever(vector_store)
     memory_ingestor = MemoryIngestor(vector_store)
     app.state.vector_store = vector_store
