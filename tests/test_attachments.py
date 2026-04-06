@@ -563,3 +563,178 @@ async def test_telegram_no_caption_entities_not_mention():
     handler.assert_awaited_once()
     inbound = handler.await_args[0][0]
     assert inbound.is_mention is False
+
+
+# ── local_path: temp file is created and surfaced ────────────────────────────
+
+
+def test_build_attachment_dict_sets_local_path_for_images():
+    """build_attachment_dict must write bytes to a temp file and expose local_path."""
+    import os
+    att = build_attachment_dict("photo.png", "image/png", data=b"\x89PNG")
+    assert "local_path" in att
+    assert att["local_path"] is not None
+    assert os.path.exists(att["local_path"])
+    # cleanup
+    os.unlink(att["local_path"])
+
+
+def test_build_attachment_dict_no_local_path_when_no_data():
+    """Without data, local_path must not appear in the dict."""
+    att = build_attachment_dict("photo.png", "image/png")
+    assert "local_path" not in att
+
+
+def test_build_attachment_dict_local_path_for_audio():
+    """Audio files also get a local_path so the agent can save them."""
+    import os
+    att = build_attachment_dict("voice.ogg", "audio/ogg", data=b"\x4f\x67\x67\x53")
+    assert att.get("local_path") is not None
+    assert os.path.exists(att["local_path"])
+    os.unlink(att["local_path"])
+
+
+def test_context_builder_image_includes_local_path_note():
+    """Image vision blocks must be followed by a text block with the local path."""
+    from steelclaw.llm.context import ContextBuilder
+    from steelclaw.settings import LLMSettings
+
+    cb = ContextBuilder(LLMSettings())
+    att = {
+        "filename": "screenshot.png",
+        "mime": "image/png",
+        "category": "image",
+        "base64": base64.b64encode(b"\x89PNG").decode(),
+        "local_path": "/tmp/steelclaw_att_screenshot.png",
+    }
+    msg = cb._build_user_message("what's in this image?", attachments=[att])
+    text_parts = [p["text"] for p in msg["content"] if p.get("type") == "text"]
+    combined = "\n".join(text_parts)
+    assert "/tmp/steelclaw_att_screenshot.png" in combined
+
+
+def test_context_builder_unknown_category_with_local_path():
+    """Files of unknown category should still surface local_path to the agent."""
+    from steelclaw.llm.context import ContextBuilder
+    from steelclaw.settings import LLMSettings
+
+    cb = ContextBuilder(LLMSettings())
+    att = {
+        "filename": "archive.zip",
+        "mime": "application/zip",
+        "category": "unknown",
+        "local_path": "/tmp/steelclaw_att_archive.zip",
+    }
+    msg = cb._build_user_message("here's a zip", attachments=[att])
+    text_parts = [p["text"] for p in msg["content"] if p.get("type") == "text"]
+    combined = "\n".join(text_parts)
+    assert "archive.zip" in combined
+    assert "/tmp/steelclaw_att_archive.zip" in combined
+
+
+# ── Audio transcription helper ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_attachment_returns_text_on_success():
+    """transcribe_audio_attachment returns transcription text when Whisper succeeds."""
+    from steelclaw.gateway.attachments import transcribe_audio_attachment
+
+    mock_result = MagicMock()
+    mock_result.ok = True
+    mock_result.text = "Hello from voice message"
+
+    mock_transcriber = AsyncMock()
+    mock_transcriber.transcribe = AsyncMock(return_value=mock_result)
+
+    with patch("steelclaw.voice.transcription.Transcriber", return_value=mock_transcriber):
+        with patch("steelclaw.settings.VoiceSettings"):
+            result = await transcribe_audio_attachment(b"\x4f\x67\x67\x53", "voice.ogg")
+
+    assert result == "Hello from voice message"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_attachment_returns_none_on_failure():
+    """transcribe_audio_attachment returns None when Whisper reports an error."""
+    from steelclaw.gateway.attachments import transcribe_audio_attachment
+
+    mock_result = MagicMock()
+    mock_result.ok = False
+    mock_result.error = "no api key"
+
+    mock_transcriber = AsyncMock()
+    mock_transcriber.transcribe = AsyncMock(return_value=mock_result)
+
+    with patch("steelclaw.voice.transcription.Transcriber", return_value=mock_transcriber):
+        with patch("steelclaw.settings.VoiceSettings"):
+            result = await transcribe_audio_attachment(b"\x00", "voice.m4a")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_discord_audio_transcription_wired():
+    """Discord connector calls transcribe_audio_attachment for audio files."""
+    from steelclaw.gateway.connectors.discord import _collect_discord_attachments
+
+    audio_data = b"\x4f\x67\x67\x53"  # OGG magic bytes
+
+    mock_att = MagicMock()
+    mock_att.filename = "voice.ogg"
+    mock_att.content_type = "audio/ogg"
+    mock_att.url = "https://cdn.discordapp.com/voice.ogg"
+
+    mock_resp = MagicMock()
+    mock_resp.content = audio_data
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("steelclaw.gateway.connectors.discord.httpx.AsyncClient") as MockClient:
+        instance = AsyncMock()
+        MockClient.return_value.__aenter__.return_value = instance
+        instance.get.return_value = mock_resp
+
+        with patch(
+            "steelclaw.gateway.connectors.discord.transcribe_audio_attachment",
+            new=AsyncMock(return_value="Hi there from Discord voice"),
+        ):
+            result = await _collect_discord_attachments([mock_att])
+
+    assert len(result) == 1
+    assert result[0]["category"] == "audio"
+    assert result[0]["text_content"] == "Hi there from Discord voice"
+
+
+@pytest.mark.asyncio
+async def test_slack_audio_transcription_wired():
+    """Slack connector calls transcribe_audio_attachment for audio files."""
+    from steelclaw.gateway.connectors.slack import _collect_slack_attachments
+
+    m4a_data = b"\x00\x00\x00\x20ftyp"  # M4A/MP4 header
+
+    mock_resp = MagicMock()
+    mock_resp.content = m4a_data
+    mock_resp.raise_for_status = MagicMock()
+
+    files = [
+        {
+            "name": "voice.m4a",
+            "mimetype": "audio/x-m4a",
+            "url_private_download": "https://files.slack.com/voice.m4a",
+        }
+    ]
+
+    with patch("steelclaw.gateway.connectors.slack.httpx.AsyncClient") as MockClient:
+        instance = AsyncMock()
+        MockClient.return_value.__aenter__.return_value = instance
+        instance.get.return_value = mock_resp
+
+        with patch(
+            "steelclaw.gateway.connectors.slack.transcribe_audio_attachment",
+            new=AsyncMock(return_value="Hello from Slack voice memo"),
+        ):
+            result = await _collect_slack_attachments(files, bot_token="xoxb-test")
+
+    assert len(result) == 1
+    assert result[0]["category"] == "audio"
+    assert result[0]["text_content"] == "Hello from Slack voice memo"

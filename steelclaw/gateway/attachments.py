@@ -1,9 +1,11 @@
-"""Attachment classification and download helpers for messenger connectors.
+"""Attachment classification, download, and transcription helpers for messenger connectors.
 
 Provides utilities to:
 - Categorise a file by its MIME type or extension
 - Build the normalised attachment dict expected by InboundMessage.attachments
   and ContextBuilder._build_user_message
+- Save attachment bytes to a local temp file so the agent can manipulate them
+- Transcribe audio attachments via the Whisper-based voice transcription stack
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import csv
 import io
 import logging
 import os
+import tempfile
 
 logger = logging.getLogger("steelclaw.gateway.attachments")
 
@@ -39,6 +42,7 @@ _MIME_TO_CATEGORY: dict[str, str] = {
     "audio/aac": "audio",
     "audio/opus": "audio",
     "audio/x-m4a": "audio",
+    "audio/mp4": "audio",
     # video
     "video/mp4": "video",
     "video/mpeg": "video",
@@ -115,6 +119,9 @@ def build_attachment_dict(
     * ``category`` (str) — one of image / audio / video / document / csv / unknown
     * ``base64`` (str | None) — base64-encoded bytes, images only
     * ``text_content`` (str | None) — extracted text, documents and CSV only
+    * ``local_path`` (str | None) — path to a temp file containing the raw bytes
+      (set for all categories when ``data`` is provided so the agent can
+      read/copy/move the file via filesystem tools)
     """
     category = categorize_file(filename, mime)
     att: dict = {
@@ -124,15 +131,90 @@ def build_attachment_dict(
     }
 
     if data:
+        # Always persist a temp copy so the agent has a real filesystem path
+        att["local_path"] = _save_temp_file(data, filename)
+
         if category == "image":
             att["base64"] = base64.b64encode(data).decode()
         elif category == "csv":
             att["text_content"] = _extract_csv_preview(data, filename)
         elif category == "document":
             att["text_content"] = _extract_document_text(data, filename)
-        # audio / video / unknown — metadata only, no inline content
+        # audio / video / unknown — local_path already set; transcription is
+        # handled asynchronously by the connector after this call returns
 
     return att
+
+
+# ── Temp-file helper ─────────────────────────────────────────────────────────
+
+
+def _save_temp_file(data: bytes, filename: str) -> str | None:
+    """Write *data* to a temporary file and return its path.
+
+    The caller is responsible for eventual cleanup; the OS will remove files in
+    the system temp directory on the next reboot at the latest.
+    """
+    try:
+        suffix = os.path.splitext(filename)[1] or ""
+        with tempfile.NamedTemporaryFile(
+            suffix=suffix, prefix="steelclaw_att_", delete=False
+        ) as tmp:
+            tmp.write(data)
+            return tmp.name
+    except Exception:
+        logger.debug("Could not save attachment '%s' to temp file", filename, exc_info=True)
+        return None
+
+
+# ── Audio transcription ──────────────────────────────────────────────────────
+
+
+async def transcribe_audio_attachment(
+    data: bytes,
+    filename: str,
+) -> str | None:
+    """Transcribe *data* (raw audio bytes) using the Whisper-based stack.
+
+    Returns the transcribed text on success, ``None`` if transcription is not
+    configured or fails (e.g. no Whisper API key set).  Errors are logged at
+    DEBUG level and never raised so the caller can always fall back gracefully.
+    """
+    try:
+        from steelclaw.settings import VoiceSettings
+        from steelclaw.voice.transcription import Transcriber
+    except ImportError:
+        logger.debug("Voice transcription stack not available")
+        return None
+
+    suffix = os.path.splitext(filename)[1] or ".ogg"
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+
+        transcriber = Transcriber(VoiceSettings())
+        result = await transcriber.transcribe(tmp_path)
+        if result.ok:
+            logger.info(
+                "Transcribed audio attachment '%s': %d chars", filename, len(result.text)
+            )
+            return result.text
+        else:
+            logger.debug(
+                "Transcription returned no text for '%s': %s", filename, result.error
+            )
+            return None
+    except Exception:
+        logger.debug("Audio transcription failed for '%s'", filename, exc_info=True)
+        return None
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 # ── Text extraction helpers ──────────────────────────────────────────────────
