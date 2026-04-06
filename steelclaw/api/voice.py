@@ -332,7 +332,6 @@ async def create_realtime_session(
         turn_detection = {
             "type": "semantic_vad",
             "eagerness": getattr(voice_settings, "realtime_vad_eagerness", "auto"),
-            "prefix_padding_ms": voice_settings.realtime_prefix_padding_ms,
         }
     else:
         turn_detection = {

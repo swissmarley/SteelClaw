@@ -15,19 +15,23 @@ BASE_URL = "http://localhost:8000"
 
 def handle_sessions(args: argparse.Namespace) -> None:
     action = getattr(args, "sessions_action", None)
+    platform = getattr(args, "platform", None)
     if action == "list":
-        _list_sessions()
+        _list_sessions(platform=platform)
     elif action == "reset":
         _reset_session(args.session_id)
     elif action == "delete":
         _delete_session(args.session_id)
     else:
-        _list_sessions()
+        _list_sessions(platform=platform)
 
 
-def _list_sessions() -> None:
+def _list_sessions(platform: str | None = None) -> None:
     try:
-        resp = httpx.get(f"{BASE_URL}/api/sessions", timeout=10)
+        params = {}
+        if platform:
+            params["platform"] = platform
+        resp = httpx.get(f"{BASE_URL}/api/sessions", params=params, timeout=10)
         resp.raise_for_status()
     except httpx.ConnectError:
         console.print("[red]Cannot connect to SteelClaw. Is the server running?[/red]")
@@ -35,10 +39,14 @@ def _list_sessions() -> None:
 
     sessions = resp.json()
     if not sessions:
-        console.print("[dim]No active sessions[/dim]")
+        if platform:
+            console.print(f"[dim]No active sessions for platform: {platform}[/dim]")
+        else:
+            console.print("[dim]No active sessions[/dim]")
         return
 
-    table = Table(title="Sessions")
+    title = f"Sessions — {platform}" if platform else "Sessions"
+    table = Table(title=title)
     table.add_column("ID", style="cyan", max_width=12)
     table.add_column("Platform")
     table.add_column("Type")

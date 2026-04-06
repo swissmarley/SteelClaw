@@ -12,8 +12,7 @@ def _show_banner() -> None:
     if "--no-banner" in sys.argv:
         return
     from steelclaw.cli.banner import print_banner
-    static_only = "--static-logo" in sys.argv
-    print_banner(animated=not static_only)
+    print_banner()
 
 
 # ── Server commands ─────────────────────────────────────────────────────────
@@ -197,7 +196,6 @@ def main() -> None:
         description="SteelClaw — self-hosted personal AI assistant",
     )
     parser.add_argument("--no-banner", action="store_true", help="Suppress the startup banner")
-    parser.add_argument("--static-logo", action="store_true", help="Show static logo without animation")
     sub = parser.add_subparsers(dest="command")
 
     # serve
@@ -238,7 +236,17 @@ def main() -> None:
     # sessions
     sessions_p = sub.add_parser("sessions", help="Manage sessions")
     sessions_sub = sessions_p.add_subparsers(dest="sessions_action")
-    sessions_sub.add_parser("list", help="List active sessions")
+    sessions_list_p = sessions_sub.add_parser("list", help="List active sessions")
+    sessions_list_p.add_argument(
+        "--platform", "-p",
+        type=str, default=None,
+        help="Filter by platform (telegram, discord, slack, websocket, …)",
+    )
+    sessions_p.add_argument(
+        "--platform", "-p",
+        type=str, default=None,
+        help="Filter by platform (telegram, discord, slack, websocket, …)",
+    )
     sessions_reset_p = sessions_sub.add_parser("reset", help="Reset a session (clear messages)")
     sessions_reset_p.add_argument("session_id", help="Session ID to reset")
     sessions_delete_p = sessions_sub.add_parser("delete", help="Delete a session")
@@ -254,6 +262,12 @@ def main() -> None:
     memory_clear_p = memory_sub.add_parser("clear", help="Clear memory store")
     memory_clear_p.add_argument("--user", type=str, default=None, help="Clear for specific user")
     memory_clear_p.add_argument("--session", type=str, default=None, help="Clear for specific session")
+    memory_sub.add_parser("start", help="Start OpenViking server manually")
+    memory_sub.add_parser("stop", help="Stop OpenViking server")
+    memory_sub.add_parser("backend", help="Show current memory backend")
+    memory_migrate_p = memory_sub.add_parser("migrate", help="Migrate memories between backends")
+    memory_migrate_p.add_argument("--from-backend", dest="from_backend", default="chromadb", help="Source backend (default: chromadb)")
+    memory_migrate_p.add_argument("--to", dest="to_backend", default="openviking", help="Destination backend (default: openviking)")
 
     # agents
     agents_p = sub.add_parser("agents", help="Manage agents")
@@ -263,6 +277,8 @@ def main() -> None:
     agents_add_p.add_argument("--name", required=True, help="Agent name")
     agents_add_p.add_argument("--model", default=None, help="Model override")
     agents_add_p.add_argument("--persona", default=None, help="Persona config file (JSON)")
+    agents_add_p.add_argument("--parent", default=None, help="Parent agent name (creates a sub-agent)")
+    agents_add_p.add_argument("--system-prompt", default=None, dest="system_prompt", help="System prompt for this agent")
     agents_delete_p = agents_sub.add_parser("delete", help="Delete an agent")
     agents_delete_p.add_argument("name", help="Agent name to delete")
     agents_sub.add_parser("status", help="Show agent status")

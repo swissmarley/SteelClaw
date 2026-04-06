@@ -15,6 +15,30 @@ from steelclaw.settings import Settings
 logger = logging.getLogger("steelclaw")
 
 
+def _create_memory_store(memory_settings):
+    """Factory: returns the configured memory backend (VectorStore or VikingStore)."""
+    if memory_settings.backend == "openviking":
+        from steelclaw.memory.viking_store import VikingStore
+        return VikingStore(memory_settings)
+    from steelclaw.memory.vector_store import VectorStore
+    return VectorStore(memory_settings)
+
+
+async def _start_openviking_server(memory_settings) -> "OpenVikingManager | None":
+    """Start OpenViking server if configured and auto-start enabled."""
+    if memory_settings.backend != "openviking":
+        return None
+    if not memory_settings.openviking_auto_start:
+        return None
+
+    from steelclaw.memory.openviking_manager import OpenVikingManager
+
+    manager = OpenVikingManager(memory_settings)
+    if await manager.start():
+        return manager
+    return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from steelclaw.paths import resolve_path
@@ -68,30 +92,33 @@ async def lifespan(app: FastAPI):
     set_permission_manager(permission_manager)
     app.state.permission_manager = permission_manager
 
-    # ── Memory system (ChromaDB) ────────────────────────────────────────
+    # ── Memory system ────────────────────────────────────────────────────
     from steelclaw.memory.ingestion import MemoryIngestor
     from steelclaw.memory.retrieval import MemoryRetriever
-    from steelclaw.memory.vector_store import VectorStore
 
-    vector_store = VectorStore(settings.agents.memory)
+    # Start OpenViking server if configured
+    openviking_manager = await _start_openviking_server(settings.agents.memory)
+    app.state.openviking_manager = openviking_manager
+
+    vector_store = _create_memory_store(settings.agents.memory)
     memory_retriever = MemoryRetriever(vector_store)
     memory_ingestor = MemoryIngestor(vector_store)
     app.state.vector_store = vector_store
     app.state.memory_retriever = memory_retriever
     app.state.memory_ingestor = memory_ingestor
 
-    # ── Agent router (LLM-powered) ─────────────────────────────────────
-    from steelclaw.agents.router import AgentRouter
+    # ── Agent router (LLM-powered multi-agent orchestrator) ────────────
+    from steelclaw.agents.orchestrator import MultiAgentOrchestrator
     from steelclaw.gateway.router import set_agent_router, set_memory_ingestor
 
-    agent_router = AgentRouter(
+    orchestrator = MultiAgentOrchestrator(
         settings=settings.agents,
         skill_registry=skill_registry,
     )
-    agent_router.set_memory(memory_retriever, memory_ingestor)
-    set_agent_router(agent_router)
+    orchestrator.set_memory(memory_retriever, memory_ingestor)
+    set_agent_router(orchestrator)
     set_memory_ingestor(memory_ingestor)
-    app.state.agent_router = agent_router
+    app.state.agent_router = orchestrator
 
     # ── Ensure main agent exists ────────────────────────────────────────
     await _ensure_main_agent(settings)
@@ -124,21 +151,42 @@ async def lifespan(app: FastAPI):
         from steelclaw.db.engine import get_async_session
 
         connector = registry.get(inbound.platform)
+        chat_id = inbound.platform_chat_id
 
         # Start typing indicator while processing
         if connector:
-            await connector.start_typing(inbound.platform_chat_id)
+            await connector.start_typing(chat_id)
+
+        async def _on_tool_event(event: dict) -> None:
+            """Forward tool_start/tool_end events to the connector as status messages."""
+            if connector is None:
+                return
+            etype = event.get("type")
+            if etype == "tool_start":
+                await connector.send_tool_status(
+                    chat_id=chat_id,
+                    tool_name=event.get("name", "tool"),
+                    call_id=event.get("id", event.get("name", "")),
+                    label=event.get("label"),
+                )
+            elif etype == "tool_end":
+                await connector.clear_tool_status(
+                    chat_id=chat_id,
+                    call_id=event.get("id", event.get("name", "")),
+                )
 
         outbound = None
         try:
             async for db in get_async_session():
-                outbound = await process_message(inbound, settings.gateway, db)
+                outbound = await process_message(
+                    inbound, settings.gateway, db, on_tool_event=_on_tool_event
+                )
         except Exception:
             logger.exception("Error processing connector message (%s)", inbound.platform)
         finally:
             # Stop typing indicator
             if connector:
-                connector.stop_typing(inbound.platform_chat_id)
+                connector.stop_typing(chat_id)
 
         if outbound and connector:
             await connector.send(outbound)
@@ -155,20 +203,42 @@ async def lifespan(app: FastAPI):
     task_engine.stop()
     await registry.stop_all()
     await dispose_engine()
+
+    # Stop OpenViking server if we started it
+    if hasattr(app.state, "openviking_manager") and app.state.openviking_manager:
+        await app.state.openviking_manager.stop()
+
     logger.info("SteelClaw shut down")
 
 
 async def _ensure_main_agent(settings: Settings) -> None:
-    """Create the main agent profile if it doesn't exist yet."""
+    """Create the main agent profile if it doesn't exist yet.
+
+    Handles the case where an agent named 'main' already exists without
+    is_main=True (e.g. created by the user) by promoting it instead of
+    trying to INSERT a duplicate name, which would crash on the unique constraint.
+    """
     from sqlalchemy import select
 
     from steelclaw.db.engine import get_async_session
     from steelclaw.db.models import AgentProfile
 
     async for db in get_async_session():
+        # Check whether a main agent already exists
         stmt = select(AgentProfile).where(AgentProfile.is_main.is_(True))
         result = await db.execute(stmt)
-        if result.scalar_one_or_none() is None:
+        if result.scalar_one_or_none() is not None:
+            return  # Already set up
+
+        # Try to find an agent named "main" and promote it
+        stmt2 = select(AgentProfile).where(AgentProfile.name == "main")
+        result2 = await db.execute(stmt2)
+        existing = result2.scalar_one_or_none()
+        if existing:
+            existing.is_main = True
+            await db.commit()
+            logger.info("Promoted existing 'main' agent to main agent")
+        else:
             main_agent = AgentProfile(
                 name="main",
                 display_name="SteelClaw",

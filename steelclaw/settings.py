@@ -75,12 +75,23 @@ class SkillSettings(BaseModel):
 
 
 class MemorySettings(BaseModel):
-    """Persistent memory configuration (ChromaDB vector store)."""
+    """Persistent memory configuration (ChromaDB vector store or OpenViking)."""
 
     enabled: bool = True
     chromadb_path: str = "~/.steelclaw/chromadb"
     collection_name: str = "steelclaw_memory"
     top_k: int = 5  # number of relevant memories to inject
+
+    # Backend selection — defaults to chromadb for backward compatibility
+    backend: str = "chromadb"  # "chromadb" | "openviking"
+    openviking_server_url: str = "http://localhost:1933"
+    openviking_workspace: str = "steelclaw"
+    openviking_context_tier: str = "L1"  # "L0" | "L1" | "L2"
+
+    # OpenViking subprocess management
+    openviking_auto_start: bool = True  # Auto-start server when backend=openviking
+    openviking_port: int = 1933  # Port for OpenViking server
+    openviking_log_level: str = "info"  # Log level for OpenViking server
 
 
 class SessionLifecycleSettings(BaseModel):

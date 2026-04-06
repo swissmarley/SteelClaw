@@ -39,6 +39,29 @@ def _is_running() -> bool:
     return _read_pid() is not None
 
 
+def _resolve_python() -> str:
+    """Return the best Python executable for the daemon subprocess.
+
+    Prefers the venv Python co-located with this package so that all
+    optional dependencies (openviking, chromadb, etc.) are available,
+    even when `steelclaw` on PATH was installed into a different Python.
+    """
+    from steelclaw.paths import PROJECT_ROOT
+
+    # Venv next to the project root (standard `python -m venv venv` layout)
+    for candidate in [
+        PROJECT_ROOT / "venv" / "bin" / "python3",
+        PROJECT_ROOT / "venv" / "bin" / "python",
+        PROJECT_ROOT / ".venv" / "bin" / "python3",
+        PROJECT_ROOT / ".venv" / "bin" / "python",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+
+    # Fall back to the executable that launched this process
+    return sys.executable
+
+
 def start_daemon(host: str | None = None, port: int | None = None) -> None:
     """Start SteelClaw as a background process."""
     _ensure_dirs()
@@ -49,7 +72,8 @@ def start_daemon(host: str | None = None, port: int | None = None) -> None:
 
     log_file = LOG_DIR / "steelclaw.log"
 
-    cmd = [sys.executable, "-m", "steelclaw", "serve"]
+    python = _resolve_python()
+    cmd = [python, "-m", "steelclaw", "serve"]
     if host:
         cmd.extend(["--host", host])
     if port:

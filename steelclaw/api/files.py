@@ -22,6 +22,13 @@ DOCUMENT_TYPES = {
     "text/markdown",
     "application/json",
     "application/xml",
+    # Microsoft Office formats
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 AUDIO_TYPES = {"audio/mpeg", "audio/wav", "audio/webm", "audio/ogg", "audio/mp4", "audio/flac"}
 
@@ -102,6 +109,27 @@ async def _process_file(
             text = _extract_pdf_text(content)
             preview = text[:200] + "..." if len(text) > 200 else text
             return {"text": text, "preview": preview}
+        if mime in (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+        ) or filename.lower().endswith((".docx", ".doc")):
+            text = _extract_docx_text(content)
+            preview = text[:200] + "..." if len(text) > 200 else text
+            return {"text": text, "preview": preview}
+        if mime in (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+        ) or filename.lower().endswith((".xlsx", ".xls")):
+            text = _extract_xlsx_text(content)
+            preview = text[:200] + "..." if len(text) > 200 else text
+            return {"text": text, "preview": preview}
+        if mime in (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.ms-powerpoint",
+        ) or filename.lower().endswith((".pptx", ".ppt")):
+            text = _extract_pptx_text(content)
+            preview = text[:200] + "..." if len(text) > 200 else text
+            return {"text": text, "preview": preview}
         else:
             # Text-based documents
             try:
@@ -121,6 +149,74 @@ async def _process_file(
         return {"text": text, "preview": preview}
 
     return {"preview": f"[File: {filename}]"}
+
+
+def _extract_docx_text(content: bytes) -> str:
+    """Extract text from a DOCX file using python-docx."""
+    try:
+        import io
+        import docx  # python-docx
+
+        doc = docx.Document(io.BytesIO(content))
+        parts: list[str] = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text)
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = "\t".join(cell.text for cell in row.cells)
+                if row_text.strip():
+                    parts.append(row_text)
+        return "\n".join(parts) or "[DOCX contains no extractable text]"
+    except ImportError:
+        return "[DOCX reading requires python-docx — install with: pip install python-docx]"
+    except Exception as e:
+        return f"[Error reading DOCX: {e}]"
+
+
+def _extract_xlsx_text(content: bytes) -> str:
+    """Extract text from an XLSX file using openpyxl."""
+    try:
+        import io
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        parts: list[str] = []
+        for sheet in wb.worksheets:
+            parts.append(f"[Sheet: {sheet.title}]")
+            for row in sheet.iter_rows(values_only=True):
+                row_text = "\t".join(str(cell) if cell is not None else "" for cell in row)
+                if row_text.strip():
+                    parts.append(row_text)
+        wb.close()
+        return "\n".join(parts) or "[XLSX contains no extractable text]"
+    except ImportError:
+        return "[XLSX reading requires openpyxl — install with: pip install openpyxl]"
+    except Exception as e:
+        return f"[Error reading XLSX: {e}]"
+
+
+def _extract_pptx_text(content: bytes) -> str:
+    """Extract text from a PPTX file using python-pptx."""
+    try:
+        import io
+        from pptx import Presentation
+
+        prs = Presentation(io.BytesIO(content))
+        parts: list[str] = []
+        for slide_num, slide in enumerate(prs.slides, start=1):
+            parts.append(f"[Slide {slide_num}]")
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text = "".join(run.text for run in para.runs).strip()
+                        if text:
+                            parts.append(text)
+        return "\n".join(parts) or "[PPTX contains no extractable text]"
+    except ImportError:
+        return "[PPTX reading requires python-pptx — install with: pip install python-pptx]"
+    except Exception as e:
+        return f"[Error reading PPTX: {e}]"
 
 
 def _extract_pdf_text(content: bytes) -> str:

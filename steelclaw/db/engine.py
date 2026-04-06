@@ -57,6 +57,9 @@ async def _apply_schema_updates() -> None:
             ("token_usage_completion", "INTEGER", None),
             ("cost_usd", "FLOAT", None),
         ],
+        "agents": [
+            ("parent_agent_id", "VARCHAR", None),
+        ],
     }
 
     async with _engine.begin() as conn:

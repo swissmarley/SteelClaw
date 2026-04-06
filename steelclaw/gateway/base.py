@@ -28,6 +28,7 @@ class BaseConnector(ABC):
         self.last_error: str | None = None
 
     async def start(self) -> None:
+        await self.register_commands()
         self._task = asyncio.create_task(self._run(), name=f"connector-{self.platform_name}")
         logger.info("Connector %s started", self.platform_name)
 
@@ -67,8 +68,38 @@ class BaseConnector(ABC):
         """Translate an ``OutboundMessage`` into the platform's native API call."""
         ...
 
+    async def register_commands(self) -> None:
+        """Register slash commands with the platform for autocomplete menus.
+
+        Subclasses override this to call their platform's command-registration
+        API (e.g. Telegram setMyCommands, Discord application commands).
+        The default implementation is a no-op so connectors that don't support
+        slash command registration are unaffected.
+        """
+        pass
+
     async def send_typing(self, chat_id: str) -> None:
         """Send a one-shot typing indicator. Override in subclasses that support it."""
+        pass
+
+    async def send_tool_status(
+        self, chat_id: str, tool_name: str, call_id: str, label: str | None = None
+    ) -> None:
+        """Send an ephemeral tool-execution status message.
+
+        Called when a tool starts executing. Platforms that support editable
+        or deletable messages (Telegram, Discord, Slack) should send a
+        temporary status message and store its ID for later removal.
+        Non-editable platforms can leave this as a no-op or fall back to typing.
+        """
+        pass
+
+    async def clear_tool_status(self, chat_id: str, call_id: str) -> None:
+        """Remove the ephemeral tool-execution status message, if any.
+
+        Called when a tool finishes. Should delete or update the message
+        sent by ``send_tool_status`` for the same ``call_id``.
+        """
         pass
 
     async def start_typing(self, chat_id: str) -> None:

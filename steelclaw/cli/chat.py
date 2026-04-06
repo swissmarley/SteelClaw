@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -26,6 +28,106 @@ def run_chat(
 THINKING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 TOOL_FRAMES = ["◐", "◓", "◑", "◒"]
 CONNECT_FRAMES = ["◜ ", " ◝", " ◞", "◟ "]
+
+# ── Slash commands — single source of truth ────────────────────────────────
+# Grouped: chat-native commands first, then CLI passthrough commands.
+
+SLASH_COMMANDS: list[tuple[str, str]] = [
+    # ── Chat-native ────────────────────────────────────────────────────
+    ("/help",        "Show available commands"),
+    ("/exit",        "Exit the chat"),
+    ("/quit",        "Exit the chat"),
+    ("/clear",       "Clear conversation history"),
+    ("/status",      "Connection and session info"),
+    ("/history",     "Show conversation history"),
+    ("/compact",     "Show history (compact, last 10)"),
+    ("/model",       "Show current model info"),
+    ("/stats",       "Show session statistics"),
+    ("/new",         "Start a new conversation"),
+    ("/export",      "Export chat to file"),
+    # ── Server / daemon ────────────────────────────────────────────────
+    ("/serve",       "Start the API server in foreground"),
+    ("/start",       "Start SteelClaw as background daemon"),
+    ("/stop",        "Stop the background daemon"),
+    ("/restart",     "Restart the background daemon"),
+    # ── Data & config ──────────────────────────────────────────────────
+    ("/migrate",     "Run database migrations"),
+    ("/sessions",    "Manage sessions  [list|reset|delete]"),
+    ("/memory",      "Manage persistent memory  [status|search|clear]"),
+    ("/agents",      "Manage agents  [list|add|delete|status]"),
+    ("/skills",      "Manage skills  [list|install|enable|disable|configure]"),
+    ("/persona",     "Configure agent persona interactively"),
+    ("/onboard",     "Run the interactive onboarding wizard"),
+    ("/setup",       "Alias for /onboard"),
+    # ── Infrastructure ─────────────────────────────────────────────────
+    ("/logs",        "View daemon logs  [-f to follow]"),
+    ("/gateway",     "Manage gateway connectors  [start|stop|restart]"),
+    ("/connectors",  "Manage connectors  [list|configure|enable|disable|status]"),
+]
+
+# Commands resolved entirely within the chat loop (no subprocess).
+_CHAT_NATIVE: frozenset[str] = frozenset({
+    "/help", "/exit", "/quit", "/clear", "/status",
+    "/history", "/compact", "/model", "/stats", "/new", "/export",
+})
+
+# Commands delegated to `steelclaw <subcommand> [args]` as a subprocess.
+_CLI_PASSTHROUGH: frozenset[str] = frozenset({
+    "/serve", "/start", "/stop", "/restart", "/migrate",
+    "/sessions", "/memory", "/agents", "/skills", "/logs",
+    "/gateway", "/connectors", "/persona", "/onboard", "/setup",
+})
+
+
+# ── prompt_toolkit autocomplete ────────────────────────────────────────────
+
+def _build_prompt_session():
+    """Return a prompt_toolkit PromptSession with slash-command autocomplete.
+
+    Returns None if prompt_toolkit is unavailable or stdin is not a TTY.
+    """
+    if not sys.stdin.isatty():
+        return None
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import Completer, Completion
+        from prompt_toolkit.styles import Style
+        from prompt_toolkit.formatted_text import HTML
+
+        class SlashCompleter(Completer):
+            def get_completions(self, document, complete_event):
+                text = document.text_before_cursor
+                if not text.startswith("/"):
+                    return
+                # Fuzzy prefix: typed chars after "/" must all appear in order
+                typed = text.lower()
+                for cmd, desc in SLASH_COMMANDS:
+                    if cmd.startswith(typed):
+                        display = f"{cmd:<12} {desc}"
+                        yield Completion(
+                            cmd,
+                            start_position=-len(text),
+                            display=display,
+                        )
+
+        style = Style.from_dict({
+            "prompt":              "bold ansicyan",
+            "completion-menu.completion":          "bg:#1a1a2e fg:#e0e0e0",
+            "completion-menu.completion.current":  "bg:#16213e fg:#00d4ff bold",
+            "completion-menu.meta.completion":     "bg:#1a1a2e fg:#888888",
+            "scrollbar.background":                "bg:#1a1a2e",
+            "scrollbar.button":                    "bg:#16213e",
+        })
+
+        session: PromptSession = PromptSession(
+            completer=SlashCompleter(),
+            complete_while_typing=True,
+            style=style,
+            reserve_space_for_menu=6,
+        )
+        return session
+    except ImportError:
+        return None
 
 
 async def _chat_loop(server_url: str, user_id: str) -> None:
@@ -62,35 +164,19 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
     start_time = time.time()
     msg_count = 0
 
-    def _render_banner() -> Panel:
-        banner_text = Text()
-        banner_text.append("   ______          __  _______\n", style="bold cyan")
-        banner_text.append("  / __/ /____ ___ / / / ___/ /__ _    __\n", style="bold cyan")
-        banner_text.append(" _\\ \\/ __/ -_) -_) / / /__/ / _ `/ |/| /\n", style="bold cyan")
-        banner_text.append("/___/\\__/\\__/\\__/_/  \\___/_/\\_,_/|__/|__/\n", style="bold cyan")
-        banner_text.append("\n", style="dim")
-        banner_text.append("    Autonomous AI Agent Engine", style="bold white")
-        return Panel(
-            banner_text,
-            border_style="cyan",
-            box=box.DOUBLE,
-            padding=(0, 1),
-        )
+    # Build the prompt_toolkit session (None if non-interactive)
+    pt_session = _build_prompt_session()
+
+    def _render_banner() -> None:
+        from steelclaw.cli.banner import print_banner
+        print_banner()
 
     def _render_help() -> Panel:
         tbl = Table(show_header=True, box=box.SIMPLE_HEAVY, padding=(0, 2))
         tbl.add_column("Command", style="accent", min_width=20)
         tbl.add_column("Description", style="dim")
-        tbl.add_row("/help", "Show this help")
-        tbl.add_row("/exit, /quit", "Exit the chat")
-        tbl.add_row("/clear", "Clear conversation history")
-        tbl.add_row("/status", "Connection and session info")
-        tbl.add_row("/history", "Show conversation history")
-        tbl.add_row("/compact", "Show history (compact, last 10)")
-        tbl.add_row("/model", "Show current model info")
-        tbl.add_row("/stats", "Show session statistics")
-        tbl.add_row("/new", "Start a new conversation")
-        tbl.add_row("/export [file]", "Export chat to file")
+        for cmd, desc in SLASH_COMMANDS:
+            tbl.add_row(cmd, desc)
         tbl.add_row("Ctrl+C", "Exit immediately")
         return Panel(tbl, title="[accent] Commands [/]", border_style="blue", box=box.ROUNDED)
 
@@ -145,14 +231,29 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
         tbl.add_row("Chars received", f"{total_chars:,}")
         return Panel(tbl, title="[accent] Statistics [/]", border_style="blue", box=box.ROUNDED)
 
+    async def _get_input() -> str:
+        """Get a line of user input.
+
+        Uses prompt_toolkit (with slash autocomplete) when running in an
+        interactive terminal; falls back to a plain Rich prompt otherwise.
+        """
+        if pt_session is not None:
+            from prompt_toolkit.formatted_text import HTML
+            prompt_text = HTML("<ansicyan><b>❯</b></ansicyan> ")
+            return await pt_session.prompt_async(prompt_text)
+        # Non-interactive fallback
+        return await asyncio.get_event_loop().run_in_executor(
+            None, lambda: console.input("[bold cyan]❯[/bold cyan] ")
+        )
+
     # ── Main UI ────────────────────────────────────────────────────────
-    console.print(_render_banner())
+    _render_banner()
     console.print()
-    console.print(
-        "[dim]  Type a message to chat  ·  "
-        "[accent]/help[/accent] for commands  ·  "
-        "[accent]/exit[/accent] to quit[/dim]"
-    )
+    if pt_session:
+        hint = "[dim]  Type a message to chat  ·  type [accent]/[/accent] for autocomplete  ·  [accent]/exit[/accent] to quit[/dim]"
+    else:
+        hint = "[dim]  Type a message to chat  ·  [accent]/help[/accent] for commands  ·  [accent]/exit[/accent] to quit[/dim]"
+    console.print(hint)
     console.print()
 
     # Connection animation
@@ -174,9 +275,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
     try:
         while True:
             try:
-                user_input = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: console.input("[bold cyan]❯[/bold cyan] ")
-                )
+                user_input = await _get_input()
             except EOFError:
                 break
 
@@ -197,7 +296,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             if cmd == "/clear":
                 messages.clear()
                 console.clear()
-                console.print(_render_banner())
+                _render_banner()
                 console.print("[dim]  Chat cleared.[/dim]\n")
                 continue
 
@@ -255,6 +354,18 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                     console.print(f"[error]  ✗ Export failed: {e}[/error]")
                 continue
 
+            if cmd_name in _CLI_PASSTHROUGH:
+                # Strip the leading "/" and forward all remaining args to the CLI.
+                subcmd = cmd_name[1:]
+                extra = shlex.split(cmd_parts[1]) if len(cmd_parts) > 1 else []
+                cli_cmd = ["steelclaw", subcmd] + extra
+                console.print(f"[dim]  Running:[/dim] [accent]{' '.join(cli_cmd)}[/accent]\n")
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda c=cli_cmd: subprocess.run(c)
+                )
+                console.print()
+                continue
+
             if cmd.startswith("/"):
                 console.print(f"[error]  Unknown command: {cmd_name}[/error]  Type [accent]/help[/accent] for commands.")
                 continue
@@ -276,8 +387,24 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             # ── Stream response with live rendering ────────────────────
             response_text = ""
             frame_idx = 0
-            tool_active = False
             response_started = False
+            # Track active tool spinners: call_id → rich.status.Status
+            active_tool_statuses: dict[str, object] = {}
+
+            def _make_tool_status_text(tool_name: str, label: str | None, skill: str | None) -> str:
+                # Delegation events are enriched by the orchestrator so tool_name
+                # is already "delegate_to_{agent_name}"; surface these distinctly.
+                # NOTE: plain text only — callers wrap this in Text(...) which
+                # does not process Rich markup tags.
+                if tool_name.startswith("delegate_to_"):
+                    agent_id = tool_name[len("delegate_to_"):]
+                    return f"◈ Delegating → {agent_id}"
+                parts = [f"⚙ Running: {tool_name}"]
+                if label:
+                    parts.append(f"— {label}")
+                if skill and skill != tool_name:
+                    parts.append(f"({skill})")
+                return "  " + " ".join(parts)
 
             with Live(
                 Text(f"  {THINKING_FRAMES[0]} Thinking...", style="dim"),
@@ -297,15 +424,20 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
 
                     if etype == "chunk":
                         response_started = True
-                        tool_active = False
                         response_text += event.get("content", "")
                         # Live-render the Markdown as it streams in
                         try:
                             rendered = Markdown(response_text)
                         except Exception:
                             rendered = Text(response_text)
+                        from rich.console import Group
+                        parts = [rendered]
+                        # Show any still-active tool indicators below content
+                        for (tn, lbl, sk) in active_tool_statuses.values():
+                            frame_idx = (frame_idx + 1) % len(TOOL_FRAMES)
+                            parts.append(Text(_make_tool_status_text(tn, lbl, sk), style="tool"))
                         live.update(Panel(
-                            rendered,
+                            Group(*parts),
                             title="[assistant] SteelClaw [/assistant]",
                             title_align="left",
                             border_style="green",
@@ -314,19 +446,26 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         ))
 
                     elif etype == "tool_start":
-                        tool_active = True
                         tool_name = event.get("name", "?")
+                        call_id = event.get("id") or tool_name
+                        label = event.get("label")
+                        skill = event.get("skill")
+                        active_tool_statuses[call_id] = (tool_name, label, skill)
                         frame_idx = (frame_idx + 1) % len(TOOL_FRAMES)
-                        indicator = Text()
+                        from rich.console import Group
+                        parts = []
                         if response_text:
                             try:
-                                indicator = Markdown(response_text)
+                                parts.append(Markdown(response_text))
                             except Exception:
-                                indicator = Text(response_text)
-                        status_line = Text(f"\n  {TOOL_FRAMES[frame_idx]} Using {tool_name}...", style="tool")
-                        from rich.console import Group
+                                parts.append(Text(response_text))
+                        for (tn, lbl, sk) in active_tool_statuses.values():
+                            parts.append(Text(
+                                f"\n  {TOOL_FRAMES[frame_idx]} {_make_tool_status_text(tn, lbl, sk)}",
+                                style="tool",
+                            ))
                         live.update(Panel(
-                            Group(indicator, status_line),
+                            Group(*parts) if len(parts) > 1 else (parts[0] if parts else Text("")),
                             title="[assistant] SteelClaw [/assistant]",
                             title_align="left",
                             border_style="green",
@@ -335,24 +474,42 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         ))
 
                     elif etype == "tool_end":
-                        tool_active = False
                         tool_name = event.get("name", "?")
+                        call_id = event.get("id") or tool_name
+                        duration_ms = event.get("duration_ms")
+                        active_tool_statuses.pop(call_id, None)
                         # Brief flash showing tool completed
+                        dur_str = f" [{duration_ms}ms]" if duration_ms is not None else ""
+                        # Show agent name for delegation completions
+                        if tool_name.startswith("delegate_to_"):
+                            agent_id = tool_name[len("delegate_to_"):]
+                            done_label = f"◈ {agent_id} done"
+                        else:
+                            done_label = f"{tool_name} done"
+                        done_line = Text(f"\n  ✓ {done_label}{dur_str}", style="success")
+                        from rich.console import Group
+                        parts = []
                         if response_text:
                             try:
-                                rendered = Markdown(response_text)
+                                parts.append(Markdown(response_text))
                             except Exception:
-                                rendered = Text(response_text)
-                            done_line = Text(f"\n  ✓ {tool_name} done", style="success")
-                            from rich.console import Group
-                            live.update(Panel(
-                                Group(rendered, done_line),
-                                title="[assistant] SteelClaw [/assistant]",
-                                title_align="left",
-                                border_style="green",
-                                box=box.ROUNDED,
-                                padding=(0, 1),
+                                parts.append(Text(response_text))
+                        parts.append(done_line)
+                        # Still show remaining active tools
+                        for (tn, lbl, sk) in active_tool_statuses.values():
+                            frame_idx = (frame_idx + 1) % len(TOOL_FRAMES)
+                            parts.append(Text(
+                                f"\n  {TOOL_FRAMES[frame_idx]} {_make_tool_status_text(tn, lbl, sk)}",
+                                style="tool",
                             ))
+                        live.update(Panel(
+                            Group(*parts) if len(parts) > 1 else (parts[0] if parts else Text("")),
+                            title="[assistant] SteelClaw [/assistant]",
+                            title_align="left",
+                            border_style="green",
+                            box=box.ROUNDED,
+                            padding=(0, 1),
+                        ))
 
                     elif etype == "done":
                         response_text = event.get("content", response_text)
@@ -367,8 +524,8 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                         response_text = event.get("content", str(event))
                         break
 
-                    # Update thinking animation when no content yet
-                    if not response_started and not tool_active:
+                    # Update thinking animation when no content yet and no tools active
+                    if not response_started and not active_tool_statuses:
                         frame_idx = (frame_idx + 1) % len(THINKING_FRAMES)
                         live.update(Text(
                             f"  {THINKING_FRAMES[frame_idx]} Thinking...",

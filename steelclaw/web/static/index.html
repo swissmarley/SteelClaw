@@ -213,8 +213,13 @@ body {
 .streaming-cursor { color: var(--accent); animation: blink 0.6s step-end infinite; font-weight: bold; }
 @keyframes blink { 50% { opacity: 0; } }
 .streaming-body { min-height: 1.2em; }
-.tool-indicator { color: var(--accent); font-size: 12px; padding: 6px 0 2px; display: flex; align-items: center; gap: 6px; }
-.tool-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+.tool-indicator { color: var(--accent); font-size: 12px; padding: 5px 10px; display: flex; align-items: center; gap: 8px; background: var(--glass-elevated); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 8px; margin: 4px 0 2px; animation: toolSlideIn 0.2s ease; }
+.tool-indicator .tool-label { color: var(--text-secondary); font-size: 11px; margin-left: 2px; }
+.tool-indicator .tool-skill { font-size: 10px; color: var(--text-dim, var(--text-secondary)); opacity: 0.7; margin-left: auto; }
+.tool-indicator .tool-delegate { color: var(--primary, #a78bfa); font-weight: 500; }
+.tool-indicators-stack { display: flex; flex-direction: column; gap: 2px; }
+.tool-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+@keyframes toolSlideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 .typing-dots { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
 .typing-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.4s infinite ease-in-out; }
@@ -916,7 +921,8 @@ let ws = null;
 // ── Streaming state ───────────────────────────────────────
 let _streamingMsgEl = null;   // The DOM element being streamed into
 let _streamingContent = '';    // Accumulated text so far
-let _streamingToolEl = null;   // Tool indicator element
+let _streamingToolEl = null;   // Tool indicators container element
+let _activeToolEls = {};       // call_id → individual tool indicator element
 
 function _createStreamingMsg() {
   removeTyping();
@@ -950,23 +956,50 @@ function _appendStreamChunk(text) {
   msgEl.scrollTop = msgEl.scrollHeight;
 }
 
-function _showToolIndicator(toolName) {
+function _showToolIndicator(toolName, callId, skillName, label) {
   if (!_streamingMsgEl) _createStreamingMsg();
-  if (_streamingToolEl) _streamingToolEl.remove();
-  const ind = document.createElement('div'); ind.className='tool-indicator';
-  ind.innerHTML = '<span class="tool-spinner"></span> Using <strong>' + (toolName||'tool') + '</strong>...';
-  _streamingMsgEl._bodyEl.appendChild(ind);
-  _streamingToolEl = ind;
+  // Create container stack once
+  if (!_streamingToolEl) {
+    _streamingToolEl = document.createElement('div');
+    _streamingToolEl.className = 'tool-indicators-stack';
+    _streamingMsgEl._bodyEl.appendChild(_streamingToolEl);
+  }
+  const ind = document.createElement('div'); ind.className = 'tool-indicator';
+  let html;
+  if (toolName && toolName.startsWith('delegate_to_')) {
+    const agentName = toolName.slice('delegate_to_'.length);
+    html = '<span class="tool-spinner"></span> <span class="tool-delegate">◈ Delegating → <strong>' + agentName + '</strong></span>';
+  } else {
+    const displayName = toolName || 'tool';
+    html = '<span class="tool-spinner"></span> <span>⚙ Running: <strong>' + displayName + '</strong></span>';
+    if (label) html += '<span class="tool-label">' + label + '</span>';
+    if (skillName && skillName !== displayName) html += '<span class="tool-skill">' + skillName + '</span>';
+  }
+  ind.innerHTML = html;
+  _streamingToolEl.appendChild(ind);
+  const key = callId || toolName || ('_t' + Date.now());
+  _activeToolEls[key] = ind;
   msgEl.scrollTop = msgEl.scrollHeight;
 }
 
-function _removeToolIndicator() {
-  if (_streamingToolEl) { _streamingToolEl.remove(); _streamingToolEl = null; }
+function _removeToolIndicator(callId, toolName) {
+  const key = callId || toolName;
+  if (key && _activeToolEls[key]) {
+    _activeToolEls[key].remove();
+    delete _activeToolEls[key];
+  }
+  // If no more active tools, remove the container
+  if (_streamingToolEl && Object.keys(_activeToolEls).length === 0) {
+    _streamingToolEl.remove();
+    _streamingToolEl = null;
+  }
 }
 
 function _finalizeStream(fullContent) {
   if (!_streamingMsgEl) _createStreamingMsg();
-  _removeToolIndicator();
+  // Remove all active tool indicators
+  if (_streamingToolEl) { _streamingToolEl.remove(); _streamingToolEl = null; }
+  _activeToolEls = {};
   const finalText = fullContent || _streamingContent;
   const body = _streamingMsgEl._bodyEl;
   body.innerHTML = renderMarkdown(finalText);
@@ -992,9 +1025,9 @@ function wsConnect() {
       _appendStreamChunk(d.content || '');
     } else if (etype === 'tool_start') {
       removeTyping();
-      _showToolIndicator(d.name || 'tool');
+      _showToolIndicator(d.name || 'tool', d.id, d.skill, d.label);
     } else if (etype === 'tool_end') {
-      _removeToolIndicator();
+      _removeToolIndicator(d.id, d.name);
     } else if (etype === 'done') {
       removeTyping();
       _finalizeStream(d.content);
@@ -1467,6 +1500,8 @@ function showSettingsTab(tab) {
   _settingsTab = tab;
   document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('.settings-section').forEach(s => s.classList.toggle('active', s.id === 'stab-'+tab));
+  // Check memory server status when memory tab is shown
+  if (tab === 'memory') checkMemoryServer();
 }
 
 loaders.settings = async () => {
@@ -1480,6 +1515,7 @@ loaders.settings = async () => {
   const skills = cfg.agents?.skills || {};
   const gw = cfg.gateway || {};
   const sec = cfg.security || {};
+  const memory = cfg.agents?.memory || {};
 
   const currentAccent = localStorage.getItem('steelclaw-accent') || 'violet';
   const currentFS = localStorage.getItem('steelclaw-fontsize') || 'medium';
@@ -1490,6 +1526,7 @@ loaders.settings = async () => {
   <div class="settings-layout">
     <div class="settings-tabs">
       <button class="settings-tab active" data-tab="appearance" onclick="showSettingsTab('appearance')">Appearance</button>
+      <button class="settings-tab" data-tab="memory" onclick="showSettingsTab('memory')">Memory</button>
       <button class="settings-tab" data-tab="voice" onclick="showSettingsTab('voice')">Voice & Audio</button>
       <button class="settings-tab" data-tab="agent" onclick="showSettingsTab('agent')">Agent Behavior</button>
       <button class="settings-tab" data-tab="tools" onclick="showSettingsTab('tools')">Tool Management</button>
@@ -1533,6 +1570,75 @@ loaders.settings = async () => {
             <input type="checkbox" id="s-density" ${currentDensity==='compact'?'checked':''} onchange="setDensity(this.checked?'compact':'comfortable')">
             <label style="font-size:13px;color:var(--text-secondary)">Compact</label>
           </div>
+        </div>
+      </div>
+
+      <!-- Memory Tab -->
+      <div class="settings-section" id="stab-memory">
+        <div class="card">
+          <h3>Memory Backend</h3>
+          <div class="form-group">
+            <label>Backend Type</label>
+            <select id="s-mem-backend">
+              <option value="chromadb"${(memory.backend||'chromadb')==='chromadb'?' selected':''}>ChromaDB (Local Vector Store)</option>
+              <option value="openviking"${memory.backend==='openviking'?' selected':''}>OpenViking (Server)</option>
+            </select>
+            <div class="hint">ChromaDB runs locally. OpenViking requires a running server.</div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="s-mem-enabled" ${memory.enabled!==false?'checked':''}>
+            <label for="s-mem-enabled">Enable persistent memory</label>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Top K Results</label><input id="s-mem-topk" type="number" value="${memory.top_k||5}"><div class="hint">Number of memories to inject</div></div>
+          </div>
+        </div>
+        <div class="card" id="mem-chromadb-card" style="${memory.backend==='openviking'?'display:none':''}">
+          <h3>ChromaDB Settings</h3>
+          <div class="form-row">
+            <div class="form-group"><label>Storage Path</label><input id="s-mem-path" value="${esc(memory.chromadb_path)||'~/.steelclaw/chromadb'}"><div class="hint">Local directory for vector data</div></div>
+            <div class="form-group"><label>Collection Name</label><input id="s-mem-collection" value="${esc(memory.collection_name)||'steelclaw_memory'}"></div>
+          </div>
+        </div>
+        <div class="card" id="mem-openviking-card" style="${memory.backend!=='openviking'?'display:none':''}">
+          <h3>OpenViking Settings</h3>
+          <div class="form-row">
+            <div class="form-group"><label>Server URL</label><input id="s-mem-url" value="${esc(memory.openviking_server_url)||'http://localhost:1933'}"><div class="hint">OpenViking server endpoint</div></div>
+            <div class="form-group"><label>Port</label><input id="s-mem-port" type="number" value="${memory.openviking_port||1933}"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Workspace</label><input id="s-mem-workspace" value="${esc(memory.openviking_workspace)||'steelclaw'}"><div class="hint">Isolated memory namespace</div></div>
+            <div class="form-group"><label>Context Tier</label>
+              <select id="s-mem-tier">
+                <option value="L0"${memory.openviking_context_tier==='L0'?' selected':''}>L0 (Short-term)</option>
+                <option value="L1"${(memory.openviking_context_tier||'L1')==='L1'?' selected':''}>L1 (Working)</option>
+                <option value="L2"${memory.openviking_context_tier==='L2'?' selected':''}>L2 (Long-term)</option>
+              </select>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="s-mem-autostart" ${memory.openviking_auto_start!==false?'checked':''}>
+            <label for="s-mem-autostart">Auto-start OpenViking server</label>
+          </div>
+          <div class="form-group">
+            <label>Log Level</label>
+            <select id="s-mem-loglevel">
+              ${['debug','info','warning','error'].map(l=>`<option${(memory.openviking_log_level||'info')===l?' selected':''}>${l}</option>`).join('')}
+            </select>
+          </div>
+          <div id="mem-server-status" style="margin-top:12px;padding:10px;background:var(--glass);border-radius:8px;font-size:12px">
+            <span style="color:var(--text-secondary)">Server Status: </span>
+            <span id="mem-status-indicator" style="color:var(--yellow)">Checking...</span>
+          </div>
+          <div class="btn-group" style="margin-top:12px">
+            <button class="btn btn-outline btn-sm" onclick="checkMemoryServer()">Refresh Status</button>
+            <button class="btn btn-outline btn-sm" onclick="startMemoryServer()">Start Server</button>
+            <button class="btn btn-outline btn-sm" onclick="stopMemoryServer()">Stop Server</button>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="saveMemory()">Save Memory Settings</button>
+          <button class="btn btn-outline" onclick="checkMemoryServer()">Refresh Status</button>
         </div>
       </div>
 
@@ -1785,6 +1891,74 @@ async function saveVoice() {
   toast('Voice settings saved');
 }
 
+async function saveMemory() {
+  const backend = document.getElementById('s-mem-backend').value;
+  await api('/config/memory', {method:'PUT', body:JSON.stringify({
+    enabled: document.getElementById('s-mem-enabled').checked,
+    backend: backend,
+    top_k: parseInt(document.getElementById('s-mem-topk').value) || 5,
+    chromadb_path: document.getElementById('s-mem-path').value,
+    collection_name: document.getElementById('s-mem-collection').value,
+    openviking_server_url: document.getElementById('s-mem-url').value,
+    openviking_workspace: document.getElementById('s-mem-workspace').value,
+    openviking_context_tier: document.getElementById('s-mem-tier').value,
+    openviking_auto_start: document.getElementById('s-mem-autostart').checked,
+    openviking_port: parseInt(document.getElementById('s-mem-port').value) || 1933,
+    openviking_log_level: document.getElementById('s-mem-loglevel').value,
+  })});
+  toast('Memory settings saved. Restart server for backend changes.');
+  // Toggle visibility of backend-specific cards
+  document.getElementById('mem-chromadb-card').style.display = backend === 'chromadb' ? '' : 'none';
+  document.getElementById('mem-openviking-card').style.display = backend === 'openviking' ? '' : 'none';
+}
+
+async function checkMemoryServer() {
+  const indicator = document.getElementById('mem-status-indicator');
+  if (!indicator) return;
+  indicator.textContent = 'Checking...';
+  indicator.style.color = 'var(--yellow)';
+  try {
+    const data = await api('/config/memory');
+    const status = data.memory?.server_status || 'unknown';
+    indicator.textContent = status === 'running' ? 'Running' : status === 'unhealthy' ? 'Unhealthy' : status === 'not_reachable' ? 'Not Reachable' : status;
+    indicator.style.color = status === 'running' ? 'var(--green)' : 'var(--red)';
+  } catch (e) {
+    indicator.textContent = 'Error';
+    indicator.style.color = 'var(--red)';
+  }
+}
+
+async function startMemoryServer() {
+  toast('Starting OpenViking server...');
+  try {
+    const data = await api('/config/memory/start', {method:'POST'});
+    if (data.status === 'started') {
+      toast('OpenViking server started on port ' + data.port);
+      checkMemoryServer();
+    } else {
+      toast(data.message || 'Failed to start server', 'error');
+    }
+  } catch (e) {
+    toast('Failed to start server', 'error');
+  }
+}
+
+async function stopMemoryServer() {
+  try {
+    await api('/config/memory/stop', {method:'POST'});
+    toast('OpenViking server stopped');
+    checkMemoryServer();
+  } catch (e) {
+    toast('Failed to stop server', 'error');
+  }
+}
+
+// Toggle backend-specific cards when dropdown changes
+document.getElementById('s-mem-backend')?.addEventListener('change', function() {
+  document.getElementById('mem-chromadb-card').style.display = this.value === 'chromadb' ? '' : 'none';
+  document.getElementById('mem-openviking-card').style.display = this.value === 'openviking' ? '' : 'none';
+});
+
 async function saveSkillConfig() {
   await api('/config/skills', {method:'PUT', body:JSON.stringify({
     bundled_dir: document.getElementById('s-sk-bundled').value,
@@ -1964,11 +2138,30 @@ async function toggleSkill(name, enabled) {
 }
 
 // ── Sessions Page ──────────────────────────────────────────
-loaders.sessions = async () => {
+loaders.sessions = async (platformFilter) => {
   const body = document.getElementById('sessions-body');
-  const sessions = await api('/sessions');
+  const params = platformFilter ? `?platform=${encodeURIComponent(platformFilter)}` : '';
+  const sessions = await api('/sessions' + params);
 
-  if (!sessions.length) { body.innerHTML='<p style="color:var(--text-secondary)">No sessions yet.</p>'; return; }
+  // Collect all platform names from a full unfiltered fetch for the filter bar
+  const allSessions = platformFilter ? await api('/sessions') : sessions;
+  const allPlatforms = [...new Set(allSessions.map(s => s.platform))].sort();
+
+  // Platform filter bar
+  let filterHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+    <span style="color:var(--text-secondary);font-size:13px">Filter:</span>
+    <button class="btn btn-sm ${!platformFilter?'':'btn-outline'}" onclick="loaders.sessions()" style="${!platformFilter?'background:var(--accent-gradient);color:#fff':''}">All</button>`;
+  for (const p of allPlatforms) {
+    const active = platformFilter === p;
+    filterHtml += `<button class="btn btn-sm ${active?'':'btn-outline'}" onclick="loaders.sessions('${esc(p)}')" style="${active?'background:var(--accent-gradient);color:#fff':''}">${esc(p)}</button>`;
+  }
+  filterHtml += `</div>`;
+
+  if (!sessions.length) {
+    const msg = platformFilter ? `No active ${platformFilter} sessions.` : 'No active sessions yet.';
+    body.innerHTML = filterHtml + `<p style="color:var(--text-secondary)">${msg}</p>`;
+    return;
+  }
 
   const platforms = {};
   let active=0, idle=0, closed=0;
@@ -1978,13 +2171,16 @@ loaders.sessions = async () => {
     else if (s.status==='idle') idle++;
     else closed++;
   }
-  let html = `<div class="card"><h3>Summary</h3><table class="tbl">
+
+  const title = platformFilter ? `Sessions — ${platformFilter}` : 'All Sessions';
+  let html = filterHtml;
+  html += `<div class="card"><h3>Summary</h3><table class="tbl">
     <tr><td style="color:var(--text-secondary);width:140px">Total Sessions</td><td>${sessions.length}</td></tr>
     <tr><td style="color:var(--text-secondary)">Status</td><td><span class="badge badge-green">${active} active</span> <span class="badge badge-yellow">${idle} idle</span> <span class="badge badge-red">${closed} closed</span></td></tr>
     <tr><td style="color:var(--text-secondary)">Platforms</td><td>${Object.entries(platforms).map(([p,n])=>`${p} (${n})`).join(', ')}</td></tr>
   </table></div>`;
 
-  html += `<div class="card"><h3>All Sessions</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Connector</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead><tbody>`;
+  html += `<div class="card"><h3>${title}</h3><table class="tbl"><thead><tr><th>Platform</th><th>Type</th><th>Connector</th><th>Status</th><th>Last Activity</th><th>Actions</th></tr></thead><tbody>`;
   for (const s of sessions) {
     const statusClass = s.status==='active'?'badge-green':s.status==='idle'?'badge-yellow':'badge-red';
     html += `<tr>
@@ -2139,30 +2335,63 @@ loaders.agents = async () => {
   const body = document.getElementById('agents-body');
   const agents = await fetch('/api/agents').then(r=>r.json()).catch(()=>[]);
 
+  // Build id → name lookup for parent resolution
+  const idToName = {};
+  for (const a of agents) idToName[a.id] = a.name;
+
+  // Build parent options for create form
+  const parentOptions = agents.map(a =>
+    `<option value="${esc(a.id)}">${esc(a.name)}${a.is_main?' (main)':''}</option>`
+  ).join('');
+
   let html = `<div class="card">
     <h3>Create Agent</h3>
     <div class="form-row-3">
-      <div class="form-group"><label>Name</label><input id="agent-name" placeholder="e.g. ResearchBot"></div>
+      <div class="form-group"><label>Name</label><input id="agent-name" placeholder="e.g. research-bot"></div>
       <div class="form-group"><label>Display Name</label><input id="agent-display" placeholder="e.g. Research Assistant"></div>
-      <div class="form-group"><label>Model Override</label><input id="agent-model" placeholder="e.g. claude-sonnet-4-20250514"></div>
+      <div class="form-group"><label>Model Override</label><input id="agent-model" placeholder="e.g. gpt-4o"></div>
     </div>
-    <div class="form-group"><label>System Prompt</label><textarea id="agent-prompt" rows="2" placeholder="Custom instructions for this agent..."></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>System Prompt</label><textarea id="agent-prompt" rows="2" placeholder="Custom instructions for this agent..."></textarea></div>
+      <div class="form-group"><label>Parent Agent <span style="font-size:11px;color:var(--text-secondary)">(optional — makes this a sub-agent)</span></label>
+        <select id="agent-parent"><option value="">— None (top-level) —</option>${parentOptions}</select>
+      </div>
+    </div>
     <button class="btn btn-success" onclick="createAgent()">Create Agent</button>
   </div>`;
 
   if (!agents.length) {
     html += '<p style="color:var(--text-secondary)">No agents configured yet.</p>';
   } else {
-    html += `<div class="card"><h3>All Agents</h3><table class="tbl"><thead><tr><th>Name</th><th>Display</th><th>Model</th><th>Main</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead><tbody>`;
+    const mainAgents = agents.filter(a => a.is_main);
+    const subAgents = agents.filter(a => !a.is_main);
+    const subCount = subAgents.length;
+    html += `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3>All Agents</h3>
+        <span style="font-size:12px;color:var(--text-secondary)">${agents.length} agent${agents.length!==1?'s':''} · ${subCount} sub-agent${subCount!==1?'s':''}</span>
+      </div>
+      <table class="tbl"><thead><tr>
+        <th>Name</th><th>Display</th><th>Model</th><th>Role</th><th>Parent</th><th>Active</th><th>Created</th><th>Actions</th>
+      </tr></thead><tbody>`;
     for (const a of agents) {
+      const parentName = a.parent_agent_id ? (idToName[a.parent_agent_id] || a.parent_agent_id) : '—';
+      const roleBadge = a.is_main
+        ? '<span class="badge badge-green">Main</span>'
+        : '<span class="badge" style="background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent)">Sub-agent</span>';
+      const actions = a.is_main
+        ? `<button class="btn btn-sm" style="background:var(--glass-elevated)" onclick="editAgent('${a.id}','${esc(a.name)}','${esc(a.display_name||'')}','${esc(a.model_override||'')}',\`${(a.system_prompt||'').replace(/`/g,'\\`')}\`,${a.is_active})">Edit</button>`
+        : `<button class="btn btn-sm" style="background:var(--glass-elevated)" onclick="editAgent('${a.id}','${esc(a.name)}','${esc(a.display_name||'')}','${esc(a.model_override||'')}',\`${(a.system_prompt||'').replace(/`/g,'\\`')}\`,${a.is_active})">Edit</button>
+           <button class="btn btn-danger btn-sm" onclick="deleteAgent('${a.id}')">Delete</button>`;
       html += `<tr>
         <td style="font-weight:600">${esc(a.name)}</td>
         <td>${esc(a.display_name)}</td>
         <td style="font-size:12px;font-family:'JetBrains Mono',monospace">${esc(a.model_override||'default')}</td>
-        <td>${a.is_main?'<span class="badge badge-green">Main</span>':''}</td>
+        <td>${roleBadge}</td>
+        <td style="font-size:12px;color:var(--text-secondary)">${esc(parentName)}</td>
         <td>${a.is_active?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-red">No</span>'}</td>
         <td style="font-size:12px;color:var(--text-secondary)">${a.created_at?new Date(a.created_at).toLocaleDateString():'—'}</td>
-        <td>${a.is_main?'':'<button class="btn btn-danger btn-sm" onclick="deleteAgent(\''+a.id+'\')">Delete</button>'}</td>
+        <td style="display:flex;gap:6px">${actions}</td>
       </tr>`;
     }
     html += '</tbody></table></div>';
@@ -2173,21 +2402,42 @@ loaders.agents = async () => {
 async function createAgent() {
   const name = document.getElementById('agent-name').value.trim();
   if (!name) { toast('Agent name is required','error'); return; }
-  const body = { name, display_name: document.getElementById('agent-display').value || name };
+  const body = { name, display_name: document.getElementById('agent-display').value.trim() || name };
   const model = document.getElementById('agent-model').value.trim();
   if (model) body.model_override = model;
   const prompt = document.getElementById('agent-prompt').value.trim();
   if (prompt) body.system_prompt = prompt;
+  const parentId = document.getElementById('agent-parent').value;
+  if (parentId) body.parent_agent_id = parentId;
   const r = await fetch('/api/agents', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if (r.ok) { toast('Agent created'); loaders.agents(); }
   else { const d = await r.json(); toast(d.detail||'Error creating agent','error'); }
 }
 
+async function editAgent(id, name, displayName, model, systemPrompt, isActive) {
+  const newDisplay = window.prompt(`Display name for "${name}":`, displayName);
+  if (newDisplay === null) return;
+  const newModel = window.prompt('Model override (leave blank for default):', model);
+  if (newModel === null) return;
+  const newPrompt = window.prompt('System prompt:', systemPrompt);
+  if (newPrompt === null) return;
+  const newActive = window.confirm(`Is agent "${name}" active?`);
+  const payload = {
+    display_name: newDisplay || name,
+    model_override: newModel || null,
+    system_prompt: newPrompt,
+    is_active: newActive,
+  };
+  const r = await fetch('/api/agents/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  if (r.ok) { toast('Agent updated'); loaders.agents(); }
+  else { const d = await r.json(); toast(d.detail||'Error updating agent','error'); }
+}
+
 async function deleteAgent(id) {
   if (!confirm('Delete this agent?')) return;
-  await fetch('/api/agents/'+id, {method:'DELETE'});
-  toast('Agent deleted');
-  loaders.agents();
+  const r = await fetch('/api/agents/'+id, {method:'DELETE'});
+  if (r.ok) { toast('Agent deleted'); loaders.agents(); }
+  else { const d = await r.json().catch(()=>({})); toast(d.detail||'Error deleting agent','error'); }
 }
 
 // ── Persona Page ──────────────────────────────────────────

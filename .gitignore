@@ -23,7 +23,9 @@ env/
 .DS_Store
 .claude
 .superpowers
-docs
+docs/
+CLAUDE.md
+.claudeignore
 
 # SteelClaw runtime data
 config.json

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from steelclaw.db.engine import get_async_session
 from steelclaw.db.models import Message as DBMessage, Session as DBSession
+from steelclaw.gateway.command_handler import dispatch_command
 from steelclaw.gateway.session_manager import SessionManager
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.settings import GatewaySettings, Settings
@@ -62,19 +63,27 @@ async def process_message(
     inbound: InboundMessage,
     settings: GatewaySettings,
     db: AsyncSession,
+    on_tool_event=None,
 ) -> OutboundMessage | None:
-    """Full pipeline: session resolution → persist → agent → respond."""
+    """Full pipeline: session resolution → persist → agent → respond.
+
+    ``on_tool_event`` is an optional async callable that receives tool_start /
+    tool_end event dicts, allowing platform connectors to show real-time
+    tool-execution status to their users.
+    """
     sm = _get_session_manager(settings)
 
     session = await sm.resolve(inbound, db)
     if session is None:
         return None
 
-    # Update session activity
+    # Update session activity — reactivate idle OR previously-closed sessions
+    # so that returning users (e.g. Telegram after a quiet period) always have
+    # their session visible in the dashboard.
     now = datetime.now(timezone.utc)
     session.last_activity_at = now
     session.updated_at = now
-    if session.status == "idle":
+    if session.status != "active":
         session.status = "active"
 
     # Persist inbound message (with attachment metadata if present)
@@ -97,9 +106,38 @@ async def process_message(
     db.add(db_msg)
     await db.commit()
 
+    # ── Slash command interception ──────────────────────────────────────
+    # Check before routing to the LLM so commands execute instantly and
+    # deterministically (no token spend, no hallucinated responses).
+    if inbound.content.strip().startswith("/"):
+        cmd_response = await dispatch_command(
+            inbound.content,
+            session=session,
+            db=db,
+            settings=settings,
+        )
+        if cmd_response is not None:
+            outbound = OutboundMessage(
+                platform=inbound.platform,
+                platform_chat_id=inbound.platform_chat_id,
+                content=cmd_response,
+                reply_to_message_id=inbound.platform_message_id,
+            )
+            db_reply = DBMessage(
+                session_id=session.id,
+                role="assistant",
+                content=outbound.content,
+                platform=outbound.platform,
+            )
+            db.add(db_reply)
+            await db.commit()
+            return outbound
+
     # Route to agent (pass db so the agent can load conversation history)
     if _agent_router is not None:
-        agent_result = await _agent_router.route_with_usage(inbound, session, db=db)
+        agent_result = await _agent_router.route_with_usage(
+            inbound, session, db=db, on_tool_event=on_tool_event
+        )
         outbound = agent_result.outbound
 
         # Persist outbound message with usage metadata
@@ -166,7 +204,7 @@ async def process_message_streaming(
     now = datetime.now(timezone.utc)
     session.last_activity_at = now
     session.updated_at = now
-    if session.status == "idle":
+    if session.status != "active":
         session.status = "active"
 
     # Persist inbound message
@@ -188,6 +226,26 @@ async def process_message_streaming(
     )
     db.add(db_msg)
     await db.commit()
+
+    # ── Slash command interception (streaming path) ─────────────────────
+    if inbound.content.strip().startswith("/"):
+        cmd_response = await dispatch_command(
+            inbound.content,
+            session=session,
+            db=db,
+            settings=settings,
+        )
+        if cmd_response is not None:
+            db_reply = DBMessage(
+                session_id=session.id,
+                role="assistant",
+                content=cmd_response,
+                platform=inbound.platform,
+            )
+            db.add(db_reply)
+            await db.commit()
+            yield {"type": "done", "content": cmd_response, "usage": {}}
+            return
 
     if _agent_router is None:
         yield {"type": "chunk", "content": f"[echo] {inbound.content}"}
