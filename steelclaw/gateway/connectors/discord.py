@@ -9,9 +9,12 @@ import httpx
 
 from steelclaw.gateway.base import BaseConnector
 from steelclaw.gateway.attachments import build_attachment_dict, transcribe_audio_attachment
+from steelclaw.gateway.commands import SLASH_COMMANDS
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
 logger = logging.getLogger("steelclaw.gateway.discord")
+
+_DISCORD_API = "https://discord.com/api/v10"
 
 
 class DiscordConnector(BaseConnector):
@@ -20,6 +23,48 @@ class DiscordConnector(BaseConnector):
     def __init__(self, config, handler) -> None:
         super().__init__(config, handler)
         self._client = None
+
+    async def register_commands(self) -> None:
+        """Register global slash commands with Discord via the Application Commands REST API.
+
+        Fetches the application ID from the ``/users/@me`` endpoint then calls
+        ``/applications/{id}/commands`` to bulk-overwrite the global command list.
+        """
+        token = self.config.token
+        if not token:
+            return
+
+        headers = {"Authorization": f"Bot {token}"}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Resolve application (bot) ID
+                me_resp = await client.get(f"{_DISCORD_API}/users/@me", headers=headers)
+                me_resp.raise_for_status()
+                application_id = me_resp.json().get("id")
+                if not application_id:
+                    logger.warning("Discord: could not resolve application ID, skipping command registration")
+                    return
+
+                # Build command payload (CHAT_INPUT = type 1)
+                commands = [
+                    {"name": cmd["name"], "description": cmd["description"], "type": 1}
+                    for cmd in SLASH_COMMANDS
+                ]
+
+                # Bulk-overwrite global application commands
+                resp = await client.put(
+                    f"{_DISCORD_API}/applications/{application_id}/commands",
+                    headers=headers,
+                    json=commands,
+                )
+                resp.raise_for_status()
+                logger.info(
+                    "Discord: registered %d global slash commands (application_id=%s)",
+                    len(commands),
+                    application_id,
+                )
+        except Exception:
+            logger.exception("Discord: failed to register slash commands")
 
     async def _run(self) -> None:
         try:

@@ -9,6 +9,7 @@ import os
 
 from steelclaw.gateway.base import BaseConnector
 from steelclaw.gateway.attachments import build_attachment_dict, transcribe_audio_attachment
+from steelclaw.gateway.commands import SLASH_COMMANDS
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 
 logger = logging.getLogger("steelclaw.gateway.telegram")
@@ -20,6 +21,36 @@ class TelegramConnector(BaseConnector):
     def __init__(self, config, handler) -> None:
         super().__init__(config, handler)
         self._offset = 0
+
+    async def register_commands(self) -> None:
+        """Register slash commands with Telegram via setMyCommands API."""
+        import httpx
+
+        token = self.config.token
+        if not token:
+            return
+
+        commands = [
+            {"command": cmd["name"], "description": cmd["description"]}
+            for cmd in SLASH_COMMANDS
+        ]
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"https://api.telegram.org/bot{token}/setMyCommands",
+                    json={"commands": commands},
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    logger.info(
+                        "Telegram: registered %d slash commands via setMyCommands", len(commands)
+                    )
+                else:
+                    logger.warning(
+                        "Telegram: setMyCommands failed: %s", data.get("description", data)
+                    )
+        except Exception:
+            logger.exception("Telegram: failed to register slash commands")
 
     async def _run(self) -> None:
         import httpx
