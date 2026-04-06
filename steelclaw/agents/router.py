@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -80,10 +81,18 @@ class AgentRouter:
         message: InboundMessage,
         session: DBSession,
         db: AsyncSession | None = None,
+        on_tool_event=None,
     ) -> AgentResponse:
-        """Process a message and return response with usage metadata."""
+        """Process a message and return response with usage metadata.
+
+        ``on_tool_event`` is an optional async callable invoked with a dict
+        matching the same tool_start / tool_end schema used by the streaming
+        layer, enabling platform connectors to show real-time tool feedback.
+        """
         try:
-            response_text, usage = await self._run_agent_loop(message, session, db)
+            response_text, usage = await self._run_agent_loop(
+                message, session, db, on_tool_event=on_tool_event
+            )
         except Exception as e:
             logger.exception("Agent error for session %s", session.id)
             response_text = f"I encountered an error: {e}"
@@ -113,6 +122,7 @@ class AgentRouter:
         message: InboundMessage,
         session: DBSession,
         db: AsyncSession | None = None,
+        on_tool_event=None,
     ) -> tuple[str, dict]:
         """Run the agentic loop. Returns (response_text, accumulated_usage)."""
 
@@ -205,7 +215,33 @@ class AgentRouter:
 
             # Execute each tool call and add results
             for tc in response.tool_calls:
+                skill_obj = self._skills.get_skill_for_tool(tc.name) if self._skills else None
+                skill_name = skill_obj.name if skill_obj else None
+                skill_label = skill_obj.metadata.description if skill_obj else None
+                if on_tool_event:
+                    try:
+                        await on_tool_event({
+                            "type": "tool_start",
+                            "name": tc.name,
+                            "id": tc.id,
+                            "skill": skill_name,
+                            "label": skill_label,
+                        })
+                    except Exception:
+                        pass
+                t0 = time.monotonic()
                 result = await self._execute_tool_call(tc)
+                duration_ms = int((time.monotonic() - t0) * 1000)
+                if on_tool_event:
+                    try:
+                        await on_tool_event({
+                            "type": "tool_end",
+                            "name": tc.name,
+                            "id": tc.id,
+                            "duration_ms": duration_ms,
+                        })
+                    except Exception:
+                        pass
                 messages.append(
                     self._context.build_tool_result_message(tc.id, result)
                 )
@@ -428,15 +464,29 @@ class AgentRouter:
             )
 
             for tc in tool_calls:
-                yield {"type": "tool_start", "name": tc.name, "id": tc.id}
+                # Resolve skill name and human-readable label for this tool
+                skill_obj = self._skills.get_skill_for_tool(tc.name) if self._skills else None
+                skill_name = skill_obj.name if skill_obj else None
+                skill_label = skill_obj.metadata.description if skill_obj else None
+                yield {
+                    "type": "tool_start",
+                    "name": tc.name,
+                    "id": tc.id,
+                    "skill": skill_name,
+                    "label": skill_label,
+                }
+                t0 = time.monotonic()
                 result = await self._execute_tool_call(tc)
+                duration_ms = int((time.monotonic() - t0) * 1000)
                 messages.append(
                     self._context.build_tool_result_message(tc.id, result)
                 )
                 yield {
                     "type": "tool_end",
                     "name": tc.name,
+                    "id": tc.id,
                     "result_preview": result[:200],
+                    "duration_ms": duration_ms,
                 }
 
         # Exhausted tool rounds

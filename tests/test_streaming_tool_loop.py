@@ -206,3 +206,142 @@ async def test_execute_tool_call_guards_none_result():
 
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+@pytest.mark.asyncio
+async def test_tool_start_event_includes_skill_and_label():
+    """tool_start events must include 'skill', 'label', and 'id' fields.
+    tool_end events must include 'id' and 'duration_ms' fields.
+    """
+    settings = AgentSettings()
+    router = AgentRouter(settings)
+
+    call_count = 0
+
+    async def fake_stream(messages, tools=None, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            for chunk in _tool_chunk("web_search", "call_skill_test", '{"query":"test"}'):
+                yield chunk
+        else:
+            yield _text_chunk("Result.")
+
+    router._provider = MagicMock()
+    router._provider.stream = fake_stream
+
+    router._context = MagicMock()
+    router._context.build = AsyncMock(return_value=[
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "search"},
+    ])
+    router._context._build_user_message = lambda t, a=None: {"role": "user", "content": t}
+    from steelclaw.llm.context import ContextBuilder
+    ctx = ContextBuilder(settings.llm)
+    router._context.build_assistant_tool_call_message = ctx.build_assistant_tool_call_message
+    router._context.build_tool_result_message = ctx.build_tool_result_message
+
+    # Mock registry with a skill that has a description
+    mock_skill = MagicMock()
+    mock_skill.name = "web_search"
+    mock_skill.metadata = MagicMock()
+    mock_skill.metadata.description = "Search the web for information"
+
+    mock_registry = MagicMock()
+    mock_registry.get_combined_system_context.return_value = ""
+    mock_registry.get_all_tools_schema.return_value = []
+    mock_registry.get_skill_for_tool.return_value = mock_skill
+    mock_registry.execute_tool = AsyncMock(return_value="Search results.")
+    router._skills = mock_registry
+
+    events = []
+    async for event in router.stream_response(_make_inbound("search"), _make_session()):
+        events.append(event)
+
+    tool_start = next((e for e in events if e["type"] == "tool_start"), None)
+    tool_end = next((e for e in events if e["type"] == "tool_end"), None)
+
+    assert tool_start is not None, "Expected a tool_start event"
+    assert tool_start.get("skill") == "web_search"
+    assert tool_start.get("label") == "Search the web for information"
+    assert tool_start.get("id") == "call_skill_test"
+
+    assert tool_end is not None, "Expected a tool_end event"
+    assert tool_end.get("id") == "call_skill_test"
+    assert isinstance(tool_end.get("duration_ms"), int)
+    assert tool_end.get("duration_ms") >= 0
+
+
+@pytest.mark.asyncio
+async def test_on_tool_event_callback_called_for_non_streaming():
+    """on_tool_event callback must be invoked for tool_start/end in route_with_usage."""
+    settings = AgentSettings()
+    router = AgentRouter(settings)
+
+    async def fake_complete(messages, tools=None, **kwargs):
+        from steelclaw.llm.provider import LLMResponse
+        call_count = getattr(fake_complete, "_calls", 0) + 1
+        fake_complete._calls = call_count
+        if call_count == 1:
+            return LLMResponse(
+                content=None,
+                tool_calls=[ToolCall(id="call_cb_1", name="calc", arguments={})],
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+                model="test-model",
+                finish_reason="tool_calls",
+            )
+        return LLMResponse(
+            content="Computed.",
+            tool_calls=[],
+            usage={"prompt_tokens": 5, "completion_tokens": 3},
+            model="test-model",
+            finish_reason="stop",
+        )
+
+    router._provider = MagicMock()
+    router._provider.complete = fake_complete
+
+    router._context = MagicMock()
+    router._context.build = AsyncMock(return_value=[
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "compute"},
+    ])
+    router._context._build_user_message = lambda t, a=None: {"role": "user", "content": t}
+    from steelclaw.llm.context import ContextBuilder
+    ctx = ContextBuilder(settings.llm)
+    router._context.build_assistant_tool_call_message = ctx.build_assistant_tool_call_message
+    router._context.build_tool_result_message = ctx.build_tool_result_message
+
+    mock_skill = MagicMock()
+    mock_skill.name = "calculator"
+    mock_skill.metadata = MagicMock()
+    mock_skill.metadata.description = "Perform calculations"
+
+    mock_registry = MagicMock()
+    mock_registry.get_combined_system_context.return_value = ""
+    mock_registry.get_all_tools_schema.return_value = []
+    mock_registry.get_skill_for_tool.return_value = mock_skill
+    mock_registry.execute_tool = AsyncMock(return_value="42")
+    router._skills = mock_registry
+
+    received_events = []
+
+    async def _on_tool_event(event):
+        received_events.append(event)
+
+    inbound = _make_inbound("compute")
+    session = _make_session()
+    await router.route_with_usage(inbound, session, on_tool_event=_on_tool_event)
+
+    types = [e["type"] for e in received_events]
+    assert "tool_start" in types
+    assert "tool_end" in types
+
+    start = next(e for e in received_events if e["type"] == "tool_start")
+    assert start["name"] == "calc"
+    assert start["skill"] == "calculator"
+    assert start["label"] == "Perform calculations"
+
+    end = next(e for e in received_events if e["type"] == "tool_end")
+    assert end["name"] == "calc"
+    assert isinstance(end["duration_ms"], int)

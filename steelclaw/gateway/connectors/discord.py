@@ -32,6 +32,8 @@ class DiscordConnector(BaseConnector):
         self._client = None
         # interaction_id → discord.Interaction, kept while a response is in-flight
         self._pending_interactions: dict[str, object] = {}
+        # (channel_id, call_id) → discord message object for ephemeral tool status
+        self._tool_status_msgs: dict[tuple[str, str], object] = {}
 
     async def register_commands(self) -> None:
         """Register global slash commands with Discord via the Application Commands REST API.
@@ -234,6 +236,36 @@ class DiscordConnector(BaseConnector):
                     pass
             except Exception:
                 logger.debug("Failed to send typing indicator to %s", chat_id)
+
+    async def send_tool_status(
+        self, chat_id: str, tool_name: str, call_id: str, label: str | None = None
+    ) -> None:
+        """Send an ephemeral-style tool status message to the Discord channel."""
+        if self._client is None:
+            return
+        try:
+            channel_id = int(chat_id)
+            channel = self._client.get_channel(channel_id)
+            if channel is None:
+                channel = await self._client.fetch_channel(channel_id)
+            if channel and hasattr(channel, "send"):
+                text = f"⚙ Running: **{tool_name}**"
+                if label:
+                    text += f"\n*{label}*"
+                msg = await channel.send(text)
+                self._tool_status_msgs[(chat_id, call_id)] = msg
+        except Exception:
+            logger.debug("Failed to send tool status to Discord channel %s", chat_id)
+
+    async def clear_tool_status(self, chat_id: str, call_id: str) -> None:
+        """Delete the ephemeral tool status message."""
+        msg = self._tool_status_msgs.pop((chat_id, call_id), None)
+        if msg is None:
+            return
+        try:
+            await msg.delete()
+        except Exception:
+            logger.debug("Failed to delete Discord tool status message in channel %s", chat_id)
 
     # ── Send ──────────────────────────────────────────────────────────────────
 

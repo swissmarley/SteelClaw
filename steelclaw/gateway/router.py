@@ -62,8 +62,14 @@ async def process_message(
     inbound: InboundMessage,
     settings: GatewaySettings,
     db: AsyncSession,
+    on_tool_event=None,
 ) -> OutboundMessage | None:
-    """Full pipeline: session resolution → persist → agent → respond."""
+    """Full pipeline: session resolution → persist → agent → respond.
+
+    ``on_tool_event`` is an optional async callable that receives tool_start /
+    tool_end event dicts, allowing platform connectors to show real-time
+    tool-execution status to their users.
+    """
     sm = _get_session_manager(settings)
 
     session = await sm.resolve(inbound, db)
@@ -128,7 +134,9 @@ async def process_message(
 
     # Route to agent (pass db so the agent can load conversation history)
     if _agent_router is not None:
-        agent_result = await _agent_router.route_with_usage(inbound, session, db=db)
+        agent_result = await _agent_router.route_with_usage(
+            inbound, session, db=db, on_tool_event=on_tool_event
+        )
         outbound = agent_result.outbound
 
         # Persist outbound message with usage metadata

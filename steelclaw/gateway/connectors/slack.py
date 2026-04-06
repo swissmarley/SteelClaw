@@ -22,6 +22,11 @@ _HANDLED_SUBTYPES = frozenset({"file_share"})
 class SlackConnector(BaseConnector):
     platform_name = "slack"
 
+    def __init__(self, config, handler) -> None:
+        super().__init__(config, handler)
+        # (channel_id, call_id) → {"ts": message_ts, "channel": channel} for deletion
+        self._tool_status_msgs: dict[tuple[str, str], dict] = {}
+
     async def register_commands(self) -> None:
         """Log the slash commands that must be configured in the Slack app manifest.
 
@@ -239,6 +244,50 @@ class SlackConnector(BaseConnector):
             is_mention=False,
         )
         await self.dispatch(inbound)
+
+    async def send_tool_status(
+        self, chat_id: str, tool_name: str, call_id: str, label: str | None = None
+    ) -> None:
+        """Post an ephemeral-style tool status message to the Slack channel."""
+        token = self.config.token
+        if not token:
+            return
+        text = f"⚙ Running: *{tool_name}*"
+        if label:
+            text += f"\n_{label}_"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"channel": chat_id, "text": text},
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    self._tool_status_msgs[(chat_id, call_id)] = {
+                        "ts": data["ts"],
+                        "channel": chat_id,
+                    }
+        except Exception:
+            logger.debug("Failed to send tool status to Slack channel %s", chat_id)
+
+    async def clear_tool_status(self, chat_id: str, call_id: str) -> None:
+        """Delete the ephemeral tool status message from Slack."""
+        info = self._tool_status_msgs.pop((chat_id, call_id), None)
+        if not info:
+            return
+        token = self.config.token
+        if not token:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    "https://slack.com/api/chat.delete",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"channel": info["channel"], "ts": info["ts"]},
+                )
+        except Exception:
+            logger.debug("Failed to delete Slack tool status message in channel %s", chat_id)
 
     async def send(self, message: OutboundMessage) -> None:
         token = self.config.token
