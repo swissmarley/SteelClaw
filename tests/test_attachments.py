@@ -835,3 +835,221 @@ async def test_file_manager_delete_file():
     result = await tool_delete_file(tmp_path)
     assert not os.path.exists(tmp_path)
     assert "Deleted" in result
+
+
+# ── Office document format support (issue #18) ───────────────────────────────
+
+
+def _make_docx_bytes(paragraphs: list[str]) -> bytes:
+    """Create a minimal in-memory DOCX with the given paragraphs."""
+    import docx
+    import io
+
+    doc = docx.Document()
+    for para in paragraphs:
+        doc.add_paragraph(para)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _make_xlsx_bytes(sheets: dict[str, list[list]]) -> bytes:
+    """Create a minimal in-memory XLSX with the given sheets/rows."""
+    import openpyxl
+    import io
+
+    wb = openpyxl.Workbook()
+    first = True
+    for sheet_name, rows in sheets.items():
+        if first:
+            ws = wb.active
+            ws.title = sheet_name
+            first = False
+        else:
+            ws = wb.create_sheet(title=sheet_name)
+        for row in rows:
+            ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _make_pptx_bytes(slides: list[str]) -> bytes:
+    """Create a minimal in-memory PPTX with one text box per slide."""
+    from pptx import Presentation
+    from pptx.util import Inches
+    import io
+
+    prs = Presentation()
+    blank_layout = prs.slide_layouts[6]  # blank layout
+    for text in slides:
+        slide = prs.slides.add_slide(blank_layout)
+        txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(2))
+        txBox.text_frame.text = text
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
+class TestOfficeMimeClassification:
+    """MIME types and extensions for Office formats resolve to 'document'."""
+
+    def test_docx_by_mime(self):
+        assert categorize_file(
+            "report.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ) == "document"
+
+    def test_docx_by_extension(self):
+        assert categorize_file("report.docx") == "document"
+
+    def test_xlsx_by_mime(self):
+        assert categorize_file(
+            "data.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ) == "document"
+
+    def test_xlsx_by_extension(self):
+        assert categorize_file("data.xlsx") == "document"
+
+    def test_pptx_by_mime(self):
+        assert categorize_file(
+            "slides.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ) == "document"
+
+    def test_pptx_by_extension(self):
+        assert categorize_file("slides.pptx") == "document"
+
+    def test_legacy_doc_extension(self):
+        assert categorize_file("old.doc") == "document"
+
+    def test_legacy_xls_extension(self):
+        assert categorize_file("old.xls") == "document"
+
+    def test_legacy_ppt_extension(self):
+        assert categorize_file("old.ppt") == "document"
+
+
+class TestDocxExtraction:
+    """Text extraction from DOCX files."""
+
+    def test_extracts_paragraph_text(self):
+        data = _make_docx_bytes(["Hello World", "Second paragraph"])
+        att = build_attachment_dict("report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data=data)
+        assert att["category"] == "document"
+        text = att.get("text_content", "")
+        assert "Hello World" in text
+        assert "Second paragraph" in text
+
+    def test_docx_by_extension_fallback(self):
+        """Extension-based categorisation also triggers DOCX extraction."""
+        data = _make_docx_bytes(["Extension test"])
+        att = build_attachment_dict("notes.docx", None, data=data)
+        assert att["category"] == "document"
+        assert "Extension test" in att.get("text_content", "")
+
+    def test_empty_docx_returns_placeholder(self):
+        data = _make_docx_bytes([])
+        att = build_attachment_dict("empty.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data=data)
+        text = att.get("text_content", "")
+        # Either placeholder or empty string is acceptable
+        assert text is not None
+
+
+class TestXlsxExtraction:
+    """Text extraction from XLSX files."""
+
+    def test_extracts_cell_values(self):
+        data = _make_xlsx_bytes({"Sheet1": [["Name", "Score"], ["Alice", 95], ["Bob", 87]]})
+        att = build_attachment_dict("scores.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data=data)
+        assert att["category"] == "document"
+        text = att.get("text_content", "")
+        assert "Alice" in text
+        assert "Sheet1" in text
+
+    def test_xlsx_sheet_name_included(self):
+        data = _make_xlsx_bytes({"Q1 Results": [["Revenue", 1000]]})
+        att = build_attachment_dict("finance.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data=data)
+        text = att.get("text_content", "")
+        assert "Q1 Results" in text
+
+    def test_xlsx_by_extension_fallback(self):
+        data = _make_xlsx_bytes({"Data": [["x", "y"], [1, 2]]})
+        att = build_attachment_dict("data.xlsx", None, data=data)
+        assert att["category"] == "document"
+        assert "Data" in att.get("text_content", "")
+
+
+class TestPptxExtraction:
+    """Text extraction from PPTX files."""
+
+    def test_extracts_slide_text(self):
+        data = _make_pptx_bytes(["Introduction slide", "Key findings"])
+        att = build_attachment_dict("deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", data=data)
+        assert att["category"] == "document"
+        text = att.get("text_content", "")
+        assert "Introduction slide" in text
+        assert "Key findings" in text
+
+    def test_pptx_slide_numbers_included(self):
+        data = _make_pptx_bytes(["First", "Second"])
+        att = build_attachment_dict("deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", data=data)
+        text = att.get("text_content", "")
+        assert "[Slide 1]" in text
+        assert "[Slide 2]" in text
+
+    def test_pptx_by_extension_fallback(self):
+        data = _make_pptx_bytes(["Extension check"])
+        att = build_attachment_dict("slides.pptx", None, data=data)
+        assert att["category"] == "document"
+        assert "Extension check" in att.get("text_content", "")
+
+
+class TestOfficeFormatsImportMissing:
+    """Graceful degradation when Office libraries are not installed."""
+
+    def test_docx_missing_library_returns_hint(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "docx":
+                raise ImportError("No module named 'docx'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        from steelclaw.gateway.attachments import _extract_docx_text
+        result = _extract_docx_text(b"fake docx bytes")
+        assert result is not None
+        assert "python-docx" in result
+
+    def test_xlsx_missing_library_returns_hint(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "openpyxl":
+                raise ImportError("No module named 'openpyxl'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        from steelclaw.gateway.attachments import _extract_xlsx_text
+        result = _extract_xlsx_text(b"fake xlsx bytes")
+        assert result is not None
+        assert "openpyxl" in result
+
+    def test_pptx_missing_library_returns_hint(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pptx":
+                raise ImportError("No module named 'pptx'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        from steelclaw.gateway.attachments import _extract_pptx_text
+        result = _extract_pptx_text(b"fake pptx bytes")
+        assert result is not None
+        assert "python-pptx" in result

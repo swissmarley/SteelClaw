@@ -60,6 +60,8 @@ _MIME_TO_CATEGORY: dict[str, str] = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
     "application/vnd.ms-excel": "document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "document",
+    "application/vnd.ms-powerpoint": "document",
     "text/plain": "document",
     "text/markdown": "document",
     "application/json": "document",
@@ -86,6 +88,7 @@ _EXT_TO_CATEGORY: dict[str, str] = {
     ".pdf": "document", ".doc": "document", ".docx": "document",
     ".txt": "document", ".md": "document", ".json": "document",
     ".xml": "document", ".xls": "document", ".xlsx": "document",
+    ".pptx": "document", ".ppt": "document",
 }
 
 
@@ -241,11 +244,18 @@ def _extract_csv_preview(data: bytes, filename: str) -> str | None:
 def _extract_document_text(data: bytes, filename: str) -> str | None:
     """Extract text from document bytes.
 
-    Supports PDF (via pypdf or PyPDF2 if installed), plain text, Markdown, JSON.
+    Supports PDF (via pypdf or PyPDF2 if installed), plain text, Markdown, JSON,
+    DOCX (via python-docx), XLSX (via openpyxl), and PPTX (via python-pptx).
     """
     lower = filename.lower()
     if lower.endswith(".pdf"):
         return _extract_pdf_text(data)
+    if lower.endswith((".docx", ".doc")):
+        return _extract_docx_text(data)
+    if lower.endswith((".xlsx", ".xls")):
+        return _extract_xlsx_text(data)
+    if lower.endswith((".pptx", ".ppt")):
+        return _extract_pptx_text(data)
     if lower.endswith((".txt", ".md", ".markdown")):
         return data.decode("utf-8", errors="replace")[:_MAX_TEXT_CHARS]
     if lower.endswith(".json"):
@@ -284,3 +294,74 @@ def _extract_pdf_text(data: bytes) -> str | None:
         logger.debug("PyPDF2 failed to extract text", exc_info=True)
 
     return None
+
+
+def _extract_docx_text(data: bytes) -> str | None:
+    """Extract text from a DOCX file using python-docx."""
+    try:
+        import docx  # python-docx
+
+        doc = docx.Document(io.BytesIO(data))
+        parts: list[str] = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text)
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = "\t".join(cell.text for cell in row.cells)
+                if row_text.strip():
+                    parts.append(row_text)
+        return "\n".join(parts)[:_MAX_TEXT_CHARS] or "[DOCX contains no extractable text]"
+    except ImportError:
+        logger.debug("python-docx not installed; cannot extract DOCX text")
+        return "[DOCX reading requires python-docx — install with: pip install python-docx]"
+    except Exception:
+        logger.debug("Failed to extract DOCX text", exc_info=True)
+        return None
+
+
+def _extract_xlsx_text(data: bytes) -> str | None:
+    """Extract text from an XLSX file using openpyxl."""
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        parts: list[str] = []
+        for sheet in wb.worksheets:
+            parts.append(f"[Sheet: {sheet.title}]")
+            for row in sheet.iter_rows(values_only=True):
+                row_text = "\t".join(str(cell) if cell is not None else "" for cell in row)
+                if row_text.strip():
+                    parts.append(row_text)
+        wb.close()
+        return "\n".join(parts)[:_MAX_TEXT_CHARS] or "[XLSX contains no extractable text]"
+    except ImportError:
+        logger.debug("openpyxl not installed; cannot extract XLSX text")
+        return "[XLSX reading requires openpyxl — install with: pip install openpyxl]"
+    except Exception:
+        logger.debug("Failed to extract XLSX text", exc_info=True)
+        return None
+
+
+def _extract_pptx_text(data: bytes) -> str | None:
+    """Extract text from a PPTX file using python-pptx."""
+    try:
+        from pptx import Presentation
+
+        prs = Presentation(io.BytesIO(data))
+        parts: list[str] = []
+        for slide_num, slide in enumerate(prs.slides, start=1):
+            parts.append(f"[Slide {slide_num}]")
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text = "".join(run.text for run in para.runs).strip()
+                        if text:
+                            parts.append(text)
+        return "\n".join(parts)[:_MAX_TEXT_CHARS] or "[PPTX contains no extractable text]"
+    except ImportError:
+        logger.debug("python-pptx not installed; cannot extract PPTX text")
+        return "[PPTX reading requires python-pptx — install with: pip install python-pptx]"
+    except Exception:
+        logger.debug("Failed to extract PPTX text", exc_info=True)
+        return None
