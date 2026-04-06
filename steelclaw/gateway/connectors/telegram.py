@@ -330,19 +330,27 @@ class TelegramConnector(BaseConnector):
         token = self.config.token
         if not token:
             return
+        # Use plain text — tool names often contain underscores (e.g. web_search)
+        # which Telegram's Markdown parser misinterprets as italic markers.
         text = f"⚙ Running: {tool_name}"
         if label:
-            text += f"\n_{label}_"
+            text += f"\n{label}"
+        payload: dict = {"chat_id": chat_id, "text": text}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
                     f"https://api.telegram.org/bot{token}/sendMessage",
-                    json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+                    json=payload,
                 )
                 data = resp.json()
                 if data.get("ok"):
                     msg_id = data["result"]["message_id"]
                     self._tool_status_msgs[(chat_id, call_id)] = msg_id
+                else:
+                    logger.debug(
+                        "Telegram sendMessage for tool status failed: %s",
+                        data.get("description"),
+                    )
         except Exception:
             logger.debug("Failed to send tool status message to %s", chat_id)
 
