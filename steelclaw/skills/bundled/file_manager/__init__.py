@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 
@@ -66,7 +67,7 @@ async def tool_copy_file(source: str, destination: str) -> str:
 
 
 async def tool_move_file(source: str, destination: str) -> str:
-    """Move (rename) a file from source to destination.
+    """Move (rename) a file or directory from source to destination.
 
     Parent directories at the destination are created automatically.
     """
@@ -75,12 +76,10 @@ async def tool_move_file(source: str, destination: str) -> str:
 
     if not src.exists():
         return f"Error: source not found: {source}"
-    if not src.is_file():
-        return f"Error: source is not a file: {source}"
 
     try:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dst))
+        await asyncio.to_thread(dst.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(shutil.move, str(src), str(dst))
         return f"Moved {src} → {dst}"
     except Exception as e:
         return f"Error moving {source} → {destination}: {e}"

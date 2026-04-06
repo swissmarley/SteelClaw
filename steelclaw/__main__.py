@@ -266,7 +266,7 @@ def main() -> None:
     memory_sub.add_parser("stop", help="Stop OpenViking server")
     memory_sub.add_parser("backend", help="Show current memory backend")
     memory_migrate_p = memory_sub.add_parser("migrate", help="Migrate memories between backends")
-    memory_migrate_p.add_argument("--from-backend", dest="from_backend", default="chromadb", help="Source backend (default: chromadb)")
+    memory_migrate_p.add_argument("--from", "--from-backend", dest="from_backend", default="chromadb", help="Source backend (default: chromadb)")
     memory_migrate_p.add_argument("--to", dest="to_backend", default="openviking", help="Destination backend (default: openviking)")
 
     # agents

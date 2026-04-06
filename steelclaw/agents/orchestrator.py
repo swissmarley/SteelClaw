@@ -259,12 +259,24 @@ class MultiAgentOrchestrator:
             )
 
         main_router._execute_tool_call = _patched_execute
+
+        # Wrap on_tool_event to enrich delegation events with the real agent name.
+        wrapped_on_tool_event = on_tool_event
+        if on_tool_event is not None:
+            _delegation_map: dict[str, str] = {}
+
+            async def _enriched_on_tool_event(event: dict) -> None:
+                event = MultiAgentOrchestrator._enrich_delegation_event(event, _delegation_map)
+                await on_tool_event(event)
+
+            wrapped_on_tool_event = _enriched_on_tool_event
+
         try:
             return await main_router.route_with_usage(
                 message,
                 session,
                 db=db,
-                on_tool_event=on_tool_event,
+                on_tool_event=wrapped_on_tool_event,
                 extra_tools=extra_tools,
             )
         finally:
@@ -302,30 +314,39 @@ class MultiAgentOrchestrator:
             async for event in main_router.stream_response(
                 message, session, db=db, extra_tools=extra_tools
             ):
-                # Transform delegation tool events to show the specific agent name
-                etype = event.get("type", "")
-                if etype == "tool_start" and event.get("name") == "delegate_to_subagent":
-                    args = event.get("arguments", {})
-                    agent_name = args.get("agent_name", "subagent")
-                    call_id = event.get("id") or "delegate_to_subagent"
-                    delegation_map[call_id] = agent_name
-                    event = {
-                        **event,
-                        "name": f"delegate_to_{agent_name}",
-                        "label": f"Delegating to {agent_name}",
-                        "subagent": agent_name,
-                    }
-                elif etype == "tool_end" and event.get("name") == "delegate_to_subagent":
-                    call_id = event.get("id") or "delegate_to_subagent"
-                    agent_name = delegation_map.pop(call_id, "subagent")
-                    event = {
-                        **event,
-                        "name": f"delegate_to_{agent_name}",
-                        "subagent": agent_name,
-                    }
+                event = MultiAgentOrchestrator._enrich_delegation_event(event, delegation_map)
                 yield event
         finally:
             main_router._execute_tool_call = original_exec
+
+    @staticmethod
+    def _enrich_delegation_event(event: dict, delegation_map: dict) -> dict:
+        """Transform a raw 'delegate_to_subagent' event to include the real agent name.
+
+        Mutates *delegation_map* as a side-effect (stores/pops call_id → agent_name).
+        Returns the (possibly replaced) event dict.
+        """
+        etype = event.get("type", "")
+        if etype == "tool_start" and event.get("name") == "delegate_to_subagent":
+            args = event.get("arguments", {})
+            agent_name = args.get("agent_name", "subagent")
+            call_id = event.get("id") or "delegate_to_subagent"
+            delegation_map[call_id] = agent_name
+            return {
+                **event,
+                "name": f"delegate_to_{agent_name}",
+                "label": f"Delegating to {agent_name}",
+                "subagent": agent_name,
+            }
+        if etype == "tool_end" and event.get("name") == "delegate_to_subagent":
+            call_id = event.get("id") or "delegate_to_subagent"
+            agent_name = delegation_map.pop(call_id, "subagent")
+            return {
+                **event,
+                "name": f"delegate_to_{agent_name}",
+                "subagent": agent_name,
+            }
+        return event
 
     # ── Internal helpers ────────────────────────────────────────────────
 
