@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from steelclaw.db.models import MemoryEntry
 from steelclaw.memory.vector_store import VectorStore
+
+if TYPE_CHECKING:
+    from steelclaw.memory.viking_store import VikingStore
 
 logger = logging.getLogger("steelclaw.memory")
 
@@ -17,7 +21,7 @@ logger = logging.getLogger("steelclaw.memory")
 class MemoryIngestor:
     """Ingests message pairs into the vector store for later retrieval."""
 
-    def __init__(self, vector_store: VectorStore) -> None:
+    def __init__(self, vector_store: "VectorStore | VikingStore") -> None:
         self._store = vector_store
 
     async def ingest_exchange(
