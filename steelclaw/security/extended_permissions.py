@@ -254,11 +254,12 @@ class CapabilityPermissions:
             return True, ""
 
         executable = tokens[0].lstrip("-")
+        executable_name = os.path.basename(executable)
 
         for exec_key, patterns in _CATEGORY_EXECUTABLES.items():
             category = exec_key  # keys are the same as category names now
             for pattern in patterns:
-                if pattern.match(executable):
+                if pattern.match(executable_name):
                     cap_config = self._capabilities.get(category, {})
                     enabled = cap_config.get("enabled", True)
                     if not enabled:
