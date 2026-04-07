@@ -13,6 +13,8 @@ logger = logging.getLogger("steelclaw.security.sandbox")
 
 # Module-level permission manager — set during app startup
 _permission_manager = None
+# Module-level sudo manager — set during app startup when sudo is enabled
+_sudo_manager = None
 
 
 def set_permission_manager(pm: object) -> None:
@@ -20,20 +22,40 @@ def set_permission_manager(pm: object) -> None:
     _permission_manager = pm
 
 
+def set_sudo_manager(sm: object) -> None:
+    """Register the sudo manager for privileged command execution."""
+    global _sudo_manager
+    _sudo_manager = sm
+
+
 async def execute_command(
     command: str,
     timeout: int = 30,
     working_directory: str | None = None,
     check_permissions: bool = True,
+    sudo: bool = False,
 ) -> str:
     """Execute a shell command in a sandboxed subprocess.
 
     Security measures:
     - Permission check via the three-tier model
+    - Capability-level category checks (filesystem, network, etc.)
     - Timeout enforcement
     - Working directory validation
     - Output size limits
+
+    When *sudo=True*, the command is routed through the SudoManager which
+    requires explicit "YES" confirmation and writes an immutable audit log entry.
     """
+    # Route sudo commands through the dedicated sudo manager
+    if sudo:
+        if _sudo_manager is None:
+            return (
+                "Error: sudo support is not enabled. "
+                "Set agents.security.sudo.enabled = true in config.json."
+            )
+        return await _sudo_manager.execute_sudo(command, timeout=timeout)
+
     from steelclaw.security.permissions import PermissionManager
 
     # Permission check

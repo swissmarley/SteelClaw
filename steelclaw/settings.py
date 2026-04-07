@@ -109,6 +109,38 @@ class SessionLifecycleSettings(BaseModel):
     heartbeat_interval_seconds: int = 60
 
 
+class SudoSettings(BaseModel):
+    """Sudo command execution configuration (disabled by default for safety)."""
+
+    enabled: bool = False
+    whitelist: list[str] = []  # glob patterns of pre-approved sudo commands
+    audit_log: str = "~/.steelclaw/sudo_audit.log"
+    session_timeout: int = 30  # seconds before sudo session expires
+
+
+class ExtendedPermissionsSettings(BaseModel):
+    """YAML-based capability permission toggles."""
+
+    permissions_file: str = "~/.steelclaw/permissions.yaml"
+    auto_create_file: bool = True  # write default permissions.yaml if absent
+
+
+class ReflectionSettings(BaseModel):
+    """Agent self-reflection and autonomous skill creation."""
+
+    enabled: bool = False
+    threshold: int = 5  # minimum tool calls before triggering reflection
+    skill_auto_create: bool = False  # actually write generated skill files to disk
+
+
+class MemoryFTSSettings(BaseModel):
+    """SQLite FTS5 keyword-search memory layer."""
+
+    enabled: bool = False
+    db_path: str = "~/.steelclaw/memory_fts.db"
+    nudge_limit: int = 3  # number of recent memories to include in nudge prompt
+
+
 class SecuritySettings(BaseModel):
     """Execution security configuration."""
 
@@ -117,6 +149,8 @@ class SecuritySettings(BaseModel):
     sandbox_enabled: bool = True
     max_command_timeout: int = 30
     blocked_commands: list[str] = ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"]
+    sudo: SudoSettings = SudoSettings()
+    extended_permissions: ExtendedPermissionsSettings = ExtendedPermissionsSettings()
 
 
 class SchedulerSettings(BaseModel):
@@ -155,6 +189,8 @@ class AgentSettings(BaseModel):
     voice: VoiceSettings = VoiceSettings()
     memory: MemorySettings = MemorySettings()
     session_lifecycle: SessionLifecycleSettings = SessionLifecycleSettings()
+    reflection: ReflectionSettings = ReflectionSettings()
+    memory_fts: MemoryFTSSettings = MemoryFTSSettings()
 
 
 class Settings(BaseSettings):

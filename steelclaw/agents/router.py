@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 from copy import copy
@@ -25,6 +27,52 @@ logger = logging.getLogger("steelclaw.agents")
 
 # OpenAI and most providers cap tools at 128
 MAX_TOOLS = 128
+
+# Module-level set that tracks all live reflection background tasks across ALL
+# AgentRouter instances.  Each request creates a fresh router, so per-instance
+# tracking alone is insufficient: the router is GC'd after the response is
+# returned, which could silently cancel its tasks before they finish.
+# Using a module-level set gives app.py a single place to drain on shutdown.
+_active_background_tasks: set[asyncio.Task] = set()
+
+
+async def drain_background_tasks(timeout: float = 10.0) -> None:
+    """Await all active reflection tasks, with a graceful timeout.
+
+    Called from the app lifespan shutdown sequence so that in-progress
+    skill-file writes and ReflectionLog entries can complete cleanly.
+    """
+    pending = list(_active_background_tasks)
+    if not pending:
+        return
+    logger.info("Draining %d background reflection task(s)…", len(pending))
+    done, still_running = await asyncio.wait(pending, timeout=timeout)
+    if still_running:
+        logger.warning(
+            "%d background task(s) did not finish within %.1fs; cancelling.",
+            len(still_running), timeout,
+        )
+        for t in still_running:
+            t.cancel()
+        await asyncio.gather(*still_running, return_exceptions=True)
+
+
+# Regex to strip <think>...</think> reasoning blocks from LLM responses.
+# These are internal reasoning traces that must not appear in user-facing output.
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove <think>...</think> blocks from *text* and return cleaned output."""
+    cleaned = _THINK_RE.sub("", text)
+    # Normalise leftover blank lines
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _extract_think_blocks(text: str) -> list[str]:
+    """Return the content of all <think>...</think> blocks (for debug logging)."""
+    return _THINK_RE.findall(text)
 
 
 @dataclass
@@ -59,6 +107,10 @@ class AgentRouter:
         self._skills = skill_registry
         self._memory_retriever = None
         self._memory_ingestor = None
+        self._skill_generator = None  # Optional[SkillGenerator] — set via set_skill_generator()
+        # Tracks live background reflection tasks so they are not garbage-collected
+        # mid-execution and can be awaited during graceful shutdown.
+        self._background_tasks: set[asyncio.Task] = set()
 
         # Apply per-agent model/temperature overrides when a profile is provided
         llm_settings = settings.llm
@@ -77,6 +129,10 @@ class AgentRouter:
         """Inject memory components after initialisation."""
         self._memory_retriever = retriever
         self._memory_ingestor = ingestor
+
+    def set_skill_generator(self, generator) -> None:
+        """Inject the skill generator for autonomous skill creation."""
+        self._skill_generator = generator
 
     async def route(
         self,
@@ -204,6 +260,9 @@ class AgentRouter:
         total_completion = 0
         model_used = None
 
+        # Track tool calls for self-reflection
+        tool_calls_log: list[dict] = []
+
         # Agent loop with tool calling
         max_rounds = self._settings.max_tool_rounds
         for round_num in range(max_rounds):
@@ -217,14 +276,34 @@ class AgentRouter:
             total_prompt += response.usage.get("prompt_tokens", 0)
             total_completion += response.usage.get("completion_tokens", 0)
 
-            # If no tool calls, return the text response
+            # If no tool calls, we have the final text response
             if not response.tool_calls:
+                final_text = response.content or "(no response)"
+
+                # Strip <think>...</think> reasoning blocks before returning
+                think_blocks = _extract_think_blocks(final_text)
+                if think_blocks:
+                    logger.debug(
+                        "Stripping %d <think> block(s) from response: %s",
+                        len(think_blocks),
+                        " | ".join(b[:100] for b in think_blocks),
+                    )
+                    final_text = _strip_think_blocks(final_text) or "(no response)"
+
                 usage = {
                     "model": model_used,
                     "prompt_tokens": total_prompt,
                     "completion_tokens": total_completion,
                 }
-                return response.content or "(no response)", usage
+
+                # Fire-and-forget reflection when threshold is met
+                self._maybe_trigger_reflection(
+                    tool_calls_log=tool_calls_log,
+                    task_context=message.content[:200] if message.content else "",
+                    session_id=session.id,
+                )
+
+                return final_text, usage
 
             # Process tool calls
             logger.info(
@@ -275,18 +354,71 @@ class AgentRouter:
                 messages.append(
                     self._context.build_tool_result_message(tc.id, result)
                 )
+                # Log for reflection
+                tool_calls_log.append({"name": tc.name, "arguments": tc.arguments})
 
-        # Exhausted tool rounds
+        # Exhausted tool rounds — still fire reflection and strip any think blocks
+        final_text = response.content or "I've been working on this but reached my iteration limit. Here's what I have so far."
+        final_text = _strip_think_blocks(final_text)
+
+        self._maybe_trigger_reflection(
+            tool_calls_log=tool_calls_log,
+            task_context=message.content[:200] if message.content else "",
+            session_id=session.id,
+        )
+
         logger.warning("Agent exhausted %d tool rounds", max_rounds)
         usage = {
             "model": model_used,
             "prompt_tokens": total_prompt,
             "completion_tokens": total_completion,
         }
-        return (
-            response.content or "I've been working on this but reached my iteration limit. Here's what I have so far.",
-            usage,
+        return final_text, usage
+
+    def _maybe_trigger_reflection(
+        self,
+        tool_calls_log: list[dict],
+        task_context: str,
+        session_id: str,
+    ) -> None:
+        """Fire-and-forget reflection when the tool-call threshold is met.
+
+        Does nothing if reflection is disabled or threshold not reached.
+        """
+        reflection_settings = self._settings.reflection
+        if not reflection_settings.enabled:
+            return
+        if len(tool_calls_log) < reflection_settings.threshold:
+            return
+        if self._skill_generator is None:
+            return
+
+        logger.info(
+            "Reflection triggered: %d tool calls >= threshold %d (session %s)",
+            len(tool_calls_log),
+            reflection_settings.threshold,
+            session_id,
         )
+
+        async def _reflect():
+            try:
+                result = await self._skill_generator.reflect_and_create(
+                    tool_calls_log=tool_calls_log,
+                    task_context=task_context,
+                    skill_auto_create=reflection_settings.skill_auto_create,
+                )
+                logger.info("Reflection result: %s", result.get("reason", ""))
+            except Exception as exc:
+                logger.warning("Reflection failed: %s", exc)
+
+        task = asyncio.create_task(_reflect())
+        # Track in both the instance set and the module-level set.
+        # The instance set provides per-router visibility; the module-level set
+        # allows app.py to drain tasks after the router instance is GC'd.
+        self._background_tasks.add(task)
+        _active_background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        task.add_done_callback(_active_background_tasks.discard)
 
     def _select_relevant_tools(
         self, message_content: str, all_tools: list[dict],
@@ -489,12 +621,14 @@ class AgentRouter:
 
             # No tool calls → we're done
             if not tool_calls:
+                # Strip any <think> blocks from the accumulated content
+                clean_content = _strip_think_blocks(full_content) if full_content else "(no response)"
                 usage = {
                     "model": model_used,
                     "prompt_tokens": total_prompt,
                     "completion_tokens": total_completion,
                 }
-                yield {"type": "done", "content": full_content or "(no response)", "usage": usage}
+                yield {"type": "done", "content": clean_content, "usage": usage}
                 return
 
             # Execute tool calls
@@ -536,6 +670,7 @@ class AgentRouter:
                 }
 
         # Exhausted tool rounds
+        clean_content = _strip_think_blocks(full_content) if full_content else "I've been working on this but reached my iteration limit."
         usage = {
             "model": model_used,
             "prompt_tokens": total_prompt,
@@ -543,7 +678,7 @@ class AgentRouter:
         }
         yield {
             "type": "done",
-            "content": full_content or "I've been working on this but reached my iteration limit.",
+            "content": clean_content,
             "usage": usage,
         }
 
