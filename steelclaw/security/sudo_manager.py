@@ -4,7 +4,8 @@ Design principles:
 - Master toggle disabled by default (zero auto-approval)
 - Requires the user to type the literal string "YES" (not "yes", not "y")
 - Every approval or denial is appended to an append-only audit log
-- An optional command whitelist skips the interactive prompt for pre-approved patterns
+- An optional whitelist skips the interactive prompt for pre-approved executables
+- Commands are parsed with shlex and run via exec (not shell) to prevent injection
 """
 
 from __future__ import annotations
@@ -12,16 +13,36 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import logging
+import os
 import shlex
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
 logger = logging.getLogger("steelclaw.security.sudo")
 
+# Maximum output size returned to the caller (matches sandbox.py)
+_MAX_OUTPUT = 50_000
+
 # Callback type: async fn(prompt_text: str) -> str
 SudoConfirmCallback = Callable[[str], Coroutine[Any, Any, str]]
+
+
+def _get_sanitised_env() -> dict[str, str]:
+    """Return a copy of the environment with sensitive variables removed.
+
+    Mirrors the sanitisation in steelclaw.security.sandbox to prevent
+    credentials leaking into the sudo subprocess environment.
+    """
+    env = dict(os.environ)
+    sensitive = [
+        "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+        "GITHUB_TOKEN", "GH_TOKEN",
+        "DATABASE_URL", "DATABASE_PASSWORD",
+    ]
+    for key in sensitive:
+        env.pop(key, None)
+    return env
 
 
 class SudoManager:
@@ -105,13 +126,29 @@ class SudoManager:
         return await self._run_sudo(command, timeout)
 
     async def _run_sudo(self, command: str, timeout: int) -> str:
-        """Actually run the command prefixed with sudo."""
+        """Run a sudo command using exec (not shell) to prevent injection.
+
+        The command is parsed with ``shlex.split()`` and passed as an argument
+        list to ``create_subprocess_exec``.  This prevents shell metacharacters
+        in *command* (e.g. ``;``, ``&&``, ``|``) from being interpreted by a
+        shell.  Environment is sanitised to avoid credential leakage.
+        Output is truncated at ``_MAX_OUTPUT`` characters to prevent memory
+        exhaustion from verbose commands.
+        """
         try:
-            full_cmd = f"sudo {command}"
-            process = await asyncio.create_subprocess_shell(
-                full_cmd,
+            args = shlex.split(command)
+        except ValueError as exc:
+            return f"Error: could not parse sudo command arguments: {exc}"
+
+        if not args:
+            return "Error: empty command"
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "sudo", *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=_get_sanitised_env(),
             )
 
             try:
@@ -137,6 +174,10 @@ class SudoManager:
             if process.returncode != 0:
                 output = f"Exit code: {process.returncode}\n{output}"
 
+            # Truncate to prevent memory exhaustion
+            if len(output) > _MAX_OUTPUT:
+                output = output[:_MAX_OUTPUT] + f"\n... (truncated, {len(output)} total chars)"
+
             logger.info("Sudo command completed (rc=%s): %s", process.returncode, command[:80])
             return output
 
@@ -145,14 +186,22 @@ class SudoManager:
             return f"Error executing sudo command: {exc}"
 
     def _is_whitelisted(self, command: str) -> bool:
-        """Return True if the command matches any whitelist glob pattern.
+        """Return True if the command's *executable* matches a whitelist pattern.
 
-        Matching is case-sensitive because Linux command names and paths are
-        case-sensitive.  Using case-insensitive matching could allow ``RunMe``
-        to match a whitelist entry of ``runme``, granting unintended access.
+        Only the parsed executable (first token after shlex splitting) is
+        matched against patterns.  Matching on the full raw command string with
+        a shell-glob pattern is dangerous: ``ls *`` would match ``ls; rm -rf /``
+        allowing shell injection when combined with ``create_subprocess_shell``.
         """
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            return False
+        if not parts:
+            return False
+        executable = parts[0]
         for pattern in self._config.whitelist:
-            if fnmatch.fnmatch(command, pattern):
+            if fnmatch.fnmatch(executable, pattern):
                 return True
         return False
 

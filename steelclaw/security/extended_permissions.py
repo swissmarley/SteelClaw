@@ -260,7 +260,10 @@ class CapabilityPermissions:
 
         Uses ``Path.is_relative_to()`` (Python 3.9+) for correct prefix
         matching, preventing ``/home/user_backup`` from matching ``/home/user``.
-        Also handles relative paths (e.g. ``../../etc``) via ``resolve()``.
+
+        Every non-flag token is resolved (bare names like ``secret.txt`` become
+        ``<cwd>/secret.txt``) so that commands like ``cat etc/passwd`` are
+        caught even when they don't start with ``/``, ``~``, ``./``, or ``../``.
 
         Args:
             arg_tokens: Already-shlex-parsed argument tokens (not the executable).
@@ -271,13 +274,11 @@ class CapabilityPermissions:
         ]
 
         for token in arg_tokens:
-            # Skip option flags
+            # Skip option flags (e.g. -r, --recursive)
             if token.startswith("-"):
                 continue
-            # Only inspect tokens that look like paths
-            if not (token.startswith("/") or token.startswith("~") or
-                    token.startswith("./") or token.startswith("../")):
-                continue
+            # Resolve ALL non-flag tokens — bare filenames (e.g. "secret.txt",
+            # "etc/passwd") are resolved relative to the current working directory.
             try:
                 resolved = Path(token).expanduser().resolve()
             except Exception:

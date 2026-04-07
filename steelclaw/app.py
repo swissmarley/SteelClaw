@@ -256,6 +256,12 @@ async def lifespan(app: FastAPI):
     # ── Shutdown ────────────────────────────────────────────────────────
     task_engine.stop()
     await registry.stop_all()
+
+    # Drain in-progress reflection background tasks before closing resources
+    # so that skill-file writes and ReflectionLog entries can complete cleanly.
+    from steelclaw.agents.router import drain_background_tasks
+    await drain_background_tasks(timeout=10.0)
+
     await dispose_engine()
 
     # Stop OpenViking server if we started it

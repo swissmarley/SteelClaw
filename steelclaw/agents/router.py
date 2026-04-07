@@ -28,6 +28,35 @@ logger = logging.getLogger("steelclaw.agents")
 # OpenAI and most providers cap tools at 128
 MAX_TOOLS = 128
 
+# Module-level set that tracks all live reflection background tasks across ALL
+# AgentRouter instances.  Each request creates a fresh router, so per-instance
+# tracking alone is insufficient: the router is GC'd after the response is
+# returned, which could silently cancel its tasks before they finish.
+# Using a module-level set gives app.py a single place to drain on shutdown.
+_active_background_tasks: set[asyncio.Task] = set()
+
+
+async def drain_background_tasks(timeout: float = 10.0) -> None:
+    """Await all active reflection tasks, with a graceful timeout.
+
+    Called from the app lifespan shutdown sequence so that in-progress
+    skill-file writes and ReflectionLog entries can complete cleanly.
+    """
+    pending = list(_active_background_tasks)
+    if not pending:
+        return
+    logger.info("Draining %d background reflection task(s)…", len(pending))
+    done, still_running = await asyncio.wait(pending, timeout=timeout)
+    if still_running:
+        logger.warning(
+            "%d background task(s) did not finish within %.1fs; cancelling.",
+            len(still_running), timeout,
+        )
+        for t in still_running:
+            t.cancel()
+        await asyncio.gather(*still_running, return_exceptions=True)
+
+
 # Regex to strip <think>...</think> reasoning blocks from LLM responses.
 # These are internal reasoning traces that must not appear in user-facing output.
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
@@ -383,9 +412,13 @@ class AgentRouter:
                 logger.warning("Reflection failed: %s", exc)
 
         task = asyncio.create_task(_reflect())
+        # Track in both the instance set and the module-level set.
+        # The instance set provides per-router visibility; the module-level set
+        # allows app.py to drain tasks after the router instance is GC'd.
         self._background_tasks.add(task)
-        # Remove from the tracking set once done so memory is not leaked
+        _active_background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+        task.add_done_callback(_active_background_tasks.discard)
 
     def _select_relevant_tools(
         self, message_content: str, all_tools: list[dict],

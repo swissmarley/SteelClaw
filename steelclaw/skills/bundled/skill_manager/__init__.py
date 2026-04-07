@@ -92,10 +92,13 @@ You are a specialist assistant for {description.rstrip(".").lower()}.
 {tools_section}
 """
 
-    # Build __init__.py content
+    # Build __init__.py content — sanitize every tool name before embedding in Python source
     tool_names = _extract_tool_names(tools_spec, safe_name)
     init_lines = ['"""Auto-scaffolded skill: ' + safe_name + '."""', "", "from __future__ import annotations", ""]
-    for tool_name in tool_names:
+    for raw_tool_name in tool_names:
+        # Re-sanitize here even though _extract_tool_names already does it, as a
+        # defence-in-depth safeguard before injecting into generated Python source.
+        tool_name = re.sub(r"[^a-z0-9_]", "_", raw_tool_name.lower().strip()).strip("_") or "run"
         init_lines += [
             f"",
             f"async def tool_{tool_name}(input: str) -> str:",
@@ -246,13 +249,24 @@ def _default_tool_section() -> str:
 
 
 def _extract_tool_names(tools_spec: str, fallback: str) -> list[str]:
-    """Extract tool names from a tools_spec JSON string."""
+    """Extract and sanitize tool names from a tools_spec JSON string.
+
+    Tool names are sanitized to valid Python identifiers to prevent code
+    injection when names are embedded into generated Python source files.
+    """
     if tools_spec:
         try:
             specs = json.loads(tools_spec)
-            names = [s.get("name") for s in specs if s.get("name")]
-            if names:
-                return names
+            raw_names = [s.get("name") for s in specs if s.get("name")]
+            if raw_names:
+                sanitized = [
+                    re.sub(r"[^a-z0-9_]", "_", n.lower().strip()).strip("_")
+                    for n in raw_names
+                ]
+                # Filter out empty names that became empty after sanitization
+                valid = [n for n in sanitized if n]
+                if valid:
+                    return valid
         except (json.JSONDecodeError, TypeError):
             pass
     return [fallback]
