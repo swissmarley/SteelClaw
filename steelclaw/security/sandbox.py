@@ -54,14 +54,31 @@ async def execute_command(
                 "Error: sudo support is not enabled. "
                 "Set agents.security.sudo.enabled = true in config.json."
             )
-        return await _sudo_manager.execute_sudo(command, timeout=timeout)
+        # Get session context for interactive sudo approval
+        from steelclaw.security.context import get_security_context
+        ctx = get_security_context()
+        return await _sudo_manager.execute_sudo(
+            command,
+            timeout=timeout,
+            session_id=ctx.session_id,
+            platform=ctx.platform,
+            platform_chat_id=ctx.platform_chat_id,
+        )
 
     from steelclaw.security.permissions import PermissionManager
+    from steelclaw.security.context import get_security_context
 
     # Permission check
     if check_permissions and _permission_manager is not None:
         pm: PermissionManager = _permission_manager
-        result = await pm.check_command(command)
+        # Get session context for interactive permissions
+        ctx = get_security_context()
+        result = await pm.check_command(
+            command,
+            session_id=ctx.session_id,
+            platform=ctx.platform,
+            platform_chat_id=ctx.platform_chat_id,
+        )
         if not result.allowed:
             return f"Permission denied: {result.reason}"
 

@@ -137,13 +137,21 @@ class DiscordConnector(BaseConnector):
 
         @client.event
         async def on_interaction(interaction: discord.Interaction) -> None:
-            """Handle Application Command (slash command) interactions.
+            """Handle Application Command (slash command) and button interactions.
 
             Discord requires an acknowledgment within **3 seconds** or it
             shows "The application did not respond."  We defer immediately,
             then process the command through the normal pipeline and send the
             result as a followup message.
             """
+            # Handle button clicks for permission requests
+            if interaction.type == discord.InteractionType.component:
+                custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+                if custom_id.startswith("perm:"):
+                    await self._handle_permission_button(interaction, custom_id)
+                    return
+                return  # Unknown component type
+
             if interaction.type != discord.InteractionType.application_command:
                 return
 
@@ -307,6 +315,147 @@ class DiscordConnector(BaseConnector):
                 return
         if hasattr(channel, "send"):
             await channel.send(_truncate(message.content))
+
+    async def send_permission_request(self, chat_id: str, request_data: dict) -> None:
+        """Send an interactive permission request with Discord UI buttons."""
+        try:
+            import discord
+        except ImportError:
+            # Fallback to default text message
+            await super().send_permission_request(chat_id, request_data)
+            return
+
+        if self._client is None:
+            return
+
+        request_id = request_data.get("request_id", "")
+        command = request_data.get("command", "unknown command")
+        timeout = request_data.get("timeout_seconds", 300)
+        context = request_data.get("context")
+
+        # Build message text
+        lines = [
+            "🔒 **Permission Request**",
+            f"```\n{command}\n```",
+            f"Timeout: {timeout}s",
+        ]
+        if context:
+            lines.insert(2, f"Context: {context}")
+
+        text = "\n".join(lines)
+
+        # Create Discord UI View with buttons
+        view = discord.ui.View(timeout=timeout)
+
+        approve_once_btn = discord.ui.Button(
+            style=discord.ButtonStyle.success,
+            label="Approve Once",
+            custom_id=f"perm:{request_id}:approve_once",
+        )
+        approve_session_btn = discord.ui.Button(
+            style=discord.ButtonStyle.primary,
+            label="Approve Session",
+            custom_id=f"perm:{request_id}:approve_session",
+        )
+        deny_btn = discord.ui.Button(
+            style=discord.ButtonStyle.danger,
+            label="Deny",
+            custom_id=f"perm:{request_id}:deny",
+        )
+
+        view.add_item(approve_once_btn)
+        view.add_item(approve_session_btn)
+        view.add_item(deny_btn)
+
+        # Store pending permission requests
+        if not hasattr(self, "_pending_permissions"):
+            self._pending_permissions = {}
+
+        # If chat_id is empty or not a Discord channel ID (e.g., a UUID from WebSocket),
+        # we can't send to a specific channel. For now, just log and return.
+        # In the future, we could maintain a list of active Discord channels to broadcast to.
+        if not chat_id:
+            logger.debug("No Discord chat_id provided for permission request, skipping Discord broadcast")
+            return
+
+        try:
+            # Try to parse as Discord channel ID (integer)
+            channel_id = int(chat_id)
+        except (ValueError, TypeError):
+            # Not a Discord channel ID (probably a WebSocket UUID), skip
+            logger.debug("chat_id '%s' is not a Discord channel ID, skipping Discord broadcast", chat_id)
+            return
+
+        try:
+            channel = self._client.get_channel(channel_id)
+            if channel is None:
+                channel = await self._client.fetch_channel(channel_id)
+
+            if channel and hasattr(channel, "send"):
+                msg = await channel.send(text, view=view)
+                self._pending_permissions[request_id] = msg
+        except Exception:
+            logger.exception("Failed to send permission request to Discord")
+
+    async def _on_permission_response(
+        self, request_id: str, decision, user_id: str
+    ) -> None:
+        """Handle permission response from Discord button click."""
+        # First call the parent to resolve with the broadcaster
+        await super()._on_permission_response(request_id, decision, user_id)
+
+        # Update the message to show the result
+        if hasattr(self, "_pending_permissions"):
+            msg = self._pending_permissions.pop(request_id, None)
+            if msg and hasattr(msg, "edit"):
+                try:
+                    from steelclaw.security.permission_models import PermissionDecision
+
+                    result_text = "🔒 Permission Request\n"
+                    if decision == PermissionDecision.APPROVE_ONCE:
+                        result_text += f"✅ Approved by <@{user_id}>"
+                    elif decision == PermissionDecision.APPROVE_SESSION:
+                        result_text += f"✅ Approved for session by <@{user_id}>"
+                    else:
+                        result_text += f"❌ Denied by <@{user_id}>"
+
+                    await msg.edit(content=result_text, view=None)
+                except Exception:
+                    logger.debug("Failed to update Discord permission message")
+
+    async def _handle_permission_button(
+        self, interaction, custom_id: str
+    ) -> None:
+        """Handle a permission button click from Discord."""
+        try:
+            import discord
+        except ImportError:
+            return
+
+        # Parse custom_id: perm:request_id:decision
+        parts = custom_id.split(":")
+        if len(parts) < 3:
+            return
+
+        request_id = parts[1]
+        decision_str = parts[2]
+        user_id = str(interaction.user.id) if interaction.user else "unknown"
+
+        # Map decision to enum
+        from steelclaw.security.permission_models import PermissionDecision
+        try:
+            decision = PermissionDecision(decision_str)
+        except ValueError:
+            decision = PermissionDecision.DENY
+
+        # Acknowledge the button click immediately
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+
+        # Forward to the broadcaster
+        await self._on_permission_response(request_id, decision, user_id)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

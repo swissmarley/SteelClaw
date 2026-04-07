@@ -598,6 +598,23 @@ body {
 .cred-field .verify-status { font-size:14px; padding:6px; }
 #credential-modal-box .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
 
+/* ── Permission Modal ────────────────────── */
+#permission-modal {
+  display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:1100;
+  background:var(--overlay-bg); justify-content:center; align-items:center; backdrop-filter:blur(8px);
+}
+#permission-modal.open { display:flex; }
+#permission-modal-box {
+  width:520px; max-width:90vw;
+  background:var(--glass-elevated); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px);
+  border:1px solid var(--glass-border); border-radius:20px;
+  padding:32px; box-shadow:0 24px 64px rgba(0,0,0,0.5);
+  animation:fadeInUp 0.3s ease-out;
+}
+#permission-modal-box h3 { font-size:18px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+#permission-modal-box .btn-success { background:var(--green); color:#fff; }
+#permission-modal-box .btn-success:hover { filter:brightness(1.1); }
+
 /* ── Settings Tabbed Layout ──────────────── */
 .settings-layout { display:flex; gap:20px; min-height:100%; }
 .settings-tabs { width:180px; flex-shrink:0; display:flex; flex-direction:column; gap:4px; position:sticky; top:0; }
@@ -849,7 +866,39 @@ body {
   </div>
 </div>
 
+<!-- Permission Modal -->
+<div id="permission-modal" onclick="if(event.target===this)closePermissionModal()">
+  <div id="permission-modal-box">
+    <h3>🔒 Permission Request</h3>
+    <div id="perm-modal-command" style="font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--input-bg);padding:12px;border-radius:8px;margin:12px 0;overflow-x:auto;"></div>
+    <div id="perm-modal-context" style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;"></div>
+    <div id="perm-modal-timeout" style="color:var(--text-dim);font-size:11px;margin-bottom:16px;">Timeout: <span id="perm-timeout-remaining">300</span>s</div>
+    <div class="modal-actions" style="display:flex;gap:8px;justify-content:center;">
+      <button class="btn btn-success" onclick="respondPermission('approve_once')">✓ Approve Once</button>
+      <button class="btn btn-primary" onclick="respondPermission('approve_session')">✓ Approve Session</button>
+      <button class="btn btn-danger" onclick="respondPermission('deny')">✕ Deny</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
+
+<!-- Permission Modal -->
+<div id="permission-modal" onclick="if(event.target===this)closePermissionModal()">
+  <div id="permission-modal-box">
+    <h3>🔒 Permission Request</h3>
+    <div class="modal-desc" id="perm-modal-desc">A command needs your approval.</div>
+    <div id="perm-modal-command" style="font-family:'JetBrains Mono',monospace;background:var(--input-bg);padding:12px;border-radius:8px;margin:12px 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all;"></div>
+    <div id="perm-modal-context" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;"></div>
+    <div id="perm-modal-timeout" style="font-size:11px;color:var(--text-dim);margin-bottom:16px;">Timeout: 300s</div>
+    <div class="modal-actions" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn btn-success" onclick="respondPermission('approve_once')">✅ Approve Once</button>
+      <button class="btn btn-primary" onclick="respondPermission('approve_session')">✅ Approve Session</button>
+      <button class="btn btn-danger" onclick="respondPermission('deny')">❌ Deny</button>
+    </div>
+    <div id="perm-modal-status" style="margin-top:12px;text-align:center;font-size:12px;display:none;"></div>
+  </div>
+</div>
 
 <script>
 // ── Helpers ───────────────────────────────────────────────
@@ -1034,6 +1083,12 @@ function wsConnect() {
     } else if (etype === 'error') {
       removeTyping();
       _finalizeStream(d.content || 'An error occurred.');
+    } else if (etype === 'permission_request') {
+      _handlePermissionRequest(d.data);
+    } else if (etype === 'permission_resolved') {
+      _handlePermissionResolved(d.data);
+    } else if (etype === 'permission_response_ack') {
+      // Acknowledgment received, update UI if needed
     } else {
       // Legacy non-streaming response (no type field)
       removeTyping();
@@ -1440,6 +1495,81 @@ async function openCredentialModal(skillName, description, requiredCreds) {
 }
 function closeCredentialModal() { document.getElementById('credential-modal').classList.remove('open'); }
 
+// ── Permission Modal ───────────────────────────────────────
+let _pendingPermissionRequest = null;
+
+function showPermissionModal(data) {
+  _pendingPermissionRequest = data;
+  const modal = document.getElementById('permission-modal');
+  const cmdEl = document.getElementById('perm-modal-command');
+  const ctxEl = document.getElementById('perm-modal-context');
+  const timeoutEl = document.getElementById('perm-modal-timeout');
+  const statusEl = document.getElementById('perm-modal-status');
+
+  cmdEl.textContent = data.command || 'Unknown command';
+  ctxEl.textContent = data.context ? `Context: ${data.context}` : '';
+  timeoutEl.textContent = `Timeout: ${data.timeout_seconds || 300}s`;
+  statusEl.style.display = 'none';
+  statusEl.textContent = '';
+
+  modal.classList.add('open');
+}
+
+function closePermissionModal() {
+  document.getElementById('permission-modal').classList.remove('open');
+  _pendingPermissionRequest = null;
+}
+
+function respondPermission(decision) {
+  if (!_pendingPermissionRequest) return;
+
+  const requestId = _pendingPermissionRequest.request_id;
+  const userId = localStorage.getItem('steelclaw-user-id') || 'web-' + Date.now();
+
+  // Send response via WebSocket
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'permission_response',
+      data: {
+        request_id: requestId,
+        decision: decision,
+        user_id: userId
+      }
+    }));
+  }
+
+  // Update modal to show we're waiting
+  const statusEl = document.getElementById('perm-modal-status');
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Response sent, waiting for confirmation...';
+}
+
+function _handlePermissionRequest(data) {
+  showPermissionModal(data);
+}
+
+function _handlePermissionResolved(data) {
+  const modal = document.getElementById('permission-modal');
+  if (!modal.classList.contains('open')) return;
+
+  const statusEl = document.getElementById('perm-modal-status');
+  statusEl.style.display = 'block';
+
+  const decision = data.decision || 'unknown';
+  const resolvedBy = data.resolved_by || 'unknown';
+
+  if (decision === 'approve_once') {
+    statusEl.innerHTML = `<span style="color:var(--green)">✅ Approved once by ${resolvedBy}</span>`;
+  } else if (decision === 'approve_session') {
+    statusEl.innerHTML = `<span style="color:var(--green)">✅ Approved for session by ${resolvedBy}</span>`;
+  } else {
+    statusEl.innerHTML = `<span style="color:var(--red)">❌ Denied by ${resolvedBy}</span>`;
+  }
+
+  // Auto-close after 2 seconds
+  setTimeout(closePermissionModal, 2000);
+}
+
 async function configureSkill(name) {
   // Look up skill data from whichever page loaded it
   let skill = (window._allSkills||[]).find(s=>s.name===name);
@@ -1534,6 +1664,7 @@ loaders.settings = async () => {
       <button class="settings-tab" data-tab="database" onclick="showSettingsTab('database')">Database</button>
       <button class="settings-tab" data-tab="server" onclick="showSettingsTab('server')">Server</button>
       <button class="settings-tab" data-tab="security" onclick="showSettingsTab('security')">Security</button>
+      <button class="settings-tab" data-tab="scheduler" onclick="showSettingsTab('scheduler')">Scheduler</button>
     </div>
     <div class="settings-content">
 
@@ -1777,6 +1908,9 @@ loaders.settings = async () => {
       <div class="settings-section" id="stab-security">
         ${await renderSecuritySettings()}
       </div>
+      <div class="settings-section" id="stab-scheduler">
+        ${await renderSchedulerSettings()}
+      </div>
 
     </div>
   </div>`;
@@ -1974,11 +2108,27 @@ async function saveSecurity() {
   await api('/config/security', {method:'PUT', body:JSON.stringify({
     default_permission: document.getElementById('sec-default').value,
     max_command_timeout: parseInt(document.getElementById('sec-timeout').value),
+    permission_timeout: parseInt(document.getElementById('sec-perm-timeout').value),
     sandbox_enabled: document.getElementById('sec-sandbox').checked,
     blocked_commands: blocked,
     approvals_file: 'exec-approvals.json',
   })});
   toast('Security settings saved');
+}
+
+async function saveSudo() {
+  const whitelist = document.getElementById('sudo-whitelist').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const sec = (await api('/config/security')).security || {};
+  await api('/config/security', {method:'PUT', body:JSON.stringify({
+    ...sec,
+    sudo: {
+      enabled: document.getElementById('sudo-enabled').checked,
+      session_timeout: parseInt(document.getElementById('sudo-timeout').value),
+      audit_log: document.getElementById('sudo-audit').value,
+      whitelist: whitelist,
+    }
+  })});
+  toast('Sudo settings saved');
 }
 
 async function addApproval() {
@@ -1997,6 +2147,115 @@ async function removeApproval(pattern) {
   await fetch('/api/config/approvals/'+encodeURIComponent(pattern), {method:'DELETE'});
   toast('Rule removed');
   loaders.settings();
+}
+
+// ── Scheduler Settings ──────────────────────────────────────
+async function renderSchedulerSettings() {
+  const [jobsData, cfgData] = await Promise.all([api('/scheduler/jobs'), api('/config/scheduler')]);
+  const jobs = jobsData || [];
+  const sched = cfgData.scheduler || {};
+
+  let html = `
+    <div class="card">
+      <h3>Scheduler Settings</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Timezone</label>
+          <input id="sched-tz" type="text" value="${esc(sched.timezone||'UTC')}" placeholder="UTC">
+          <div class="hint">IANA timezone (e.g., America/New_York)</div>
+        </div>
+        <div class="form-group"><label>Max Concurrent Jobs</label>
+          <input id="sched-max" type="number" value="${sched.max_concurrent_jobs||5}" min="1" max="10">
+        </div>
+      </div>
+      <div class="toggle-row">
+        <input type="checkbox" id="sched-enabled" ${sched.enabled!==false?'checked':''}>
+        <label for="sched-enabled">Enable scheduler</label>
+      </div>
+      <button class="btn btn-primary" onclick="saveScheduler()">Save Settings</button>
+    </div>
+    <div class="card">
+      <h3>Scheduled Jobs</h3>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="sched-job-id" placeholder="Job ID" class="inline-input" style="flex:1">
+        <select id="sched-job-type" class="inline-input" style="flex:0 0 100px">
+          <option value="cron">Cron</option>
+          <option value="interval">Interval</option>
+        </select>
+        <input id="sched-job-schedule" placeholder="* * * * * or 300s" class="inline-input" style="flex:1">
+        <input id="sched-job-cmd" placeholder="Command" class="inline-input" style="flex:2">
+        <button class="btn btn-primary btn-sm" onclick="addSchedulerJob()">Add</button>
+      </div>`;
+
+  if (jobs.length) {
+    html += `<table class="tbl"><thead><tr><th>ID</th><th>Type</th><th>Schedule</th><th>Command</th><th></th></tr></thead><tbody>`;
+    for (const job of jobs) {
+      const type = job.cron ? 'Cron' : 'Interval';
+      const schedule = job.cron || (job.interval ? `${job.interval}s` : 'N/A');
+      html += `<tr>
+        <td style="font-family:'JetBrains Mono',monospace">${esc(job.id)}</td>
+        <td><span class="badge badge-blue">${type}</span></td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc(schedule)}</td>
+        <td style="font-size:12px">${esc(job.command||'')}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="runSchedulerJob('${esc(job.id)}')">Run</button>
+          <button class="btn btn-danger btn-sm" onclick="removeSchedulerJob('${esc(job.id)}')">Remove</button>
+        </td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:var(--text-secondary);font-size:13px">No scheduled jobs configured.</p>';
+  }
+  html += '</div>';
+  return html;
+}
+
+async function saveScheduler() {
+  await api('/config/scheduler', {method:'PUT', body:JSON.stringify({
+    enabled: document.getElementById('sched-enabled').checked,
+    timezone: document.getElementById('sched-tz').value,
+    max_concurrent_jobs: parseInt(document.getElementById('sched-max').value),
+  })});
+  toast('Scheduler settings saved');
+}
+
+async function addSchedulerJob() {
+  const jobId = document.getElementById('sched-job-id').value.trim();
+  const type = document.getElementById('sched-job-type').value;
+  const schedule = document.getElementById('sched-job-schedule').value.trim();
+  const cmd = document.getElementById('sched-job-cmd').value.trim();
+
+  if (!jobId || !schedule) {
+    toast('Job ID and schedule are required', 'error');
+    return;
+  }
+
+  const body = { job_id: jobId, command: cmd };
+  if (type === 'cron') {
+    body.cron_expression = schedule;
+    await api('/scheduler/jobs/cron', {method:'POST', body:JSON.stringify(body)});
+  } else {
+    const seconds = parseInt(schedule.replace(/[^0-9]/g, '')) || 300;
+    body.seconds = seconds;
+    await api('/scheduler/jobs/interval', {method:'POST', body:JSON.stringify(body)});
+  }
+
+  document.getElementById('sched-job-id').value = '';
+  document.getElementById('sched-job-schedule').value = '';
+  document.getElementById('sched-job-cmd').value = '';
+  toast('Job added');
+  loaders.settings();
+}
+
+async function removeSchedulerJob(jobId) {
+  await fetch('/api/scheduler/jobs/'+encodeURIComponent(jobId), {method:'DELETE'});
+  toast('Job removed');
+  loaders.settings();
+}
+
+async function runSchedulerJob(jobId) {
+  await api('/scheduler/jobs/'+encodeURIComponent(jobId)+'/run', {method:'POST'});
+  toast('Job triggered');
 }
 
 // ── Connectors Page ────────────────────────────────────────
@@ -2219,6 +2478,7 @@ loaders.security = async () => {
   const [data, cfg] = await Promise.all([api('/config/approvals'), api('/config/security')]);
   const rules = data.rules || [];
   const sec = cfg.security || {};
+  const sudo = sec.sudo || {};
 
   let html = `
     <div class="card">
@@ -2231,10 +2491,23 @@ loaders.security = async () => {
           <div class="hint">ask = prompt user, record = log & allow, ignore = auto-allow</div>
         </div>
         <div class="form-group"><label>Command Timeout (sec)</label><input id="sec-timeout" type="number" value="${sec.max_command_timeout||30}"></div>
+        <div class="form-group"><label>Interactive Timeout (sec)</label><input id="sec-perm-timeout" type="number" value="${sec.permission_timeout||300}"><div class="hint">Time to wait for user approval</div></div>
       </div>
       <div class="toggle-row"><input type="checkbox" id="sec-sandbox" ${sec.sandbox_enabled!==false?'checked':''}><label for="sec-sandbox">Enable sandbox (subprocess isolation)</label></div>
       <div class="form-group"><label>Blocked Commands</label><textarea id="sec-blocked" rows="2" style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc((sec.blocked_commands||[]).join('\n'))}</textarea><div class="hint">One per line. Always blocked regardless of rules.</div></div>
       <button class="btn btn-primary" onclick="saveSecurity()">Save Security Settings</button>
+    </div>
+
+    <div class="card">
+      <h3>Sudo Settings</h3>
+      <div class="toggle-row"><input type="checkbox" id="sudo-enabled" ${sudo.enabled===true?'checked':''}><label for="sudo-enabled">Enable sudo commands</label></div>
+      <div class="hint" style="margin-bottom:8px">⚠️ Enabling sudo allows privileged command execution</div>
+      <div class="form-row">
+        <div class="form-group"><label>Session Timeout (sec)</label><input id="sudo-timeout" type="number" value="${sudo.session_timeout||30}"><div class="hint">Seconds before sudo session expires</div></div>
+        <div class="form-group"><label>Audit Log Path</label><input id="sudo-audit" value="${esc(sudo.audit_log||'~/.steelclaw/sudo_audit.log')}"></div>
+      </div>
+      <div class="form-group"><label>Whitelisted Sudo Commands</label><textarea id="sudo-whitelist" rows="2" style="font-family:'JetBrains Mono',monospace;font-size:12px">${esc((sudo.whitelist||[]).join('\n'))}</textarea><div class="hint">Glob patterns for pre-approved sudo commands. One per line.</div></div>
+      <button class="btn btn-primary" onclick="saveSudo()">Save Sudo Settings</button>
     </div>
 
     <div class="card">
@@ -2294,6 +2567,38 @@ loaders.scheduler = async () => {
         <button class="btn btn-primary" onclick="saveScheduler()">Save</button>
         <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Requires restart</span>
       </div>
+
+      <div class="card">
+        <h3>Add Cron Job</h3>
+        <div class="form-row">
+          <div class="form-group"><label>Job ID</label><input id="cron-id" placeholder="e.g. daily-report"></div>
+          <div class="form-group"><label>Cron Expression</label><input id="cron-expr" placeholder="0 9 * * *" style="font-family:'JetBrains Mono',monospace"><div class="hint">min hour day-of-month month day-of-week</div></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2"><label>Command</label><input id="cron-cmd" placeholder="Command to execute" style="font-family:'JetBrains Mono',monospace"></div>
+          <div class="form-group"><label>Description</label><input id="cron-desc" placeholder="Optional description"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addCronJob()">Add Cron Job</button>
+      </div>
+
+      <div class="card">
+        <h3>Add Interval Job</h3>
+        <div class="form-row">
+          <div class="form-group"><label>Job ID</label><input id="interval-id" placeholder="e.g. health-check"></div>
+          <div class="form-group"><label>Interval</label>
+            <div style="display:flex;gap:8px">
+              <input id="interval-hours" type="number" placeholder="h" style="width:60px" value="0">
+              <input id="interval-mins" type="number" placeholder="m" style="width:60px" value="0">
+              <input id="interval-secs" type="number" placeholder="s" style="width:60px" value="60">
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2"><label>Command</label><input id="interval-cmd" placeholder="Command to execute" style="font-family:'JetBrains Mono',monospace"></div>
+          <div class="form-group"><label>Description</label><input id="interval-desc" placeholder="Optional description"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addIntervalJob()">Add Interval Job</button>
+      </div>
     </div>`;
 
   if (jobs.length) {
@@ -2305,7 +2610,10 @@ loaders.scheduler = async () => {
         <td style="font-size:12px">${j.cron||((j.seconds||'')+'s')||'—'}</td>
         <td style="font-size:12px">${esc(j.description)}</td>
         <td style="font-size:12px;color:var(--text-secondary)">${j.next_run||'—'}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="removeJob('${esc(j.id)}')">Remove</button></td>
+        <td>
+          <button class="btn btn-sm" onclick="runJob('${esc(j.id)}')">Run</button>
+          <button class="btn btn-danger btn-sm" onclick="removeJob('${esc(j.id)}')">Remove</button>
+        </td>
       </tr>`;
     }
     html += '</tbody></table></div>';
@@ -2328,6 +2636,63 @@ async function removeJob(id) {
   await fetch('/api/scheduler/jobs/'+id, {method:'DELETE'});
   toast('Job removed');
   loaders.scheduler();
+}
+
+async function addCronJob() {
+  const jobId = document.getElementById('cron-id').value.trim();
+  const cronExpr = document.getElementById('cron-expr').value.trim();
+  const command = document.getElementById('cron-cmd').value.trim();
+  const description = document.getElementById('cron-desc').value.trim();
+  if (!jobId || !cronExpr || !command) {
+    toast('Please fill in Job ID, Cron Expression, and Command');
+    return;
+  }
+  await api('/scheduler/jobs/cron', {method:'POST', body:JSON.stringify({
+    job_id: jobId,
+    cron_expression: cronExpr,
+    command: command,
+    description: description,
+  })});
+  toast('Cron job added');
+  document.getElementById('cron-id').value = '';
+  document.getElementById('cron-expr').value = '';
+  document.getElementById('cron-cmd').value = '';
+  document.getElementById('cron-desc').value = '';
+  loaders.scheduler();
+}
+
+async function addIntervalJob() {
+  const jobId = document.getElementById('interval-id').value.trim();
+  const command = document.getElementById('interval-cmd').value.trim();
+  const description = document.getElementById('interval-desc').value.trim();
+  const hours = parseInt(document.getElementById('interval-hours').value) || 0;
+  const mins = parseInt(document.getElementById('interval-mins').value) || 0;
+  const secs = parseInt(document.getElementById('interval-secs').value) || 0;
+  if (!jobId || !command || (hours + mins + secs === 0)) {
+    toast('Please fill in Job ID, Command, and at least one interval value');
+    return;
+  }
+  await api('/scheduler/jobs/interval', {method:'POST', body:JSON.stringify({
+    job_id: jobId,
+    hours: hours,
+    minutes: mins,
+    seconds: secs,
+    command: command,
+    description: description,
+  })});
+  toast('Interval job added');
+  document.getElementById('interval-id').value = '';
+  document.getElementById('interval-cmd').value = '';
+  document.getElementById('interval-desc').value = '';
+  document.getElementById('interval-hours').value = '0';
+  document.getElementById('interval-mins').value = '0';
+  document.getElementById('interval-secs').value = '60';
+  loaders.scheduler();
+}
+
+async function runJob(id) {
+  await api('/scheduler/jobs/'+encodeURIComponent(id)+'/run', {method:'POST'});
+  toast('Job triggered');
 }
 
 // ── Agents Page ───────────────────────────────────────────

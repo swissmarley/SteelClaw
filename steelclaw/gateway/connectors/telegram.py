@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import tempfile
 import os
@@ -81,6 +82,11 @@ class TelegramConnector(BaseConnector):
                     await asyncio.sleep(5)
 
     async def _handle_update(self, update: dict) -> None:
+        # Handle callback queries (inline button clicks)
+        if "callback_query" in update:
+            await self._handle_callback_query(update)
+            return
+
         msg_data = update.get("message") or update.get("channel_post")
         if not msg_data:
             return
@@ -387,3 +393,125 @@ class TelegramConnector(BaseConnector):
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json=payload,
             )
+
+    async def send_permission_request(self, chat_id: str, request_data: dict) -> None:
+        """Send an interactive permission request with inline keyboard buttons."""
+        import httpx
+
+        token = self.config.token
+        if not token:
+            return
+
+        # Store pending permission requests for callback handling
+        if not hasattr(self, "_pending_permissions"):
+            self._pending_permissions = {}
+
+        request_id = request_data.get("request_id", "")
+        command = request_data.get("command", "unknown command")
+        timeout = request_data.get("timeout_seconds", 300)
+        context = request_data.get("context")
+
+        # Build message text
+        lines = [
+            "🔒 *Permission Request*",
+            f"`{command}`",
+            f"Timeout: {timeout}s",
+        ]
+        if context:
+            lines.insert(2, f"Context: {context}")
+
+        text = "\n".join(lines)
+
+        # Inline keyboard with action buttons
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Approve Once", "callback_data": f"perm:{request_id}:approve_once"},
+                    {"text": "✅ Approve Session", "callback_data": f"perm:{request_id}:approve_session"},
+                ],
+                [
+                    {"text": "❌ Deny", "callback_data": f"perm:{request_id}:deny"},
+                ],
+            ]
+        }
+
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "reply_markup": json.dumps(keyboard),
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json=payload,
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    msg_id = data["result"]["message_id"]
+                    self._pending_permissions[request_id] = (chat_id, msg_id)
+        except Exception:
+            logger.exception("Failed to send permission request to Telegram")
+
+    async def _handle_callback_query(self, update: dict) -> None:
+        """Handle Telegram callback query (inline button clicks)."""
+        import httpx
+
+        callback = update.get("callback_query")
+        if not callback:
+            return
+
+        data = callback.get("data", "")
+        user_id = str(callback.get("from", {}).get("id", "unknown"))
+        chat_id = str(callback.get("message", {}).get("chat", {}).get("id", ""))
+        message_id = callback.get("message", {}).get("message_id")
+
+        # Handle permission response
+        if data.startswith("perm:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                request_id = parts[1]
+                decision = parts[2]
+
+                # Map decision to enum
+                from steelclaw.security.permission_models import PermissionDecision
+                try:
+                    decision_enum = PermissionDecision(decision)
+                except ValueError:
+                    decision_enum = PermissionDecision.DENY
+
+                # Forward to broadcaster
+                await self._on_permission_response(request_id, decision_enum, user_id)
+
+                # Acknowledge the callback
+                token = self.config.token
+                if token:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        # Edit the message to show the result
+                        result_text = "🔒 Permission Request\n"
+                        if decision == "approve_once":
+                            result_text += f"✅ Approved by user {user_id}"
+                        elif decision == "approve_session":
+                            result_text += f"✅ Approved for session by user {user_id}"
+                        else:
+                            result_text += f"❌ Denied by user {user_id}"
+
+                        await client.post(
+                            f"https://api.telegram.org/bot{token}/editMessageText",
+                            json={
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": result_text,
+                            },
+                        )
+                        # Answer callback to remove loading state
+                        await client.post(
+                            f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+                            json={"callback_query_id": callback["id"]},
+                        )
+
+                # Clean up pending permission
+                if hasattr(self, "_pending_permissions"):
+                    self._pending_permissions.pop(request_id, None)

@@ -16,12 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from steelclaw.agents.persona_loader import build_persona_system_prompt
 from steelclaw.db.models import Session as DBSession
+from steelclaw.security.context import set_security_context, clear_security_context
 from steelclaw.llm.context import ContextBuilder
 from steelclaw.llm.provider import LLMProvider, LLMResponse, StreamChunk, ToolCall
 from steelclaw.pricing import calculate_cost
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.settings import AgentSettings
 from steelclaw.skills.registry import SkillRegistry
+from steelclaw.security.context import set_security_context, clear_security_context
 
 logger = logging.getLogger("steelclaw.agents")
 
@@ -164,6 +166,12 @@ class AgentRouter:
         ``extra_tools`` is an optional list of additional tool schemas to prepend
         (e.g. the orchestrator's ``delegate_to_subagent`` tool).
         """
+        # Set security context for permission checks
+        set_security_context(
+            session_id=str(session.id),
+            platform=message.platform,
+            platform_chat_id=message.platform_chat_id,
+        )
         try:
             response_text, usage = await self._run_agent_loop(
                 message, session, db, on_tool_event=on_tool_event, extra_tools=extra_tools
@@ -172,6 +180,8 @@ class AgentRouter:
             logger.exception("Agent error for session %s", session.id)
             response_text = f"I encountered an error: {e}"
             usage = {"model": None, "prompt_tokens": 0, "completion_tokens": 0}
+        finally:
+            clear_security_context()
 
         outbound = OutboundMessage(
             platform=message.platform,
@@ -499,12 +509,20 @@ class AgentRouter:
         - {"type": "done", "content": "full text", "usage": {...}}  — final
         - {"type": "error", "content": "..."}  — on failure
         """
+        # Set security context for permission checks
+        set_security_context(
+            session_id=str(session.id),
+            platform=message.platform,
+            platform_chat_id=message.platform_chat_id,
+        )
         try:
             async for event in self._stream_agent_loop(message, session, db, extra_tools=extra_tools):
                 yield event
         except Exception as e:
             logger.exception("Streaming agent error for session %s", session.id)
             yield {"type": "error", "content": f"I encountered an error: {e}"}
+        finally:
+            clear_security_context()
 
     async def _stream_agent_loop(
         self,

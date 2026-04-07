@@ -2,7 +2,7 @@
 
 Design principles:
 - Master toggle disabled by default (zero auto-approval)
-- Requires the user to type the literal string "YES" (not "yes", not "y")
+- Requires explicit approval through the interactive permission system
 - Every approval or denial is appended to an append-only audit log
 - An optional whitelist skips the interactive prompt for pre-approved executables
 - Commands are parsed with shlex and run via exec (not shell) to prevent injection
@@ -17,7 +17,15 @@ import os
 import shlex
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
+
+from steelclaw.security.permission_models import (
+    PermissionDecision,
+    PermissionRequest,
+)
+
+if TYPE_CHECKING:
+    from steelclaw.security.broadcaster import PermissionBroadcaster
 
 logger = logging.getLogger("steelclaw.security.sudo")
 
@@ -56,15 +64,45 @@ class SudoManager:
         self._config = sudo_config
         self._audit_path = Path(sudo_config.audit_log).expanduser().resolve()
         self._confirm_callback: SudoConfirmCallback | None = None
+        self._broadcaster: "PermissionBroadcaster | None" = None
 
     def set_confirm_callback(self, callback: SudoConfirmCallback) -> None:
-        """Register the async callback used to prompt the user for confirmation."""
+        """Register the async callback used to prompt the user for confirmation.
+
+        Deprecated: Use set_broadcaster for interactive permissions.
+        """
         self._confirm_callback = callback
+
+    def set_broadcaster(self, broadcaster: "PermissionBroadcaster") -> None:
+        """Set the broadcaster for interactive sudo confirmations."""
+        self._broadcaster = broadcaster
+
+    def _is_whitelisted(self, command: str) -> bool:
+        """Return True if the command matches any whitelist glob pattern."""
+        cmd_lower = command.lower().strip()
+        for pattern in self._config.whitelist:
+            if fnmatch.fnmatch(cmd_lower, pattern.lower()):
+                return True
+        return False
+
+    def _write_audit(self, status: str, command: str) -> None:
+        """Append an immutable audit entry to the log file."""
+        self._audit_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status": status,
+            "command": command,
+        }
+        with open(self._audit_path, "a", encoding="utf-8") as f:
+            f.write(f"{entry}\n")
 
     async def execute_sudo(
         self,
         command: str,
         timeout: int | None = None,
+        session_id: str | None = None,
+        platform: str | None = None,
+        platform_chat_id: str | None = None,
     ) -> str:
         """Execute *command* with sudo after mandatory user confirmation.
 
@@ -72,9 +110,8 @@ class SudoManager:
 
         Confirmation rules:
         - Whitelisted commands (glob match) are approved automatically.
-        - All other commands require the user to reply with the exact string
-          "YES" (uppercase, no trailing spaces) within *session_timeout* seconds.
-        - Any other response — including "yes", "y", "ok" — is treated as a denial.
+        - All other commands require interactive approval through the broadcaster.
+        - Uses the same permission system as shell commands.
         """
         if not self._config.enabled:
             return (
@@ -90,7 +127,35 @@ class SudoManager:
             self._write_audit("AUTO-APPROVED (whitelist)", command)
             return await self._run_sudo(command, timeout)
 
-        # Interactive confirmation required
+        # Interactive confirmation via broadcaster
+        if self._broadcaster and session_id and platform and platform_chat_id:
+            request = PermissionRequest.create(
+                command=f"sudo {command}",
+                tool_name="sudo",
+                session_id=session_id,
+                platform=platform,
+                platform_chat_id=platform_chat_id,
+                timeout_seconds=timeout,
+                context="Privileged command execution requires approval",
+            )
+            try:
+                decision = await self._broadcaster.broadcast_request(request)
+                if decision in (PermissionDecision.APPROVE_ONCE, PermissionDecision.APPROVE_SESSION):
+                    self._write_audit("APPROVED", command)
+                    return await self._run_sudo(command, timeout)
+                else:
+                    self._write_audit("DENIED (user)", command)
+                    return "sudo command denied by user"
+            except asyncio.TimeoutError:
+                self._write_audit("DENIED (timeout)", command)
+                logger.warning("Sudo confirmation timed out for: %s", command[:80])
+                return f"Error: sudo confirmation timed out after {timeout}s"
+            except Exception as e:
+                logger.exception("Sudo confirmation error: %s", e)
+                self._write_audit("ERROR", command)
+                return f"Error: sudo confirmation failed: {e}"
+
+        # Fallback to legacy callback if available
         if self._confirm_callback is None:
             self._write_audit("DENIED (no callback)", command)
             return (
@@ -99,7 +164,7 @@ class SudoManager:
             )
 
         prompt = (
-            f"\u26a0\ufe0f  **Sudo command requested**\n"
+            f"⚠️  **Sudo command requested**\n"
             f"`sudo {command}`\n\n"
             f"Type **YES** (exactly, uppercase) to confirm, or anything else to cancel:"
         )
@@ -137,15 +202,13 @@ class SudoManager:
         """
         try:
             args = shlex.split(command)
-        except ValueError as exc:
-            return f"Error: could not parse sudo command arguments: {exc}"
-
-        if not args:
-            return "Error: empty command"
+        except ValueError as e:
+            return f"Error: Could not parse sudo command: {e}"
 
         try:
             process = await asyncio.create_subprocess_exec(
-                "sudo", *args,
+                "sudo",
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_get_sanitised_env(),
@@ -154,67 +217,33 @@ class SudoManager:
             try:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(),
-                    timeout=float(timeout),
+                    timeout=timeout,
                 )
             except asyncio.TimeoutError:
                 process.kill()
                 await process.communicate()
                 return f"Error: sudo command timed out after {timeout}s"
 
-            parts = []
+            output_parts = []
             stdout_text = stdout.decode("utf-8", errors="replace").strip()
             stderr_text = stderr.decode("utf-8", errors="replace").strip()
 
             if stdout_text:
-                parts.append(stdout_text)
+                output_parts.append(stdout_text)
             if stderr_text:
-                parts.append(f"STDERR:\n{stderr_text}")
+                output_parts.append(f"STDERR:\n{stderr_text}")
 
-            output = "\n".join(parts) if parts else "(no output)"
+            result = "\n".join(output_parts) if output_parts else "(no output)"
+            if len(result) > _MAX_OUTPUT:
+                result = result[:_MAX_OUTPUT] + f"\n... (truncated, {len(result)} total chars)"
+
             if process.returncode != 0:
-                output = f"Exit code: {process.returncode}\n{output}"
+                result = f"Exit code: {process.returncode}\n{result}"
 
-            # Truncate to prevent memory exhaustion
-            if len(output) > _MAX_OUTPUT:
-                output = output[:_MAX_OUTPUT] + f"\n... (truncated, {len(output)} total chars)"
+            return result
 
-            logger.info("Sudo command completed (rc=%s): %s", process.returncode, command[:80])
-            return output
-
-        except Exception as exc:
-            logger.exception("Sudo execution failed: %s", command)
-            return f"Error executing sudo command: {exc}"
-
-    def _is_whitelisted(self, command: str) -> bool:
-        """Return True if the command's *executable* matches a whitelist pattern.
-
-        Only the parsed executable (first token after shlex splitting) is
-        matched against patterns.  Matching on the full raw command string with
-        a shell-glob pattern is dangerous: ``ls *`` would match ``ls; rm -rf /``
-        allowing shell injection when combined with ``create_subprocess_shell``.
-        """
-        try:
-            parts = shlex.split(command)
-        except ValueError:
-            return False
-        if not parts:
-            return False
-        executable = parts[0]
-        for pattern in self._config.whitelist:
-            if fnmatch.fnmatch(executable, pattern):
-                return True
-        return False
-
-    def _write_audit(self, status: str, command: str) -> None:
-        """Append an immutable audit entry to the audit log file.
-
-        The log is opened in append mode ('a') — entries are never deleted.
-        """
-        try:
-            self._audit_path.parent.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now(timezone.utc).isoformat()
-            entry = f"[{timestamp}] [{status}] cmd={command!r}\n"
-            with self._audit_path.open("a", encoding="utf-8") as fh:
-                fh.write(entry)
-        except Exception as exc:
-            logger.error("Failed to write sudo audit log: %s", exc)
+        except FileNotFoundError:
+            return "Error: sudo command not found. Ensure sudo is installed."
+        except Exception as e:
+            logger.exception("Sudo execution failed: %s", e)
+            return f"Error: {e}"

@@ -15,6 +15,8 @@ from steelclaw.db.models import Message as DBMessage, Session as DBSession
 from steelclaw.gateway.command_handler import dispatch_command
 from steelclaw.gateway.session_manager import SessionManager
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
+from steelclaw.security.broadcaster import get_broadcaster, set_broadcaster, PermissionBroadcaster
+from steelclaw.security.permission_models import PermissionDecision, PermissionResponse
 from steelclaw.settings import GatewaySettings, Settings
 
 logger = logging.getLogger("steelclaw.gateway.router")
@@ -310,6 +312,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     _ws_connections[conn_id] = websocket
     logger.info("WebSocket connected: %s", conn_id)
 
+    # Ensure broadcaster has access to WS connections
+    broadcaster = get_broadcaster()
+    if broadcaster:
+        broadcaster.set_ws_connections_getter(lambda: set(_ws_connections.values()))
+
     try:
         while True:
             raw = await websocket.receive_text()
@@ -317,6 +324,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 data = json.loads(raw)
             except json.JSONDecodeError:
                 data = {"content": raw}
+
+            # Handle permission response messages
+            if data.get("type") == "permission_response":
+                await _handle_permission_response(websocket, data)
+                continue
 
             # Check if client supports streaming
             stream_mode = data.get("stream", False)
@@ -396,12 +408,85 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await db.commit()
     finally:
         _ws_connections.pop(conn_id, None)
+        # Note: No need to update broadcaster - the getter function references
+        # _ws_connections directly, so it always returns current connections
         logger.info("WebSocket disconnected: %s", conn_id)
+
+
+async def _handle_permission_response(websocket: WebSocket, data: dict) -> None:
+    """Handle permission_response message from WebSocket client."""
+    logger.info("Received permission_response: %s", data)
+    broadcaster = get_broadcaster()
+    if not broadcaster:
+        logger.warning("No broadcaster available for permission response")
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": "Permission system not initialized",
+        }))
+        return
+
+    request_id = data.get("data", {}).get("request_id") or data.get("request_id")
+    decision_str = data.get("data", {}).get("decision") or data.get("decision")
+    user_id = data.get("data", {}).get("user_id") or data.get("user_id", "unknown")
+
+    if not request_id or not decision_str:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": "Missing request_id or decision",
+        }))
+        return
+
+    try:
+        decision = PermissionDecision(decision_str)
+    except ValueError:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": f"Invalid decision: {decision_str}",
+        }))
+        return
+
+    response = PermissionResponse(
+        request_id=request_id,
+        decision=decision,
+        user_id=user_id,
+        platform="websocket",
+    )
+
+    # Try to resolve the request
+    resolved = await broadcaster.resolve_request(response)
+    if resolved:
+        await websocket.send_text(json.dumps({
+            "type": "permission_response_ack",
+            "data": {"request_id": request_id, "success": True},
+        }))
+    else:
+        await websocket.send_text(json.dumps({
+            "type": "permission_response_ack",
+            "data": {"request_id": request_id, "success": False, "reason": "Already resolved or unknown request"},
+        }))
 
 
 def get_ws_connections() -> dict[str, WebSocket]:
     """Expose active WS connections for the approval callback."""
     return _ws_connections
+
+
+def init_broadcaster() -> None:
+    """Initialize the permission broadcaster.
+
+    Called during app startup to create the broadcaster instance.
+    """
+    broadcaster = PermissionBroadcaster()
+    set_broadcaster(broadcaster)
+
+
+def broadcast_permission_request(request_data: dict) -> None:
+    """Broadcast a permission request to all connected WebSocket clients.
+
+    This is a convenience function for broadcasting permission requests
+    from other parts of the codebase.
+    """
+    # Note: The broadcaster's WS getter already references _ws_connections directly
 
 
 # ── Webhook receiver ────────────────────────────────────────────────────────

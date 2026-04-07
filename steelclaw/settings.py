@@ -149,6 +149,7 @@ class SecuritySettings(BaseModel):
     sandbox_enabled: bool = True
     max_command_timeout: int = 30
     blocked_commands: list[str] = ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"]
+    permission_timeout: int = 300  # Seconds to wait for interactive permission response
     sudo: SudoSettings = SudoSettings()
     extended_permissions: ExtendedPermissionsSettings = ExtendedPermissionsSettings()
 

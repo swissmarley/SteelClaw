@@ -405,6 +405,77 @@ async def remove_approval(pattern: str, request: Request) -> dict:
     raise HTTPException(404, "Rule not found")
 
 
+# ── Capabilities ───────────────────────────────────────────────────────────
+
+
+_CAPABILITIES_PATH = Path.home() / ".steelclaw" / "permissions.yaml"
+
+
+def _read_capabilities() -> dict:
+    """Read capabilities from permissions.yaml."""
+    if _CAPABILITIES_PATH.exists():
+        import yaml
+        try:
+            content = _CAPABILITIES_PATH.read_text(encoding="utf-8")
+            return yaml.safe_load(content) or {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _write_capabilities(data: dict) -> None:
+    """Write capabilities to permissions.yaml."""
+    import yaml
+    _CAPABILITIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CAPABILITIES_PATH.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
+
+
+@router.get("/capabilities")
+async def get_capabilities(request: Request) -> dict:
+    """Get capability permissions."""
+    caps = _read_capabilities()
+    return {"capabilities": caps}
+
+
+@router.put("/capabilities")
+async def update_capabilities(request: Request) -> dict:
+    """Update capability permissions."""
+    body = await request.json()
+    _write_capabilities(body)
+    return {"status": "saved", "section": "capabilities"}
+
+
+@router.post("/capabilities/{name:path}")
+async def set_capability(name: str, request: Request) -> dict:
+    """Set a single capability permission."""
+    body = await request.json()
+    value = body.get("value", body.get("allowed", True))
+
+    caps = _read_capabilities()
+
+    # Parse value
+    if isinstance(value, str):
+        if value.lower() in ("true", "yes", "allow", "1"):
+            value = True
+        elif value.lower() in ("false", "no", "deny", "0"):
+            value = False
+
+    caps[name] = value
+    _write_capabilities(caps)
+    return {"status": "saved", "capability": name, "value": value}
+
+
+@router.delete("/capabilities/{name:path}")
+async def delete_capability(name: str, request: Request) -> dict:
+    """Delete a capability permission."""
+    caps = _read_capabilities()
+    if name in caps:
+        del caps[name]
+        _write_capabilities(caps)
+        return {"status": "removed", "capability": name}
+    raise HTTPException(404, f"Capability '{name}' not found")
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 

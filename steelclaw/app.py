@@ -179,10 +179,16 @@ async def lifespan(app: FastAPI):
 
     # ── Task scheduler ──────────────────────────────────────────────────
     from steelclaw.scheduler.engine import TaskEngine
+    from steelclaw.skills.bundled.cron_manager import set_task_engine
 
     task_engine = TaskEngine(settings.agents.scheduler)
     task_engine.start()
     app.state.task_engine = task_engine
+    set_task_engine(task_engine)  # Make available to skills
+
+    # Connect task engine to cron_manager skill
+    from steelclaw.skills.bundled.cron_manager import set_task_engine
+    set_task_engine(task_engine)
 
     # ── Session heartbeat ───────────────────────────────────────────────
     from steelclaw.session_heartbeat import run_heartbeat
@@ -249,6 +255,21 @@ async def lifespan(app: FastAPI):
     await registry.start_all()
     set_connector_registry(registry)
     app.state.registry = registry
+
+    # ── Permission broadcaster ─────────────────────────────────────────────
+    from steelclaw.security.broadcaster import PermissionBroadcaster, set_broadcaster
+
+    permission_broadcaster = PermissionBroadcaster(
+        timeout_seconds=settings.agents.security.permission_timeout
+    )
+    permission_broadcaster.set_connector_registry(registry)
+    set_broadcaster(permission_broadcaster)
+    permission_manager.set_broadcaster(permission_broadcaster)
+    # Connect broadcaster to sudo manager for interactive sudo approval
+    sudo_manager = getattr(app.state, "sudo_manager", None)
+    if sudo_manager:
+        sudo_manager.set_broadcaster(permission_broadcaster)
+    app.state.permission_broadcaster = permission_broadcaster
 
     logger.info("SteelClaw started on %s:%s", settings.server.host, settings.server.port)
     yield
