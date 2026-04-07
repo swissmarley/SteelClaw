@@ -91,7 +91,6 @@ class MemoryRetriever:
 
         # Build filter for experiences
         where_filter = {"source_type": "experience"}
-        # Note: ChromaDB tag filtering would require additional setup
 
         try:
             results = self._store.query(
@@ -137,90 +136,5 @@ class MemoryRetriever:
             lines.append(f"  ({i}) [{outcome}] {meta.get('task_summary', 'Task')}")
             if tags_str:
                 lines.append(f"      Tags: {tags_str}")
-        lines.append("[End of past experiences]")
-        return "\n".join(lines)
-
-    async def retrieve_experiences(
-        self,
-        query: str,
-        tags: list[str] | None = None,
-        limit: int = 3,
-        namespace: str = "experiences",
-    ) -> list[tuple[str, dict]]:
-        """Retrieve relevant past experiences for a query.
-
-        Args:
-            query: Query text to search for
-            tags: Optional tags to filter by
-            limit: Maximum number of results
-            namespace: Vector store namespace
-
-        Returns:
-            List of (text, metadata) tuples for matching experiences
-        """
-        if not self._store.available:
-            return []
-
-        # Build filter for experience entries
-        where_filter = {"source_type": "experience"}
-        if tags:
-            # ChromaDB filter for tags
-            where_filter = {
-                "$and": [
-                    {"source_type": "experience"},
-                    {"tags": {"$contains": tags[0]}},
-                ]
-            }
-
-        try:
-            results = await self._store.query(
-                text=query,
-                n_results=limit,
-                namespace=namespace,
-                where=where_filter,
-            )
-
-            experiences = []
-            if results and results.get("documents"):
-                docs = results["documents"][0]
-                metas = results.get("metadatas", [[]])[0]
-                for doc, meta in zip(docs, metas):
-                    experiences.append((doc, meta))
-
-            if experiences:
-                logger.debug(
-                    "Retrieved %d relevant experiences for query: %.50s...",
-                    len(experiences),
-                    query,
-                )
-
-            return experiences
-
-        except Exception as e:
-            logger.warning("Failed to retrieve experiences: %s", e)
-            return []
-
-    def format_experiences_for_prompt(
-        self,
-        experiences: list[tuple[str, dict]],
-    ) -> str:
-        """Format retrieved experiences as a context block for the system prompt."""
-        if not experiences:
-            return ""
-
-        lines = ["[Past relevant experiences:]"]
-        for i, (text, meta) in enumerate(experiences, 1):
-            outcome = meta.get("outcome", "unknown")
-            task = meta.get("task_summary", "Unknown task")
-            tags = meta.get("tags", [])
-            tags_str = ", ".join(tags) if tags else ""
-
-            lines.append(f"  ({i}) [{outcome}] {task}")
-            if tags_str:
-                lines.append(f"      Tags: {tags_str}")
-            # Include first 200 chars of the experience
-            preview = text[:200].replace("\n", " ")
-            lines.append(f"      {preview}...")
-
         lines.append("[End of past experiences]")
         return "\n".join(lines)

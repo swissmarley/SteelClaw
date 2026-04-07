@@ -50,32 +50,6 @@ async def tool_write_files(files: dict[str, str]) -> str:
 
     results = []
     success_count = 0
-
-    for path, content in files.items():
-        result = await tool_write_file(path, content)
-        results.append(result)
-        if not result.startswith("Error"):
-            success_count += 1
-
-    summary = f"Wrote {success_count}/{len(files)} files:\n"
-    summary += "\n".join(f"  {r}" for r in results)
-    return summary
-
-
-async def tool_write_files(files: dict[str, str]) -> str:
-    """Write multiple files in a single operation.
-
-    Args:
-        files: Dictionary mapping file paths to their content
-
-    Returns:
-        Summary of all write operations
-    """
-    if not files:
-        return "Error: No files specified"
-
-    results = []
-    success_count = 0
     error_count = 0
 
     for path, content in files.items():
@@ -90,7 +64,7 @@ async def tool_write_files(files: dict[str, str]) -> str:
     summary = f"Wrote {success_count} files successfully"
     if error_count > 0:
         summary += f", {error_count} failed"
-    summary += f"\n\n" + "\n".join(results)
+    summary += "\n\n" + "\n".join(results)
     return summary
 
 

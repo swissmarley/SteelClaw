@@ -45,15 +45,6 @@ with multiple files. Parent directories are created automatically for each file.
 - `files` (object, required): Dictionary mapping file paths to their content
   (e.g., {"src/main.py": "print('hello')", "README.md": "# My Project"})
 
-### write_files
-Write multiple files in a single operation. This is efficient for scaffolding
-projects or creating multi-file code structures. Parent directories are created
-automatically for each file.
-
-**Parameters:**
-- `files` (object, required): Dictionary mapping file paths to their content
-  (e.g., {"src/app.py": "content", "src/utils.py": "content"})
-
 ### copy_file
 Copy a file from source to destination, preserving binary content exactly.
 This is the correct tool for saving attachment files (images, audio, PDFs, etc.)
