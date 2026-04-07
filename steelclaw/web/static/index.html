@@ -1602,6 +1602,13 @@ function respondPermission(decision) {
     type: 'permission_response',
     data: { request_id: requestId, decision: decision, user_id: userId }
   }));
+
+  // Safety fallback: if permission_resolved never arrives (e.g. a prior
+  // timeout that the server already cleaned up), close the modal after 15 s.
+  setTimeout(() => {
+    const m = document.getElementById('permission-modal');
+    if (m && m.classList.contains('open')) closePermissionModal();
+  }, 15000);
 }
 
 function _handlePermissionRequest(data) {

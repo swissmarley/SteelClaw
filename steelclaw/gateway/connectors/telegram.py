@@ -74,7 +74,20 @@ class TelegramConnector(BaseConnector):
                     resp.raise_for_status()
                     for update in resp.json().get("result", []):
                         self._offset = update["update_id"] + 1
-                        await self._handle_update(update)
+                        # Callback queries (button clicks) must be handled
+                        # immediately and synchronously so the permission
+                        # broadcaster is resolved before the next poll cycle.
+                        # Regular messages are dispatched as background tasks so
+                        # the polling loop is not blocked while the agent runs
+                        # (which could prevent callback_query updates from
+                        # being fetched and processed in time).
+                        if "callback_query" in update:
+                            await self._handle_update(update)
+                        else:
+                            asyncio.create_task(
+                                self._handle_update(update),
+                                name="telegram-msg",
+                            )
                 except asyncio.CancelledError:
                     raise
                 except Exception:
