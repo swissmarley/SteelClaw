@@ -2,7 +2,7 @@
 
 Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
 
-**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display and live tool-call indicators, voice chat with streaming TTS, file upload in chat (images, PDFs, audio, DOCX, XLSX, PPTX), intelligent file & attachment handling across Telegram/Discord/Slack, 61 skill integrations with credential management, real-time web search, persistent memory (ChromaDB or OpenViking), hierarchical multi-agent orchestration with subagent delegation, usage analytics, and a scheduler for proactive tasks.
+**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display and live tool-call indicators, voice chat with streaming TTS, file upload in chat (images, PDFs, audio, DOCX, XLSX, PPTX), intelligent file & attachment handling across Telegram/Discord/Slack, 64 skill integrations with credential management, real-time web search, persistent memory (ChromaDB, OpenViking, or SQLite FTS5), hierarchical multi-agent orchestration with subagent delegation, extended system permissions with sudo support, self-improving autonomous skill creation, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -357,7 +357,7 @@ When sub-agents exist, the main agent automatically gains access to these orches
 
 ## Persistent Memory
 
-SteelClaw supports two memory backends: **ChromaDB** (default, local vector store) and **OpenViking** (agent-native context database).
+SteelClaw supports three memory backends: **ChromaDB** (default, local vector store), **OpenViking** (agent-native context database), and **SQLite FTS5** (keyword search with Porter stemming).
 
 ### ChromaDB (default)
 
@@ -448,6 +448,35 @@ steelclaw memory stop        # manually stop the OpenViking server
 steelclaw memory migrate     # migrate from chromadb → openviking
 ```
 
+### SQLite FTS5 (Keyword Search)
+
+SteelClaw includes a built-in SQLite FTS5 memory layer for fast keyword and stemmed search, complementing the vector-based memory backends. This is useful for exact-term retrieval without requiring external dependencies.
+
+**Features:**
+- Porter stemming for better word matching (e.g., "running" matches "run")
+- Full-text search across all stored memories
+- Memory nudge prompts for system prompt injection
+- Per-agent and per-session isolation
+
+**Enable in `config.json`:**
+
+```json
+{
+  "agents": {
+    "memory_fts": {
+      "enabled": true,
+      "db_path": "~/.steelclaw/memory_fts.db",
+      "nudge_limit": 5
+    }
+  }
+}
+```
+
+**How it works:**
+- Every message is automatically indexed in the FTS5 table
+- `nudge_limit` controls how many recent relevant memories are injected into the agent's system prompt
+- Works alongside ChromaDB/OpenViking for hybrid semantic + keyword search
+
 ## Usage Analytics
 
 The dashboard Analytics page provides:
@@ -472,7 +501,7 @@ curl http://localhost:8000/api/analytics/export?format=csv
 
 ## Skills
 
-Skills are modular capabilities loaded from directories. Each skill has a `SKILL.md` file defining metadata, tools, and a system prompt. SteelClaw ships with **61 bundled skills** covering productivity, development, communication, CRM, cloud storage, and more.
+Skills are modular capabilities loaded from directories. Each skill has a `SKILL.md` file defining metadata, tools, and a system prompt. SteelClaw ships with **64 bundled skills** covering productivity, development, communication, CRM, cloud storage, and more.
 
 **Default behaviour:** Core skills (no credentials needed) are enabled out of the box. Integration skills that require API keys are disabled by default — enable them from the Skills page once you've configured their credentials. Enable/disable state persists across restarts. Tools from unconfigured skills are automatically hidden from the LLM, so the agent only uses tools it can actually call.
 
@@ -501,6 +530,7 @@ Skills are modular capabilities loaded from directories. Each skill has a `SKILL
 | Docker Manager | `docker_run`, `docker_list` | Docker container management |
 | System Monitor | `monitor` | Extended system monitoring |
 | Web Scraper | `scrape` | Structured web scraping |
+| Skill Manager | `list_skills`, `create_skill`, `edit_skill`, `delete_skill`, `reload_skills` | Autonomous skill management |
 
 **Integrations (API key required — configure via UI or CLI):**
 
@@ -598,6 +628,55 @@ async def tool_my_tool(param1: str, param2: int = 10) -> str:
 
 **Note:** If `required_credentials` are declared but not configured by the user, the skill's tools are automatically hidden from the LLM. This prevents the agent from calling tools that would fail due to missing API keys.
 
+## Self-Improving Architecture
+
+SteelClaw can autonomously create and refine skills based on observed tool-call patterns. This feature is inspired by the Hermes Agent architecture and enables the agent to learn from experience.
+
+### Autonomous Skill Creation
+
+After completing a task with 5+ tool calls (configurable), the agent reflects on the execution pattern and may create a reusable skill:
+
+1. **Reflection trigger** — Agent analyses recent tool calls for reusable patterns
+2. **Skill generation** — LLM generates a `SKILL.md` + `__init__.py` scaffold
+3. **Validation** — Generated skill is parsed and validated before writing
+4. **Hot-reload** — New skill is immediately available without restart
+
+**Configuration:**
+
+```json
+{
+  "agents": {
+    "reflection": {
+      "enabled": true,
+      "threshold": 5,
+      "skill_auto_create": false
+    }
+  }
+}
+```
+
+- `enabled`: Toggle reflection on/off (default: `true`)
+- `threshold`: Minimum tool calls before reflection triggers (default: `5`)
+- `skill_auto_create`: If `false`, reflections are only logged without writing files (safe default). Set to `true` to enable autonomous skill creation.
+
+### Skill Management Tool
+
+The bundled `skill_manager` skill provides tools for managing skills at runtime:
+
+| Tool | Description |
+|------|-------------|
+| `list_skills` | List all available skills with their status |
+| `create_skill` | Scaffold a new skill in workspace or global directory |
+| `edit_skill` | Modify an existing skill's SKILL.md or __init__.py |
+| `delete_skill` | Remove a skill (workspace/global only, not bundled) |
+| `reload_skills` | Hot-reload all skills from disk |
+
+**Note:** Bundled skills cannot be edited or deleted — only workspace and global skills are mutable.
+
+### Memory Nudge
+
+The FTS5 memory layer periodically injects recent relevant memories into the agent's system prompt, grounding responses in past context without manual retrieval. This creates a continuous learning loop where insights from previous sessions influence current behavior.
+
 ## Security Model
 
 ### Command Approvals
@@ -622,6 +701,81 @@ Approvals are persisted in `exec-approvals.json` with glob pattern support:
   ]
 }
 ```
+
+### Extended System Permissions
+
+Fine-grained capability controls via `~/.steelclaw/permissions.yaml`:
+
+```yaml
+# Auto-created on first run with safe defaults
+filesystem:
+  read: true
+  write: true
+  delete: false    # Requires explicit enable
+processes:
+  list: true
+  kill: false      # Requires explicit enable
+network:
+  http: true
+  dns: true
+packages:
+  install: false   # Requires explicit enable
+environment:
+  read: true
+  write: false
+cron:
+  manage: false
+```
+
+Enable categories in `config.json`:
+
+```json
+{
+  "agents": {
+    "security": {
+      "extended_permissions": {
+        "permissions_file": "~/.steelclaw/permissions.yaml",
+        "auto_create_file": true
+      }
+    }
+  }
+}
+```
+
+### Sudo Command Execution
+
+Execute privileged commands with strict user confirmation:
+
+**Configuration (`config.json`):**
+
+```json
+{
+  "agents": {
+    "security": {
+      "sudo": {
+        "enabled": false,           // Master toggle — disabled by default
+        "whitelist": ["apt", "systemctl"],  // Auto-approved executables
+        "audit_log": "~/.steelclaw/sudo_audit.log",
+        "session_timeout": 30       // Seconds to wait for confirmation
+      }
+    }
+  }
+}
+```
+
+**Confirmation flow:**
+1. Agent identifies a command requires sudo
+2. If the executable matches a whitelist pattern → execute immediately
+3. Otherwise, prompt the user with the full command
+4. User must type **`YES`** (exactly, uppercase) to approve
+5. All sudo commands are logged to an immutable append-only audit log
+
+**Security guarantees:**
+- Disabled by default — must be explicitly enabled
+- Never auto-approves non-whitelisted commands
+- Requires literal `YES` response (not `y`, `yes`, `ok`)
+- Immutable audit trail at `~/.steelclaw/sudo_audit.log`
+- Commands executed via `exec` (not shell) to prevent injection
 
 ### Blocked Commands
 
@@ -765,7 +919,7 @@ steelclaw/
     parser.py         SKILL.md parser
     registry.py       Skill registry + tool routing + credential filtering
     credential_store.py Secure credential storage (config.json)
-    bundled/          61 built-in skills
+    bundled/          64 built-in skills
   security/           Approvals, permissions, sandbox
   scheduler/          APScheduler background tasks
   agents/
