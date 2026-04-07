@@ -55,6 +55,7 @@ class MemoryIngestor:
         )
 
         # Store metadata in relational DB for management/querying
+        # Note: Caller is responsible for committing the transaction
         if db is not None and doc_id:
             entry = MemoryEntry(
                 session_id=session_id,
@@ -64,7 +65,6 @@ class MemoryIngestor:
                 source_type="message",
             )
             db.add(entry)
-            await db.commit()
 
         logger.debug("Ingested memory: %s (session=%s)", doc_id, session_id)
 
@@ -134,6 +134,7 @@ class MemoryIngestor:
         )
 
         # Store metadata in relational DB
+        # Note: Caller is responsible for committing the transaction
         if db is not None and doc_id:
             entry = MemoryEntry(
                 session_id=session_id,
@@ -144,7 +145,6 @@ class MemoryIngestor:
                 metadata_json=json.dumps({"tags": tags, "outcome": outcome}),
             )
             db.add(entry)
-            await db.commit()
 
         logger.debug(
             "Ingested experience: %s (outcome=%s, tags=%s)",

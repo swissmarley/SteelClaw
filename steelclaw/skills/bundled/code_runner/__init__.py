@@ -102,7 +102,16 @@ async def tool_scaffold_project(
 
     # Create all files
     for file_path, content in files.items():
-        full_path = project_path / file_path
+        full_path = (project_path / file_path).resolve()
+        # Security: Ensure the resolved path stays within the project directory
+        # This prevents path traversal attacks like "../../../etc/passwd"
+        try:
+            full_path.relative_to(project_path)
+        except ValueError:
+            # Clean up the created directory on error
+            import shutil
+            shutil.rmtree(project_path, ignore_errors=True)
+            return f"Error: Invalid file path '{file_path}' (outside project directory)"
         parent_dir = full_path.parent
 
         # Create parent directories if needed

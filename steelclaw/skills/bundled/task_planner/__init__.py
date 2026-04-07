@@ -1,4 +1,9 @@
-"""Task planner skill — break down complex tasks into manageable steps."""
+"""Task planner skill — break down complex tasks into manageable steps.
+
+NOTE: This implementation uses session-scoped in-memory storage. Plans are
+isolated by session_id to prevent data leakage between users. For production
+use with persistent storage, consider integrating with a database backend.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +12,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
-# In-memory plan storage (plans persist only during session)
-_plans: dict[str, "Plan"] = {}
+# Session-scoped plan storage: {session_id: {plan_id: Plan}}
+# This prevents data leakage between different users/sessions
+_session_plans: dict[str, dict[str, "Plan"]] = {}
+
+
+def _get_session_plans(session_id: str) -> dict[str, "Plan"]:
+    """Get or create the plan storage for a session."""
+    if session_id not in _session_plans:
+        _session_plans[session_id] = {}
+    return _session_plans[session_id]
 
 
 @dataclass
@@ -33,6 +46,7 @@ class Plan:
     goal: str
     steps: list[Step]
     created_at: datetime
+    session_id: str = "default"  # Scope plans to a session
     status: Literal["active", "completed", "failed"] = "active"
 
 
@@ -71,12 +85,14 @@ def _format_plan(plan: Plan) -> str:
 async def tool_create_plan(
     goal: str,
     steps: list[dict],
+    session_id: str = "default",
 ) -> str:
     """Create a structured plan from a goal.
 
     Args:
         goal: The high-level goal to accomplish
         steps: List of step dictionaries with description, parallel, depends_on
+        session_id: Session identifier for plan isolation (prevents data leakage)
 
     Returns:
         Plan ID and formatted plan
@@ -103,9 +119,11 @@ async def tool_create_plan(
         goal=goal,
         steps=step_objects,
         created_at=datetime.now(),
+        session_id=session_id,
     )
 
-    _plans[plan_id] = plan
+    plans = _get_session_plans(session_id)
+    plans[plan_id] = plan
 
     return f"Created plan: {plan_id}\n\n{_format_plan(plan)}"
 
@@ -115,6 +133,7 @@ async def tool_update_step(
     step_id: str,
     status: str,
     notes: str | None = None,
+    session_id: str = "default",
 ) -> str:
     """Update a step's status in an active plan.
 
@@ -123,14 +142,17 @@ async def tool_update_step(
         step_id: Step identifier to update
         status: New status - "pending", "in_progress", "completed", "failed"
         notes: Optional notes about execution
+        session_id: Session identifier for plan isolation
 
     Returns:
         Updated plan status
     """
-    if plan_id not in _plans:
+    plans = _get_session_plans(session_id)
+
+    if plan_id not in plans:
         return f"Error: Plan {plan_id} not found"
 
-    plan = _plans[plan_id]
+    plan = plans[plan_id]
 
     # Find the step
     step = None
@@ -168,37 +190,49 @@ async def tool_update_step(
     return f"Updated step {step_id} to {status}\n\n{_format_plan(plan)}"
 
 
-async def tool_get_plan(plan_id: str) -> str:
+async def tool_get_plan(
+    plan_id: str,
+    session_id: str = "default",
+) -> str:
     """Retrieve the current status of a plan.
 
     Args:
         plan_id: Plan identifier
+        session_id: Session identifier for plan isolation
 
     Returns:
         Plan details and step statuses
     """
-    if plan_id not in _plans:
+    plans = _get_session_plans(session_id)
+
+    if plan_id not in plans:
         return f"Error: Plan {plan_id} not found"
 
-    plan = _plans[plan_id]
+    plan = plans[plan_id]
     return _format_plan(plan)
 
 
-async def tool_list_plans(active_only: bool = True) -> str:
-    """List all active plans.
+async def tool_list_plans(
+    active_only: bool = True,
+    session_id: str = "default",
+) -> str:
+    """List all active plans for the current session.
 
     Args:
         active_only: Only show plans with pending steps
+        session_id: Session identifier for plan isolation
 
     Returns:
         List of plans
     """
-    if not _plans:
+    plans = _get_session_plans(session_id)
+
+    if not plans:
         return "No plans found. Use create_plan to create one."
 
     lines = ["Plans:", ""]
 
-    for plan_id, plan in _plans.items():
+    for plan_id, plan in plans.items():
         if active_only and plan.status != "active":
             continue
 

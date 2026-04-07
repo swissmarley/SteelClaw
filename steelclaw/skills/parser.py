@@ -41,10 +41,11 @@ class ToolDefinition:
             if param.enum:
                 prop["enum"] = param.enum
             # OpenAI requires 'items' for array types
+            # Use a flexible schema that allows objects or strings
             if param.type == "array":
-                prop["items"] = {"type": "string"}
+                prop["items"] = {"type": "object", "additionalProperties": True}
             elif param.type == "object":
-                prop["additionalProperties"] = {"type": "string"}
+                prop["additionalProperties"] = True
             properties[param.name] = prop
             if param.required:
                 required_params.append(param.name)

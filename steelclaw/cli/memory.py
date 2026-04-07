@@ -310,7 +310,7 @@ async def _memory_experiences(query: str | None = None, limit: int = 10) -> None
         for i, (text, meta) in enumerate(experiences, 1):
             task = meta.get("task_summary", text[:50])
             outcome = meta.get("outcome", "unknown")
-            tags = ", ".join(meta.get("tags", []))[:30]
+            tags = ", ".join(meta.get("tags") or [])[:30]
             table.add_row(str(i), task, outcome, tags)
 
         console.print(table)
