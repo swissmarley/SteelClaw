@@ -15,9 +15,11 @@ import fnmatch
 import logging
 import os
 import shlex
+import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 from steelclaw.security.permission_models import (
     PermissionDecision,
@@ -65,6 +67,8 @@ class SudoManager:
         self._audit_path = Path(sudo_config.audit_log).expanduser().resolve()
         self._confirm_callback: SudoConfirmCallback | None = None
         self._broadcaster: "PermissionBroadcaster | None" = None
+        # Per-session sudo password cache: session_id → (password, expires_at)
+        self._password_cache: dict[str, tuple[str, float]] = {}
 
     def set_confirm_callback(self, callback: SudoConfirmCallback) -> None:
         """Register the async callback used to prompt the user for confirmation.
@@ -141,8 +145,17 @@ class SudoManager:
             try:
                 decision = await self._broadcaster.broadcast_request(request)
                 if decision in (PermissionDecision.APPROVE_ONCE, PermissionDecision.APPROVE_SESSION):
+                    # Obtain sudo password (from cache or via popup)
+                    password = await self._get_sudo_password(
+                        session_id=session_id,
+                        command=command,
+                        timeout=timeout,
+                    )
+                    if password is None:
+                        self._write_audit("DENIED (no password)", command)
+                        return "sudo command cancelled: no password provided"
                     self._write_audit("APPROVED", command)
-                    return await self._run_sudo(command, timeout)
+                    return await self._run_sudo(command, timeout, password=password)
                 else:
                     self._write_audit("DENIED (user)", command)
                     return "sudo command denied by user"
@@ -155,48 +168,69 @@ class SudoManager:
                 self._write_audit("ERROR", command)
                 return f"Error: sudo confirmation failed: {e}"
 
-        # Fallback to legacy callback if available
-        if self._confirm_callback is None:
-            self._write_audit("DENIED (no callback)", command)
-            return (
-                "Error: sudo confirmation channel is not available. "
-                "Cannot execute privileged commands without user approval."
-            )
-
-        prompt = (
-            f"⚠️  **Sudo command requested**\n"
-            f"`sudo {command}`\n\n"
-            f"Type **YES** (exactly, uppercase) to confirm, or anything else to cancel:"
+        self._write_audit("DENIED (no approval channel)", command)
+        return (
+            "Error: sudo confirmation channel is not available. "
+            "Cannot execute privileged commands without user approval."
         )
 
-        try:
-            response = await asyncio.wait_for(
-                self._confirm_callback(prompt),
-                timeout=float(timeout),
+    async def _get_sudo_password(
+        self,
+        session_id: str,
+        command: str,
+        timeout: int,
+    ) -> Optional[str]:
+        """Return a valid sudo password, using the session cache when still fresh.
+
+        If the cached password has expired (or was never set), requests a new
+        one from the user via the broadcaster's sudo password popup.
+        On success, stores the new password in the cache for *session_timeout*
+        seconds (from settings).
+        """
+        # Check in-memory cache
+        cached = self._password_cache.get(session_id)
+        if cached:
+            password, expires_at = cached
+            if time.monotonic() < expires_at:
+                logger.debug("Using cached sudo password for session %s", session_id)
+                return password
+            # Expired — remove stale entry
+            del self._password_cache[session_id]
+
+        if not self._broadcaster:
+            return None
+
+        request_id = str(uuid.uuid4())
+        password = await self._broadcaster.request_sudo_password(
+            request_id=request_id,
+            command=f"sudo {command}",
+            timeout_seconds=timeout,
+            context="Enter your sudo password to authenticate",
+        )
+
+        if password:
+            session_timeout = getattr(self._config, "session_timeout", 300)
+            self._password_cache[session_id] = (
+                password,
+                time.monotonic() + session_timeout,
             )
-        except asyncio.TimeoutError:
-            self._write_audit("DENIED (timeout)", command)
-            logger.warning("Sudo confirmation timed out for: %s", command[:80])
-            return f"Error: sudo confirmation timed out after {timeout}s"
+            logger.info(
+                "Sudo password cached for session %s (expires in %ds)",
+                session_id,
+                session_timeout,
+            )
 
-        # Strict "YES" check — no case folding, no trimming beyond stripping newlines
-        confirmed = isinstance(response, str) and response.strip() == "YES"
+        return password
 
-        if not confirmed:
-            self._write_audit("DENIED (user)", command)
-            logger.info("User denied sudo command: %s", command[:80])
-            return "sudo command denied: confirmation required (type YES to approve)"
-
-        self._write_audit("APPROVED", command)
-        return await self._run_sudo(command, timeout)
-
-    async def _run_sudo(self, command: str, timeout: int) -> str:
+    async def _run_sudo(self, command: str, timeout: int, password: Optional[str] = None) -> str:
         """Run a sudo command using exec (not shell) to prevent injection.
 
         The command is parsed with ``shlex.split()`` and passed as an argument
         list to ``create_subprocess_exec``.  This prevents shell metacharacters
         in *command* (e.g. ``;``, ``&&``, ``|``) from being interpreted by a
         shell.  Environment is sanitised to avoid credential leakage.
+        When *password* is provided the ``-S`` flag is used so sudo reads the
+        password from stdin — no TTY is required in that case.
         Output is truncated at ``_MAX_OUTPUT`` characters to prevent memory
         exhaustion from verbose commands.
         """
@@ -205,10 +239,17 @@ class SudoManager:
         except ValueError as e:
             return f"Error: Could not parse sudo command: {e}"
 
+        sudo_args = ["sudo"]
+        stdin_data: Optional[bytes] = None
+        if password is not None:
+            sudo_args.extend(["-S", "-p", ""])  # -S reads from stdin, -p "" suppresses prompt
+            stdin_data = (password + "\n").encode()
+
         try:
             process = await asyncio.create_subprocess_exec(
-                "sudo",
+                *sudo_args,
                 *args,
+                stdin=asyncio.subprocess.PIPE if stdin_data else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_get_sanitised_env(),
@@ -216,7 +257,7 @@ class SudoManager:
 
             try:
                 stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
+                    process.communicate(input=stdin_data),
                     timeout=timeout,
                 )
             except asyncio.TimeoutError:

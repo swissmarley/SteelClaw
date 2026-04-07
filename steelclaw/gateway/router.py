@@ -330,6 +330,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await _handle_permission_response(websocket, data)
                 continue
 
+            # Handle sudo password response messages
+            if data.get("type") == "sudo_password_response":
+                await _handle_sudo_password_response(websocket, data)
+                continue
+
             # Check if client supports streaming
             stream_mode = data.get("stream", False)
 
@@ -464,6 +469,28 @@ async def _handle_permission_response(websocket: WebSocket, data: dict) -> None:
             "type": "permission_response_ack",
             "data": {"request_id": request_id, "success": False, "reason": "Already resolved or unknown request"},
         }))
+
+
+async def _handle_sudo_password_response(websocket: WebSocket, data: dict) -> None:
+    """Handle sudo_password_response message from WebSocket client."""
+    logger.info("Received sudo_password_response")
+    broadcaster = get_broadcaster()
+    if not broadcaster:
+        return
+
+    payload = data.get("data", data)
+    request_id = payload.get("request_id")
+    # password is None when the user cancelled the modal
+    password = payload.get("password")
+
+    if not request_id:
+        return
+
+    resolved = await broadcaster.resolve_sudo_password(request_id, password)
+    await websocket.send_text(json.dumps({
+        "type": "sudo_password_response_ack",
+        "data": {"request_id": request_id, "success": resolved},
+    }))
 
 
 def get_ws_connections() -> dict[str, WebSocket]:

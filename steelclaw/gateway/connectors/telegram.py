@@ -515,3 +515,38 @@ class TelegramConnector(BaseConnector):
                 # Clean up pending permission
                 if hasattr(self, "_pending_permissions"):
                     self._pending_permissions.pop(request_id, None)
+
+    async def send_permission_resolved(self, resolved_data: dict) -> None:
+        """Edit the inline-keyboard message to show the final result."""
+        import httpx
+
+        request_id = resolved_data.get("request_id", "")
+        if not hasattr(self, "_pending_permissions"):
+            return
+
+        pending = self._pending_permissions.pop(request_id, None)
+        if not pending:
+            return  # Already handled by _handle_callback_query
+
+        chat_id, msg_id = pending
+        decision = resolved_data.get("decision", "unknown")
+        resolved_by = resolved_data.get("resolved_by", "another channel")
+
+        if decision == "approve_once":
+            result_text = f"🔒 Permission Request\n✅ Approved once by {resolved_by}"
+        elif decision == "approve_session":
+            result_text = f"🔒 Permission Request\n✅ Approved for session by {resolved_by}"
+        else:
+            result_text = f"🔒 Permission Request\n❌ Denied by {resolved_by}"
+
+        token = self.config.token
+        if not token:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{token}/editMessageText",
+                    json={"chat_id": chat_id, "message_id": msg_id, "text": result_text},
+                )
+        except Exception:
+            logger.debug("Failed to update resolved permission message in Telegram")
