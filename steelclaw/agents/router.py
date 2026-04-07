@@ -288,7 +288,7 @@ class AgentRouter:
                         len(think_blocks),
                         " | ".join(b[:100] for b in think_blocks),
                     )
-                    final_text = _strip_think_blocks(final_text)
+                    final_text = _strip_think_blocks(final_text) or "(no response)"
 
                 usage = {
                     "model": model_used,
