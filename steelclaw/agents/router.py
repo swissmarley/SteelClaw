@@ -55,9 +55,12 @@ async def drain_background_tasks(timeout: float = 10.0) -> None:
         for t in still_running:
             t.cancel()
         await asyncio.gather(*still_running, return_exceptions=True)
+    else:
+        # Gather exceptions from completed tasks to prevent silent failures
+        await asyncio.gather(*done, return_exceptions=True)
 
 
-# Regex to strip <think>...</think> reasoning blocks from LLM responses.
+# Regex to strip<think>...</think> reasoning blocks from LLM responses.
 # These are internal reasoning traces that must not appear in user-facing output.
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
