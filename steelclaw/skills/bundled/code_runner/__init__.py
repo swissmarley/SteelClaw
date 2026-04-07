@@ -66,3 +66,66 @@ async def tool_run_code(code: str, language: str) -> str:
         return f"Error: Code execution timed out after {TIMEOUT_SECONDS} seconds."
     except Exception as e:
         return f"Error running code: {e}"
+
+
+async def tool_scaffold_project(
+    name: str,
+    files: dict[str, str],
+    requirements: list[str] | None = None,
+) -> str:
+    """Create a project directory structure with multiple files.
+
+    Args:
+        name: Project name (used as directory name)
+        files: Dictionary mapping file paths to their content
+        requirements: Optional list of Python packages for requirements.txt
+
+    Returns:
+        Summary of created files and directories
+    """
+    from pathlib import Path
+
+    if not name:
+        return "Error: Project name is required"
+    if not files:
+        return "Error: No files specified"
+
+    # Create project directory
+    project_path = Path(name).resolve()
+    try:
+        project_path.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        return f"Error: Directory '{name}' already exists. Choose a different project name."
+
+    created_files = []
+    created_dirs = set()
+
+    # Create all files
+    for file_path, content in files.items():
+        full_path = project_path / file_path
+        parent_dir = full_path.parent
+
+        # Create parent directories if needed
+        if parent_dir != project_path:
+            rel_parent = str(parent_dir.relative_to(project_path))
+            if rel_parent not in created_dirs:
+                parent_dir.mkdir(parents=True, exist_ok=True)
+                created_dirs.add(rel_parent)
+
+        # Write the file
+        full_path.write_text(content, encoding="utf-8")
+        created_files.append(file_path)
+
+    # Create requirements.txt if specified
+    if requirements:
+        req_path = project_path / "requirements.txt"
+        req_path.write_text("\n".join(requirements) + "\n", encoding="utf-8")
+        created_files.append("requirements.txt")
+
+    # Summarize
+    summary = [f"Created project '{name}' with {len(created_files)} files:"]
+    for f in sorted(created_files):
+        summary.append(f"  {f}")
+    summary.append(f"\nProject directory: {project_path}")
+
+    return "\n".join(summary)

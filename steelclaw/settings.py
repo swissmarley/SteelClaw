@@ -55,7 +55,14 @@ class LLMSettings(BaseModel):
         "or anything that requires up-to-date information, you MUST use the web_search tool to find the "
         "latest information. Then use fetch_url to read relevant pages for details. "
         "Never say you cannot access the internet — you have web_search and fetch_url tools available. "
-        "Always search first, then answer based on what you find."
+        "Always search first, then answer based on what you find.\n\n"
+        "When handling complex requests:\n"
+        "1. First decompose the task into clear steps using create_plan\n"
+        "2. For unfamiliar libraries or APIs, use fetch_docs to search documentation before implementing\n"
+        "3. Verify each step before proceeding to the next\n"
+        "4. Only ask clarifying questions when truly ambiguous — make reasonable assumptions for routine sub-tasks\n"
+        "5. After successfully completing a complex task, store the experience for future reference\n"
+        "6. Use pip_install, npm_install, or apt_install to install missing packages when needed"
     )
     provider_keys: dict[str, str] = {}  # {"anthropic": "sk-...", "openai": "sk-..."}
     streaming: bool = True
@@ -140,6 +147,7 @@ class VoiceSettings(BaseModel):
 
 class AgentSettings(BaseModel):
     default_agent: str = "general"
+    max_tool_rounds: int = 25  # Maximum tool-calling iterations per message (raised from 10 for autonomous operation)
     llm: LLMSettings = LLMSettings()
     skills: SkillSettings = SkillSettings()
     security: SecuritySettings = SecuritySettings()

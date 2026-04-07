@@ -31,6 +31,11 @@ def handle_memory(args: argparse.Namespace) -> None:
             from_backend=getattr(args, "from_backend", "chromadb"),
             to_backend=getattr(args, "to_backend", "openviking"),
         ))
+    elif action == "experiences":
+        asyncio.run(_memory_experiences(
+            query=getattr(args, "query", None),
+            limit=getattr(args, "limit", 10),
+        ))
     else:
         _memory_status()
 
@@ -272,3 +277,63 @@ async def _memory_migrate(from_backend: str, to_backend: str) -> None:
 
     console.print(f"[green]Migration complete: {len(all_docs)} documents migrated[/green]")
     console.print(f"[dim]Update config.json to use {to_backend} as default backend[/dim]")
+
+
+async def _memory_experiences(query: str | None = None, limit: int = 10) -> None:
+    """List or search stored experience entries."""
+    from steelclaw.settings import Settings
+    from steelclaw.memory.retrieval import MemoryRetriever
+
+    settings = Settings()
+    store = _get_store(settings)
+
+    if not store.available:
+        console.print("[yellow]Memory system is not available[/yellow]")
+        return
+
+    retriever = MemoryRetriever(store)
+
+    if query:
+        # Search for matching experiences
+        experiences = await retriever.retrieve_experiences(query=query, limit=limit)
+
+        if not experiences:
+            console.print(f"[dim]No matching experiences found for: {query}[/dim]")
+            return
+
+        table = Table(title=f"Experience Search: '{query}'")
+        table.add_column("#", width=3)
+        table.add_column("Task", max_width=50)
+        table.add_column("Outcome", width=10)
+        table.add_column("Tags", max_width=30)
+
+        for i, (text, meta) in enumerate(experiences, 1):
+            task = meta.get("task_summary", text[:50])
+            outcome = meta.get("outcome", "unknown")
+            tags = ", ".join(meta.get("tags", []))[:30]
+            table.add_row(str(i), task, outcome, tags)
+
+        console.print(table)
+    else:
+        # List all experiences (using empty query to get all)
+        experiences = await retriever.retrieve_experiences(query="", limit=limit)
+
+        if not experiences:
+            console.print("[dim]No stored experiences found[/dim]")
+            console.print("[dim]Experiences are created when tasks complete successfully.[/dim]")
+            return
+
+        table = Table(title="Stored Experiences")
+        table.add_column("#", width=3)
+        table.add_column("Task", max_width=50)
+        table.add_column("Outcome", width=10)
+        table.add_column("Steps", width=6)
+
+        for i, (text, meta) in enumerate(experiences, 1):
+            task = meta.get("task_summary", text[:50])
+            outcome = meta.get("outcome", "unknown")
+            steps = str(meta.get("steps_count", "?"))
+            table.add_row(str(i), task, outcome, steps)
+
+        console.print(table)
+        console.print(f"\n[dim]Use --query to search for specific experiences[/dim]")

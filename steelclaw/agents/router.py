@@ -23,8 +23,6 @@ from steelclaw.skills.registry import SkillRegistry
 
 logger = logging.getLogger("steelclaw.agents")
 
-# Maximum tool-call iterations to prevent infinite loops
-MAX_TOOL_ROUNDS = 10
 # OpenAI and most providers cap tools at 128
 MAX_TOOLS = 128
 
@@ -207,7 +205,8 @@ class AgentRouter:
         model_used = None
 
         # Agent loop with tool calling
-        for round_num in range(MAX_TOOL_ROUNDS):
+        max_rounds = self._settings.max_tool_rounds
+        for round_num in range(max_rounds):
             response = await self._provider.complete(
                 messages=messages,
                 tools=tools_schema if tools_schema else None,
@@ -278,7 +277,7 @@ class AgentRouter:
                 )
 
         # Exhausted tool rounds
-        logger.warning("Agent exhausted %d tool rounds", MAX_TOOL_ROUNDS)
+        logger.warning("Agent exhausted %d tool rounds", max_rounds)
         usage = {
             "model": model_used,
             "prompt_tokens": total_prompt,
@@ -437,7 +436,8 @@ class AgentRouter:
         model_used = None
         full_content = ""
 
-        for round_num in range(MAX_TOOL_ROUNDS):
+        max_rounds = self._settings.max_tool_rounds
+        for round_num in range(max_rounds):
             # Accumulate streaming chunks
             content_buffer = ""
             tool_call_buffers: dict[int, dict] = {}  # index → {id, name, arguments_str}
