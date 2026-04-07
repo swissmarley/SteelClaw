@@ -268,6 +268,9 @@ def main() -> None:
     memory_migrate_p = memory_sub.add_parser("migrate", help="Migrate memories between backends")
     memory_migrate_p.add_argument("--from", "--from-backend", dest="from_backend", default="chromadb", help="Source backend (default: chromadb)")
     memory_migrate_p.add_argument("--to", dest="to_backend", default="openviking", help="Destination backend (default: openviking)")
+    memory_experiences_p = memory_sub.add_parser("experiences", help="List or search stored experiences")
+    memory_experiences_p.add_argument("--query", type=str, default=None, help="Search query for experiences")
+    memory_experiences_p.add_argument("--limit", type=int, default=10, help="Number of results")
 
     # agents
     agents_p = sub.add_parser("agents", help="Manage agents")

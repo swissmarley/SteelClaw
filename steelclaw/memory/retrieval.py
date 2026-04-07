@@ -67,3 +67,74 @@ class MemoryRetriever:
             lines.append(f"  ({i}) {mem}")
         lines.append("[End of previous context]")
         return "\n".join(lines)
+
+    async def retrieve_experiences(
+        self,
+        query: str,
+        tags: list[str] | None = None,
+        limit: int = 3,
+        namespace: str = "experiences",
+    ) -> list[tuple[str, dict]]:
+        """Retrieve relevant past experiences for a similar task.
+
+        Args:
+            query: Task description or keywords
+            tags: Optional tags to filter by
+            limit: Maximum number of experiences to return
+            namespace: Vector store namespace (default: "experiences")
+
+        Returns:
+            List of (experience_text, metadata) tuples
+        """
+        if not self._store.available:
+            return []
+
+        # Build filter for experiences
+        where_filter = {"source_type": "experience"}
+
+        try:
+            results = self._store.query(
+                text=query,
+                n_results=limit,
+                namespace=namespace,
+                where=where_filter,
+            )
+
+            experiences = []
+            if results and results.get("documents"):
+                for i, doc in enumerate(results["documents"][0]):
+                    if doc:
+                        metadata = results.get("metadatas", [[]])[0]
+                        meta = metadata[i] if i < len(metadata) else {}
+                        experiences.append((doc, meta))
+
+            if experiences:
+                logger.debug(
+                    "Retrieved %d experiences for query: %.50s...",
+                    len(experiences),
+                    query,
+                )
+
+            return experiences
+
+        except Exception as e:
+            logger.warning("Experience retrieval failed: %s", e)
+            return []
+
+    def format_experiences_for_prompt(
+        self,
+        experiences: list[tuple[str, dict]],
+    ) -> str:
+        """Format retrieved experiences as a context block for the system prompt."""
+        if not experiences:
+            return ""
+
+        lines = ["[Past relevant experiences:]"]
+        for i, (text, meta) in enumerate(experiences, 1):
+            outcome = meta.get("outcome", "unknown")
+            tags_str = ", ".join(meta.get("tags", []))
+            lines.append(f"  ({i}) [{outcome}] {meta.get('task_summary', 'Task')}")
+            if tags_str:
+                lines.append(f"      Tags: {tags_str}")
+        lines.append("[End of past experiences]")
+        return "\n".join(lines)

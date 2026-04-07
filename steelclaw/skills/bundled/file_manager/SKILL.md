@@ -3,7 +3,7 @@
 Read, write, copy, move, and manage files on the local filesystem.
 
 ## Metadata
-- version: 1.1.0
+- version: 1.2.0
 - author: SteelClaw
 - triggers: file, read, write, copy, move, save, list files, directory, ls, cat
 
@@ -36,6 +36,14 @@ as attachments, use `copy_file` instead.
 **Parameters:**
 - `path` (string, required): Destination path
 - `content` (string, required): Text content to write
+
+### write_files
+Write multiple files in a single operation. Useful for scaffolding projects
+with multiple files. Parent directories are created automatically for each file.
+
+**Parameters:**
+- `files` (object, required): Dictionary mapping file paths to their content
+  (e.g., {"src/main.py": "print('hello')", "README.md": "# My Project"})
 
 ### copy_file
 Copy a file from source to destination, preserving binary content exactly.
