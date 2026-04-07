@@ -614,6 +614,31 @@ body {
 #permission-modal-box h3 { font-size:18px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
 #permission-modal-box .btn-success { background:var(--green); color:#fff; }
 #permission-modal-box .btn-success:hover { filter:brightness(1.1); }
+#perm-modal-timeout { font-size:11px; color:var(--text-dim); margin-bottom:16px; }
+#perm-timeout-remaining { font-weight:600; }
+
+/* ── Sudo Password Modal ─────────────────── */
+#sudo-modal {
+  display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:1101;
+  background:var(--overlay-bg); justify-content:center; align-items:center; backdrop-filter:blur(8px);
+}
+#sudo-modal.open { display:flex; }
+#sudo-modal-box {
+  width:480px; max-width:90vw;
+  background:var(--glass-elevated); backdrop-filter:blur(30px); -webkit-backdrop-filter:blur(30px);
+  border:1px solid var(--glass-border); border-radius:20px;
+  padding:32px; box-shadow:0 24px 64px rgba(0,0,0,0.5);
+  animation:fadeInUp 0.3s ease-out;
+}
+#sudo-modal-box h3 { font-size:18px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+#sudo-password-input {
+  width:100%; padding:10px 14px; border-radius:10px; border:1px solid var(--glass-border);
+  background:var(--input-bg); color:var(--text-primary); font-size:14px;
+  font-family:inherit; outline:none; box-sizing:border-box; margin-top:8px;
+}
+#sudo-password-input:focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+#sudo-modal-timeout { font-size:11px; color:var(--text-dim); margin-bottom:16px; }
+#sudo-timeout-remaining { font-weight:600; }
 
 /* ── Settings Tabbed Layout ──────────────── */
 .settings-layout { display:flex; gap:20px; min-height:100%; }
@@ -870,35 +895,40 @@ body {
 <div id="permission-modal" onclick="if(event.target===this)closePermissionModal()">
   <div id="permission-modal-box">
     <h3>🔒 Permission Request</h3>
-    <div id="perm-modal-command" style="font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--input-bg);padding:12px;border-radius:8px;margin:12px 0;overflow-x:auto;"></div>
-    <div id="perm-modal-context" style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;"></div>
-    <div id="perm-modal-timeout" style="color:var(--text-dim);font-size:11px;margin-bottom:16px;">Timeout: <span id="perm-timeout-remaining">300</span>s</div>
-    <div class="modal-actions" style="display:flex;gap:8px;justify-content:center;">
-      <button class="btn btn-success" onclick="respondPermission('approve_once')">✓ Approve Once</button>
-      <button class="btn btn-primary" onclick="respondPermission('approve_session')">✓ Approve Session</button>
-      <button class="btn btn-danger" onclick="respondPermission('deny')">✕ Deny</button>
-    </div>
-  </div>
-</div>
-
-<div id="toast"></div>
-
-<!-- Permission Modal -->
-<div id="permission-modal" onclick="if(event.target===this)closePermissionModal()">
-  <div id="permission-modal-box">
-    <h3>🔒 Permission Request</h3>
     <div class="modal-desc" id="perm-modal-desc">A command needs your approval.</div>
     <div id="perm-modal-command" style="font-family:'JetBrains Mono',monospace;background:var(--input-bg);padding:12px;border-radius:8px;margin:12px 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all;"></div>
     <div id="perm-modal-context" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;"></div>
-    <div id="perm-modal-timeout" style="font-size:11px;color:var(--text-dim);margin-bottom:16px;">Timeout: 300s</div>
+    <div id="perm-modal-timeout">Timeout: <span id="perm-timeout-remaining">300</span>s</div>
     <div class="modal-actions" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-      <button class="btn btn-success" onclick="respondPermission('approve_once')">✅ Approve Once</button>
-      <button class="btn btn-primary" onclick="respondPermission('approve_session')">✅ Approve Session</button>
-      <button class="btn btn-danger" onclick="respondPermission('deny')">❌ Deny</button>
+      <button id="perm-btn-approve-once" class="btn btn-success" onclick="respondPermission('approve_once')">✅ Approve Once</button>
+      <button id="perm-btn-approve-session" class="btn btn-primary" onclick="respondPermission('approve_session')">✅ Approve Session</button>
+      <button id="perm-btn-deny" class="btn btn-danger" onclick="respondPermission('deny')">❌ Deny</button>
     </div>
     <div id="perm-modal-status" style="margin-top:12px;text-align:center;font-size:12px;display:none;"></div>
   </div>
 </div>
+
+<!-- Sudo Password Modal -->
+<div id="sudo-modal" onclick="if(event.target===this)closeSudoModal()">
+  <div id="sudo-modal-box">
+    <h3>🔐 Sudo Authentication</h3>
+    <div class="modal-desc" id="sudo-modal-desc">A privileged command requires your sudo password.</div>
+    <div id="sudo-modal-command" style="font-family:'JetBrains Mono',monospace;background:var(--input-bg);padding:12px;border-radius:8px;margin:12px 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all;"></div>
+    <div id="sudo-modal-context" style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;"></div>
+    <div id="sudo-modal-timeout">Session valid for: <span id="sudo-timeout-remaining">300</span>s</div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label style="font-size:13px;font-weight:500;">Sudo Password</label>
+      <input type="password" id="sudo-password-input" placeholder="Enter your sudo password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitSudoPassword()">
+    </div>
+    <div class="modal-actions" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn btn-outline btn-sm" onclick="closeSudoModal()">Cancel</button>
+      <button id="sudo-btn-submit" class="btn btn-primary" onclick="submitSudoPassword()">🔐 Authenticate</button>
+    </div>
+    <div id="sudo-modal-status" style="margin-top:12px;text-align:center;font-size:12px;display:none;"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
 
 <script>
 // ── Helpers ───────────────────────────────────────────────
@@ -1089,6 +1119,10 @@ function wsConnect() {
       _handlePermissionResolved(d.data);
     } else if (etype === 'permission_response_ack') {
       // Acknowledgment received, update UI if needed
+    } else if (etype === 'sudo_password_request') {
+      _handleSudoPasswordRequest(d.data);
+    } else if (etype === 'sudo_password_resolved') {
+      _handleSudoPasswordResolved(d.data);
     } else {
       // Legacy non-streaming response (no type field)
       removeTyping();
@@ -1497,25 +1531,47 @@ function closeCredentialModal() { document.getElementById('credential-modal').cl
 
 // ── Permission Modal ───────────────────────────────────────
 let _pendingPermissionRequest = null;
+let _permCountdownTimer = null;
 
 function showPermissionModal(data) {
   _pendingPermissionRequest = data;
-  const modal = document.getElementById('permission-modal');
-  const cmdEl = document.getElementById('perm-modal-command');
-  const ctxEl = document.getElementById('perm-modal-context');
-  const timeoutEl = document.getElementById('perm-modal-timeout');
-  const statusEl = document.getElementById('perm-modal-status');
 
-  cmdEl.textContent = data.command || 'Unknown command';
-  ctxEl.textContent = data.context ? `Context: ${data.context}` : '';
-  timeoutEl.textContent = `Timeout: ${data.timeout_seconds || 300}s`;
-  statusEl.style.display = 'none';
-  statusEl.textContent = '';
+  document.getElementById('perm-modal-command').textContent = data.command || 'Unknown command';
+  document.getElementById('perm-modal-context').textContent = data.context ? `Context: ${data.context}` : '';
+  document.getElementById('perm-modal-status').style.display = 'none';
+  document.getElementById('perm-modal-status').textContent = '';
 
-  modal.classList.add('open');
+  // Re-enable buttons in case they were disabled from a previous request
+  _setPermissionButtons(true);
+
+  // Start countdown timer
+  let remaining = data.timeout_seconds || 300;
+  document.getElementById('perm-timeout-remaining').textContent = remaining;
+  clearInterval(_permCountdownTimer);
+  _permCountdownTimer = setInterval(() => {
+    remaining--;
+    const el = document.getElementById('perm-timeout-remaining');
+    if (el) el.textContent = remaining;
+    if (remaining <= 0) {
+      clearInterval(_permCountdownTimer);
+      _permCountdownTimer = null;
+      closePermissionModal();
+    }
+  }, 1000);
+
+  document.getElementById('permission-modal').classList.add('open');
+}
+
+function _setPermissionButtons(enabled) {
+  ['perm-btn-approve-once','perm-btn-approve-session','perm-btn-deny'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !enabled;
+  });
 }
 
 function closePermissionModal() {
+  clearInterval(_permCountdownTimer);
+  _permCountdownTimer = null;
   document.getElementById('permission-modal').classList.remove('open');
   _pendingPermissionRequest = null;
 }
@@ -1526,22 +1582,26 @@ function respondPermission(decision) {
   const requestId = _pendingPermissionRequest.request_id;
   const userId = localStorage.getItem('steelclaw-user-id') || 'web-' + Date.now();
 
-  // Send response via WebSocket
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: 'permission_response',
-      data: {
-        request_id: requestId,
-        decision: decision,
-        user_id: userId
-      }
-    }));
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    const statusEl = document.getElementById('perm-modal-status');
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = '<span style="color:var(--red)">⚠️ Not connected. Reconnecting...</span>';
+    return;
   }
 
-  // Update modal to show we're waiting
+  // Disable buttons immediately so user can't double-click
+  _setPermissionButtons(false);
+  clearInterval(_permCountdownTimer);
+  _permCountdownTimer = null;
+
   const statusEl = document.getElementById('perm-modal-status');
   statusEl.style.display = 'block';
-  statusEl.textContent = 'Response sent, waiting for confirmation...';
+  statusEl.innerHTML = '<span style="opacity:0.7">⏳ Sending response...</span>';
+
+  ws.send(JSON.stringify({
+    type: 'permission_response',
+    data: { request_id: requestId, decision: decision, user_id: userId }
+  }));
 }
 
 function _handlePermissionRequest(data) {
@@ -1552,11 +1612,13 @@ function _handlePermissionResolved(data) {
   const modal = document.getElementById('permission-modal');
   if (!modal.classList.contains('open')) return;
 
+  clearInterval(_permCountdownTimer);
+  _permCountdownTimer = null;
+
   const statusEl = document.getElementById('perm-modal-status');
   statusEl.style.display = 'block';
-
   const decision = data.decision || 'unknown';
-  const resolvedBy = data.resolved_by || 'unknown';
+  const resolvedBy = data.resolved_by || 'system';
 
   if (decision === 'approve_once') {
     statusEl.innerHTML = `<span style="color:var(--green)">✅ Approved once by ${resolvedBy}</span>`;
@@ -1566,8 +1628,119 @@ function _handlePermissionResolved(data) {
     statusEl.innerHTML = `<span style="color:var(--red)">❌ Denied by ${resolvedBy}</span>`;
   }
 
-  // Auto-close after 2 seconds
   setTimeout(closePermissionModal, 2000);
+}
+
+// ── Sudo Password Modal ────────────────────────────────────
+let _pendingSudoRequest = null;
+let _sudoCountdownTimer = null;
+
+function showSudoModal(data) {
+  _pendingSudoRequest = data;
+
+  document.getElementById('sudo-modal-command').textContent = data.command || 'Unknown command';
+  document.getElementById('sudo-modal-context').textContent = data.context || '';
+  document.getElementById('sudo-modal-status').style.display = 'none';
+  document.getElementById('sudo-modal-status').textContent = '';
+  document.getElementById('sudo-password-input').value = '';
+
+  const btn = document.getElementById('sudo-btn-submit');
+  if (btn) btn.disabled = false;
+
+  // Start countdown
+  let remaining = data.timeout_seconds || 300;
+  const remEl = document.getElementById('sudo-timeout-remaining');
+  if (remEl) remEl.textContent = remaining;
+  clearInterval(_sudoCountdownTimer);
+  _sudoCountdownTimer = setInterval(() => {
+    remaining--;
+    const el = document.getElementById('sudo-timeout-remaining');
+    if (el) el.textContent = remaining;
+    if (remaining <= 0) {
+      clearInterval(_sudoCountdownTimer);
+      _sudoCountdownTimer = null;
+      closeSudoModal();
+    }
+  }, 1000);
+
+  document.getElementById('sudo-modal').classList.add('open');
+  setTimeout(() => document.getElementById('sudo-password-input').focus(), 100);
+}
+
+function closeSudoModal() {
+  clearInterval(_sudoCountdownTimer);
+  _sudoCountdownTimer = null;
+  document.getElementById('sudo-modal').classList.remove('open');
+  document.getElementById('sudo-password-input').value = '';
+  // If user closes without submitting, send cancellation
+  if (_pendingSudoRequest && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'sudo_password_response',
+      data: { request_id: _pendingSudoRequest.request_id, password: null }
+    }));
+  }
+  _pendingSudoRequest = null;
+}
+
+function submitSudoPassword() {
+  if (!_pendingSudoRequest) return;
+
+  const password = document.getElementById('sudo-password-input').value;
+  if (!password) {
+    const statusEl = document.getElementById('sudo-modal-status');
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = '<span style="color:var(--red)">⚠️ Please enter your password.</span>';
+    return;
+  }
+
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    const statusEl = document.getElementById('sudo-modal-status');
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = '<span style="color:var(--red)">⚠️ Not connected. Please try again.</span>';
+    return;
+  }
+
+  const btn = document.getElementById('sudo-btn-submit');
+  if (btn) btn.disabled = true;
+  clearInterval(_sudoCountdownTimer);
+  _sudoCountdownTimer = null;
+
+  const statusEl = document.getElementById('sudo-modal-status');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '<span style="opacity:0.7">⏳ Authenticating...</span>';
+
+  ws.send(JSON.stringify({
+    type: 'sudo_password_response',
+    data: { request_id: _pendingSudoRequest.request_id, password: password }
+  }));
+}
+
+function _handleSudoPasswordRequest(data) {
+  showSudoModal(data);
+}
+
+function _handleSudoPasswordResolved(data) {
+  const modal = document.getElementById('sudo-modal');
+  if (!modal.classList.contains('open')) return;
+
+  clearInterval(_sudoCountdownTimer);
+  _sudoCountdownTimer = null;
+  document.getElementById('sudo-password-input').value = '';
+
+  const statusEl = document.getElementById('sudo-modal-status');
+  statusEl.style.display = 'block';
+
+  if (data.success) {
+    statusEl.innerHTML = '<span style="color:var(--green)">✅ Authenticated successfully</span>';
+  } else {
+    statusEl.innerHTML = '<span style="color:var(--red)">❌ Authentication failed or cancelled</span>';
+  }
+
+  // Close and clear sensitive state
+  _pendingSudoRequest = null;
+  setTimeout(() => {
+    document.getElementById('sudo-modal').classList.remove('open');
+  }, 1500);
 }
 
 async function configureSkill(name) {

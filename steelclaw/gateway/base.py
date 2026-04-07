@@ -172,6 +172,20 @@ class BaseConnector(ABC):
         )
         await self.send(message)
 
+    async def send_permission_resolved(self, resolved_data: dict) -> None:
+        """Notify this connector that a permission request has been resolved.
+
+        Called by the broadcaster after any channel (web, Telegram, etc.)
+        resolves a permission request. Subclasses may override to update
+        native UI (e.g. edit an inline-keyboard message in Telegram).
+        The default implementation is a no-op.
+
+        Args:
+            resolved_data: Dict from ResolvedRequest.to_dict() containing
+                request_id, decision, resolved_by, original_command.
+        """
+        pass
+
     async def _on_permission_response(
         self, request_id: str, decision: str, user_id: str
     ) -> None:

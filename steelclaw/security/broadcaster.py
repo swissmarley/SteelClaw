@@ -30,6 +30,7 @@ class PermissionBroadcaster:
 
     Uses first-response-wins semantics. When any user responds, all other
     channels receive a permission_resolved message to dismiss their UI.
+    Also handles sudo password requests via a separate popup flow.
     """
 
     def __init__(self, timeout_seconds: int = 300) -> None:
@@ -40,6 +41,9 @@ class PermissionBroadcaster:
         self._connector_registry: Optional["ConnectorRegistry"] = None
         # Function to get WebSocket connections dynamically
         self._get_ws_connections: Optional[Callable[[], set]] = None
+        # Sudo password request tracking
+        self._sudo_password_events: dict[str, asyncio.Event] = {}
+        self._sudo_password_results: dict[str, Optional[str]] = {}
 
     def set_ws_connections_getter(self, getter: Callable[[], set]) -> None:
         """Set function to get WebSocket connections. Called from gateway/router.py."""
@@ -219,16 +223,108 @@ class PermissionBroadcaster:
                 except Exception:
                     pass
 
-        # Broadcast to connectors
+        # Notify connectors via dedicated resolution method
         if self._connector_registry:
             for platform, connector in self._connector_registry._connectors.items():
                 try:
-                    await connector.send_permission_request(
-                        "",  # No specific chat_id for resolution broadcast
-                        message,
-                    )
+                    await connector.send_permission_resolved(resolved.to_dict())
                 except Exception:
                     pass
+
+    async def request_sudo_password(
+        self,
+        request_id: str,
+        command: str,
+        timeout_seconds: Optional[int] = None,
+        context: Optional[str] = None,
+    ) -> Optional[str]:
+        """Request a sudo password from the user via a UI popup.
+
+        Broadcasts a sudo_password_request message to all connected WebSocket
+        clients and waits for the user to submit their password. Returns the
+        password string on success, or None if the user cancels or times out.
+        """
+        timeout = timeout_seconds or self._timeout
+        event = asyncio.Event()
+        self._sudo_password_events[request_id] = event
+
+        message = {
+            "type": "sudo_password_request",
+            "data": {
+                "request_id": request_id,
+                "command": command,
+                "context": context,
+                "timeout_seconds": timeout,
+            },
+        }
+
+        # Send to all WebSocket clients
+        ws_connections = None
+        if self._get_ws_connections:
+            try:
+                ws_connections = self._get_ws_connections()
+            except Exception:
+                pass
+
+        if ws_connections:
+            for ws in list(ws_connections):
+                try:
+                    await ws.send_json(message)
+                except Exception as e:
+                    logger.debug("Failed to send sudo_password_request to WebSocket: %s", e)
+        else:
+            logger.warning("No WebSocket connections for sudo password request %s", request_id)
+            self._sudo_password_events.pop(request_id, None)
+            return None
+
+        try:
+            await asyncio.wait_for(event.wait(), timeout=float(timeout))
+        except asyncio.TimeoutError:
+            logger.warning("Sudo password request %s timed out", request_id)
+            return None
+        finally:
+            self._sudo_password_events.pop(request_id, None)
+
+        return self._sudo_password_results.pop(request_id, None)
+
+    async def resolve_sudo_password(self, request_id: str, password: Optional[str]) -> bool:
+        """Resolve a pending sudo password request.
+
+        Called from the WebSocket handler when the user submits or cancels
+        the sudo password modal. Returns True if the request was found and
+        resolved, False if it was unknown or already resolved.
+        """
+        event = self._sudo_password_events.get(request_id)
+        if not event:
+            logger.warning("Unknown sudo password request: %s", request_id)
+            return False
+
+        self._sudo_password_results[request_id] = password
+        event.set()
+
+        # Notify WebSocket clients to dismiss the modal
+        resolved_message = {
+            "type": "sudo_password_resolved",
+            "data": {
+                "request_id": request_id,
+                "success": password is not None,
+            },
+        }
+        ws_connections = None
+        if self._get_ws_connections:
+            try:
+                ws_connections = self._get_ws_connections()
+            except Exception:
+                pass
+
+        if ws_connections:
+            for ws in list(ws_connections):
+                try:
+                    await ws.send_json(resolved_message)
+                except Exception:
+                    pass
+
+        return True
 
 
 # Global broadcaster instance
