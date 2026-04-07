@@ -56,9 +56,40 @@ capabilities:
 # These are used to split a tokenised command list into per-subcommand slices.
 _CHAIN_OPS = frozenset({"&&", "||", ";", "|"})
 
-# Regex that matches subshell constructs in the *raw* command string so we
-# can extract their contents before handing the outer command to shlex.
-_SUBSHELL_RE = re.compile(r"\$\(([^)]+)\)|`([^`]+)`")
+# Regex for simple backtick subshells (no nesting possible in backticks)
+_BACKTICK_RE = re.compile(r"`([^`]+)`")
+
+
+def _extract_dollar_subshells(command: str) -> list[str]:
+    """Extract all $() subshell contents using balanced parenthesis counting.
+
+    This properly handles nested subshells like $(echo $(ls)) by counting
+    parentheses to find matching pairs. Returns a list of inner command strings.
+    """
+    results: list[str] = []
+    i = 0
+    while i < len(command):
+        # Look for $(
+        if command[i : i + 2] == "$(":
+            start = i + 2  # Position after "$("
+            depth = 1
+            j = start
+            # Count balanced parentheses to find the matching close
+            while j < len(command) and depth > 0:
+                if command[j] == "(":
+                    depth += 1
+                elif command[j] == ")":
+                    depth -= 1
+                j += 1
+            if depth == 0:
+                # Found matching close parenthesis
+                inner = command[start : j - 1].strip()
+                if inner:
+                    results.append(inner)
+                i = j  # Continue after the closing ')'
+                continue
+        i += 1
+    return results
 
 # Mapping from capability category to executable-name patterns.
 # These match against the *first token* of each subcommand (the executable),
@@ -98,7 +129,8 @@ def _split_into_subcommands(command: str) -> list[str]:
     Two-phase approach that handles both issues together:
 
     **Phase 1 – Subshell extraction:** ``$(...)`` and backtick constructs are
-    located in the *raw* string via regex *before* shlex processing.  Their
+    located in the *raw* string using balanced parenthesis counting for $()
+    (handles nesting) and regex for backticks (no nesting possible).  Their
     inner content is recursively split and appended to the result.  The
     constructs are then replaced with a placeholder so the outer command can
     be cleanly tokenised.  This prevents a subshell like
@@ -115,14 +147,41 @@ def _split_into_subcommands(command: str) -> list[str]:
     result: list[str] = []
 
     # Phase 1: extract subshell commands from raw string before shlex.
-    for m in _SUBSHELL_RE.finditer(command):
-        inner = (m.group(1) or m.group(2) or "").strip()
+    # Handle $() subshells with balanced parenthesis counting (supports nesting)
+    for inner in _extract_dollar_subshells(command):
+        result.extend(_split_into_subcommands(inner))
+
+    # Handle backtick subshells (no nesting possible)
+    for m in _BACKTICK_RE.finditer(command):
+        inner = (m.group(1) or "").strip()
         if inner:
             result.extend(_split_into_subcommands(inner))
 
     # Replace subshell constructs with a neutral placeholder so shlex can
     # tokenise the outer command without hitting unbalanced-paren errors.
-    outer = _SUBSHELL_RE.sub(" __subshell__ ", command)
+    # Use a function-based replacement for $() to handle nested cases properly.
+    def replace_dollar_parens(s: str) -> str:
+        result_str = []
+        i = 0
+        while i < len(s):
+            if s[i : i + 2] == "$(":
+                depth = 1
+                j = i + 2
+                while j < len(s) and depth > 0:
+                    if s[j] == "(":
+                        depth += 1
+                    elif s[j] == ")":
+                        depth -= 1
+                    j += 1
+                result_str.append(" __subshell__ ")
+                i = j
+            else:
+                result_str.append(s[i])
+                i += 1
+        return "".join(result_str)
+
+    outer = replace_dollar_parens(command)
+    outer = _BACKTICK_RE.sub(" __subshell__ ", outer)
 
     # Phase 2: shlex-tokenise to respect quoted strings, then split on operators.
     try:

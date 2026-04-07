@@ -261,7 +261,8 @@ def _parse_json_response(text: str) -> dict | None:
         pass
 
     # Try extracting JSON block from markdown code fences
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    # Use greedy matching to capture nested braces correctly
+    match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(1))

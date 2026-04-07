@@ -90,8 +90,18 @@ async def tool_scaffold_project(
     if not files:
         return "Error: No files specified"
 
-    # Create project directory
-    project_path = Path(name).resolve()
+    # Create project directory within the current workspace
+    # Security: Validate that the path stays within the workspace to prevent
+    # path traversal attacks (e.g., "../../../etc/passwd" or "/etc/cron.d/evil")
+    try:
+        base_path = Path.cwd().resolve()
+        project_path = (base_path / name).resolve()
+        project_path.relative_to(base_path)
+    except ValueError:
+        return f"Error: Invalid project name '{name}' (must be a relative path within the workspace)"
+    except Exception as e:
+        return f"Error: Invalid project name '{name}': {e}"
+
     try:
         project_path.mkdir(parents=True, exist_ok=False)
     except FileExistsError:
