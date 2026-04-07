@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -132,12 +133,21 @@ async def tool_edit_skill(
     if file not in ("SKILL.md", "__init__.py"):
         return "Error: file must be 'SKILL.md' or '__init__.py'"
 
+    # Sanitise name to prevent path traversal (e.g. "../../etc")
+    safe_name = re.sub(r"[^a-z0-9_]", "_", name.lower().strip()).strip("_")
+    if not safe_name:
+        return "Error: invalid skill name"
+
     # Try global first, then workspace
     for scope_dir in (
         Path(_global_skills_dir).expanduser(),
         Path(_workspace_skills_dir).expanduser(),
     ):
-        skill_dir = scope_dir / name
+        base = scope_dir.resolve()
+        skill_dir = base / safe_name
+        # Ensure the resolved path is actually inside the expected base (defence-in-depth)
+        if not str(skill_dir).startswith(str(base)):
+            return "Error: invalid skill path"
         target = skill_dir / file
         if skill_dir.exists():
             if target.exists() or file == "SKILL.md":
@@ -145,7 +155,7 @@ async def tool_edit_skill(
                 return f"Updated {target}\nRun `reload_skills` to apply changes."
 
     return (
-        f"Error: skill '{name}' not found in global or workspace directories. "
+        f"Error: skill '{safe_name}' not found in global or workspace directories. "
         "Bundled skills cannot be edited."
     )
 
@@ -160,21 +170,31 @@ async def tool_delete_skill(
         name: Skill directory name to delete.
         scope: "global" (default) or "workspace".
     """
+    # Sanitise name to prevent path traversal (e.g. "../../etc")
+    safe_name = re.sub(r"[^a-z0-9_]", "_", name.lower().strip()).strip("_")
+    if not safe_name:
+        return "Error: invalid skill name"
+
     if scope == "global":
-        skill_dir = Path(_global_skills_dir).expanduser().resolve() / name
+        base = Path(_global_skills_dir).expanduser().resolve()
     elif scope == "workspace":
-        skill_dir = Path(_workspace_skills_dir).expanduser().resolve() / name
+        base = Path(_workspace_skills_dir).expanduser().resolve()
     else:
         return f"Error: scope must be 'global' or 'workspace', got '{scope}'"
 
+    skill_dir = base / safe_name
+    # Ensure the resolved path is actually inside the expected base (defence-in-depth)
+    if not str(skill_dir.resolve()).startswith(str(base)):
+        return "Error: invalid skill path"
+
     if not skill_dir.exists():
-        return f"Error: skill '{name}' not found at {skill_dir}"
+        return f"Error: skill '{safe_name}' not found at {skill_dir}"
 
     try:
         shutil.rmtree(skill_dir)
-        return f"Skill '{name}' deleted from {skill_dir}\nRun `reload_skills` to apply."
+        return f"Skill '{safe_name}' deleted from {skill_dir}\nRun `reload_skills` to apply."
     except Exception as exc:
-        return f"Error deleting skill '{name}': {exc}"
+        return f"Error deleting skill '{safe_name}': {exc}"
 
 
 async def tool_reload_skills() -> str:

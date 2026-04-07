@@ -145,9 +145,14 @@ class SudoManager:
             return f"Error executing sudo command: {exc}"
 
     def _is_whitelisted(self, command: str) -> bool:
-        """Return True if the command matches any whitelist glob pattern."""
+        """Return True if the command matches any whitelist glob pattern.
+
+        Matching is case-sensitive because Linux command names and paths are
+        case-sensitive.  Using case-insensitive matching could allow ``RunMe``
+        to match a whitelist entry of ``runme``, granting unintended access.
+        """
         for pattern in self._config.whitelist:
-            if fnmatch.fnmatch(command, pattern) or fnmatch.fnmatch(command.lower(), pattern.lower()):
+            if fnmatch.fnmatch(command, pattern):
                 return True
         return False
 

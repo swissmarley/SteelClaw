@@ -79,6 +79,9 @@ class AgentRouter:
         self._memory_retriever = None
         self._memory_ingestor = None
         self._skill_generator = None  # Optional[SkillGenerator] — set via set_skill_generator()
+        # Tracks live background reflection tasks so they are not garbage-collected
+        # mid-execution and can be awaited during graceful shutdown.
+        self._background_tasks: set[asyncio.Task] = set()
 
         # Apply per-agent model/temperature overrides when a profile is provided
         llm_settings = settings.llm
@@ -379,7 +382,10 @@ class AgentRouter:
             except Exception as exc:
                 logger.warning("Reflection failed: %s", exc)
 
-        asyncio.create_task(_reflect())
+        task = asyncio.create_task(_reflect())
+        self._background_tasks.add(task)
+        # Remove from the tracking set once done so memory is not leaked
+        task.add_done_callback(self._background_tasks.discard)
 
     def _select_relevant_tools(
         self, message_content: str, all_tools: list[dict],

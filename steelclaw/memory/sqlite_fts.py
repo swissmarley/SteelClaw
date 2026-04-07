@@ -12,7 +12,6 @@ responses in past context.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +77,6 @@ class FTSMemoryStore:
         if self._db is None:
             return
         tags_str = " ".join(tags or [])
-        created_at = datetime.now(timezone.utc).isoformat()
         try:
             await self._db.execute(
                 """INSERT INTO memory_fts(content, tags, source_type, agent_id, session_id)
