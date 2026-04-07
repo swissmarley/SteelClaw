@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -325,17 +326,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             except json.JSONDecodeError:
                 data = {"content": raw}
 
-            # Handle permission response messages
+            # ── Priority messages: handle immediately, do NOT spawn tasks ────
+            # These must be processed right away so they can unblock a waiting
+            # agent (which is running in a background task).
             if data.get("type") == "permission_response":
                 await _handle_permission_response(websocket, data)
                 continue
 
-            # Handle sudo password response messages
             if data.get("type") == "sudo_password_response":
                 await _handle_sudo_password_response(websocket, data)
                 continue
 
-            # Check if client supports streaming
+            # ── Chat messages: spawn a background task ───────────────────────
+            # Running the agent in-line would block receive_text() for the
+            # entire duration of the LLM call, making it impossible to receive
+            # permission_response / sudo_password_response messages mid-stream.
             stream_mode = data.get("stream", False)
 
             # Resolve file attachments from upload IDs
@@ -363,38 +368,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 is_mention=False,
             )
 
-            if stream_mode:
-                # Streaming mode — send incremental chunks
-                try:
-                    async for db in get_async_session():
-                        settings = websocket.app.state.settings
-                        async for event in process_message_streaming(
-                            inbound, settings.gateway, db
-                        ):
-                            await websocket.send_text(json.dumps(event))
-                except Exception:
-                    logger.exception("Error in streaming WebSocket message")
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "content": "I encountered an internal error. Please try again.",
-                    }))
-            else:
-                # Legacy non-streaming mode — full response at once
-                outbound = None
-                try:
-                    async for db in get_async_session():
-                        settings = websocket.app.state.settings
-                        outbound = await process_message(inbound, settings.gateway, db)
-                except Exception:
-                    logger.exception("Error processing WebSocket message")
-                    outbound = OutboundMessage(
-                        platform="websocket",
-                        platform_chat_id=conn_id,
-                        content="I encountered an internal error. Please try again.",
-                    )
+            # Snapshot the app settings reference for the task closure
+            app_settings = websocket.app.state.settings
 
-                if outbound:
-                    await websocket.send_text(json.dumps({"content": outbound.content}))
+            if stream_mode:
+                asyncio.create_task(
+                    _ws_stream_task(websocket, inbound, app_settings),
+                    name=f"ws-stream-{conn_id}",
+                )
+            else:
+                asyncio.create_task(
+                    _ws_nonstream_task(websocket, inbound, app_settings),
+                    name=f"ws-chat-{conn_id}",
+                )
 
     except WebSocketDisconnect:
         # Mark the WebSocket session as closed
@@ -413,9 +399,50 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await db.commit()
     finally:
         _ws_connections.pop(conn_id, None)
-        # Note: No need to update broadcaster - the getter function references
-        # _ws_connections directly, so it always returns current connections
         logger.info("WebSocket disconnected: %s", conn_id)
+
+
+async def _ws_stream_task(websocket: WebSocket, inbound: InboundMessage, settings) -> None:
+    """Background task: run the streaming agent and forward chunks to the WebSocket."""
+    try:
+        async for db in get_async_session():
+            async for event in process_message_streaming(
+                inbound, settings.gateway, db
+            ):
+                try:
+                    await websocket.send_text(json.dumps(event))
+                except Exception:
+                    return  # WebSocket closed mid-stream
+    except Exception:
+        logger.exception("Error in streaming WebSocket task")
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "content": "I encountered an internal error. Please try again.",
+            }))
+        except Exception:
+            pass
+
+
+async def _ws_nonstream_task(websocket: WebSocket, inbound: InboundMessage, settings) -> None:
+    """Background task: run the non-streaming agent and send the full response."""
+    outbound = None
+    try:
+        async for db in get_async_session():
+            outbound = await process_message(inbound, settings.gateway, db)
+    except Exception:
+        logger.exception("Error processing WebSocket message")
+        outbound = OutboundMessage(
+            platform="websocket",
+            platform_chat_id=inbound.platform_chat_id,
+            content="I encountered an internal error. Please try again.",
+        )
+
+    if outbound:
+        try:
+            await websocket.send_text(json.dumps({"content": outbound.content}))
+        except Exception:
+            pass
 
 
 async def _handle_permission_response(websocket: WebSocket, data: dict) -> None:

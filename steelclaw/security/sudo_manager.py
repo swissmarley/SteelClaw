@@ -123,13 +123,18 @@ class SudoManager:
                 "Set agents.security.sudo.enabled = true in config.json to enable it."
             )
 
-        timeout = timeout or self._config.session_timeout
+        # exec_timeout: how long the subprocess itself may run
+        exec_timeout = timeout or 30
+        # ui_timeout: how long to wait for the user to interact with popups.
+        # Use the broadcaster's configured timeout (= security.permission_timeout,
+        # typically 300 s) so users are not rushed by the short command timeout.
+        ui_timeout = (self._broadcaster._timeout if self._broadcaster else None) or 300
 
         # Check whitelist first (no prompt needed for pre-approved patterns)
         if self._is_whitelisted(command):
             logger.info("Sudo command auto-approved via whitelist: %s", command[:80])
             self._write_audit("AUTO-APPROVED (whitelist)", command)
-            return await self._run_sudo(command, timeout)
+            return await self._run_sudo(command, exec_timeout)
 
         # Interactive confirmation via broadcaster
         if self._broadcaster and session_id and platform and platform_chat_id:
@@ -139,7 +144,7 @@ class SudoManager:
                 session_id=session_id,
                 platform=platform,
                 platform_chat_id=platform_chat_id,
-                timeout_seconds=timeout,
+                timeout_seconds=ui_timeout,
                 context="Privileged command execution requires approval",
             )
             try:
@@ -149,20 +154,20 @@ class SudoManager:
                     password = await self._get_sudo_password(
                         session_id=session_id,
                         command=command,
-                        timeout=timeout,
+                        timeout=ui_timeout,
                     )
                     if password is None:
                         self._write_audit("DENIED (no password)", command)
                         return "sudo command cancelled: no password provided"
                     self._write_audit("APPROVED", command)
-                    return await self._run_sudo(command, timeout, password=password)
+                    return await self._run_sudo(command, exec_timeout, password=password)
                 else:
                     self._write_audit("DENIED (user)", command)
                     return "sudo command denied by user"
             except asyncio.TimeoutError:
                 self._write_audit("DENIED (timeout)", command)
                 logger.warning("Sudo confirmation timed out for: %s", command[:80])
-                return f"Error: sudo confirmation timed out after {timeout}s"
+                return f"Error: sudo confirmation timed out after {ui_timeout}s"
             except Exception as e:
                 logger.exception("Sudo confirmation error: %s", e)
                 self._write_audit("ERROR", command)
