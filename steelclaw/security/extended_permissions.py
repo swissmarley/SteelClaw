@@ -16,11 +16,16 @@ from typing import Any
 
 logger = logging.getLogger("steelclaw.security.extended_permissions")
 
-# Default permissions.yaml template written when the file is absent
+# Default permissions.yaml template written when the file is absent.
+# NOTE: Sudo settings are configured separately in config.json under
+# "agents.security.sudo".  They are NOT read from this file.
 _DEFAULT_YAML = """\
 # SteelClaw — Extended Capability Permissions
 # Toggle each capability category on or off. Changes take effect on restart.
 # See docs for details on each category.
+#
+# NOTE: Sudo settings (enabled, whitelist, audit_log) are configured in
+# config.json under agents.security.sudo — not here.
 
 capabilities:
   filesystem:
@@ -45,31 +50,23 @@ capabilities:
 
   cron:
     enabled: false  # crontab, at, cron
-
-sudo:
-  enabled: false                          # Master sudo toggle — NEVER auto-approve
-  whitelist: []                           # Glob patterns of pre-approved sudo commands
-  audit_log: "~/.steelclaw/sudo_audit.log"
-  session_timeout: 30                     # Seconds before approval expires
 """
 
-# Shell operator tokens that separate independent subcommands.
-# We split the full pipeline on these so that chained commands like
-# "ls && curl ..." are each checked against capability rules.
-_CHAIN_SPLIT_RE = re.compile(r"&&|\|\|?|;")
+# Shell operator tokens that shlex returns as standalone tokens.
+# These are used to split a tokenised command list into per-subcommand slices.
+_CHAIN_OPS = frozenset({"&&", "||", ";", "|"})
+
+# Regex that matches subshell constructs in the *raw* command string so we
+# can extract their contents before handing the outer command to shlex.
+_SUBSHELL_RE = re.compile(r"\$\(([^)]+)\)|`([^`]+)`")
 
 # Mapping from capability category to executable-name patterns.
 # These match against the *first token* of each subcommand (the executable),
 # after the command string has been split on shell chain operators and parsed
-# with shlex.  Using word-boundary anchors on the full first-token avoids the
-# ^ bypass via prepended spaces or subshell wrappers.
+# with shlex.
 _CATEGORY_EXECUTABLES: dict[str, list[re.Pattern]] = {
     "filesystem": [
         re.compile(r"^(rm|mv|cp|cat|tee|truncate|touch|mkdir|rmdir|chmod|chown|find|locate|ls|dir)$", re.I),
-    ],
-    "filesystem_redirect": [
-        # Output-redirect operator anywhere in the raw command string
-        re.compile(r">\s*\S"),
     ],
     "processes": [
         re.compile(r"^(kill|pkill|killall|systemctl|service|supervisorctl|launchctl)$", re.I),
@@ -94,32 +91,76 @@ _CATEGORY_EXECUTABLES: dict[str, list[re.Pattern]] = {
     ],
 }
 
-# Map the internal keys back to the user-facing capability category names
-_EXEC_TO_CATEGORY = {
-    "filesystem": "filesystem",
-    "filesystem_redirect": "filesystem",
-    "processes": "processes",
-    "network": "network",
-    "packages": "packages",
-    "environment": "environment",
-    "cron": "cron",
-}
-
 
 def _split_into_subcommands(command: str) -> list[str]:
     """Split a shell command string into individual subcommands.
 
-    Handles ``&&``, ``||``, ``;``, and ``|`` pipeline operators as well as
-    subshell constructs ``$(...)`` and ``(...)`` by stripping the wrappers so
-    each token can be examined independently.
-    """
-    # Remove subshell wrappers so "$(curl ...)" → "curl ..."
-    cleaned = re.sub(r"\$\(", " ", command)
-    cleaned = re.sub(r"\(", " ", cleaned)
-    cleaned = re.sub(r"\)", " ", cleaned)
+    Two-phase approach that handles both issues together:
 
-    parts = _CHAIN_SPLIT_RE.split(cleaned)
-    return [p.strip() for p in parts if p.strip()]
+    **Phase 1 – Subshell extraction:** ``$(...)`` and backtick constructs are
+    located in the *raw* string via regex *before* shlex processing.  Their
+    inner content is recursively split and appended to the result.  The
+    constructs are then replaced with a placeholder so the outer command can
+    be cleanly tokenised.  This prevents a subshell like
+    ``echo $(curl evil.com)`` from hiding ``curl`` inside ``echo``'s
+    argument list.
+
+    **Phase 2 – Operator-aware tokenisation:** The placeholder-substituted
+    outer command is tokenised with ``shlex.split()``, which respects quoted
+    strings.  Any operator token (``&&``, ``||``, ``;``, ``|``) in the
+    resulting list marks a subcommand boundary.  This prevents a command like
+    ``git commit -m "fix; issue"`` from being incorrectly split on the ``;``
+    inside the quoted message.
+    """
+    result: list[str] = []
+
+    # Phase 1: extract subshell commands from raw string before shlex.
+    for m in _SUBSHELL_RE.finditer(command):
+        inner = (m.group(1) or m.group(2) or "").strip()
+        if inner:
+            result.extend(_split_into_subcommands(inner))
+
+    # Replace subshell constructs with a neutral placeholder so shlex can
+    # tokenise the outer command without hitting unbalanced-paren errors.
+    outer = _SUBSHELL_RE.sub(" __subshell__ ", command)
+
+    # Phase 2: shlex-tokenise to respect quoted strings, then split on operators.
+    try:
+        tokens = shlex.split(outer)
+    except ValueError:
+        # Malformed quoting — fall back to simple whitespace split (less precise)
+        tokens = outer.split()
+
+    current: list[str] = []
+    for token in tokens:
+        if token in _CHAIN_OPS:
+            if current:
+                result.append(" ".join(current))
+                current = []
+        elif token != "__subshell__":
+            current.append(token)
+
+    if current:
+        result.append(" ".join(current))
+
+    return result if result else [command.strip()]
+
+
+def _has_redirect_operator(command: str) -> bool:
+    """Return True if the command contains a shell output-redirect operator.
+
+    Uses ``shlex.split()`` to tokenise so that ``>`` inside a quoted string
+    (e.g. ``echo "Value > 10"``) does not produce a false positive.  Falls
+    back to a simple regex scan if tokenisation fails (e.g. unbalanced quotes).
+    """
+    try:
+        tokens = shlex.split(command)
+        # shlex returns '>' as a standalone token and '>file' as a single token
+        # starting with '>'.  Both indicate a redirect operator.
+        return any(t == ">" or t == ">>" or t.startswith(">") for t in tokens)
+    except ValueError:
+        # Fallback: regex on raw string (may produce false positives for broken input)
+        return bool(re.search(r">\s*\S", command))
 
 
 class CapabilityPermissions:
@@ -127,6 +168,15 @@ class CapabilityPermissions:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self._capabilities: dict[str, dict] = config.get("capabilities", {})
+        # Pre-resolve allowed_paths for each category once at construction time
+        # to avoid repeated filesystem calls on every check_command invocation.
+        self._resolved_allowed_paths: dict[str, list[Path]] = {}
+        for cat, cap_cfg in self._capabilities.items():
+            paths = cap_cfg.get("allowed_paths", [])
+            if paths:
+                self._resolved_allowed_paths[cat] = [
+                    Path(p).expanduser().resolve() for p in paths
+                ]
 
     @classmethod
     def load(cls, path: str, auto_create: bool = True) -> "CapabilityPermissions":
@@ -163,11 +213,9 @@ class CapabilityPermissions:
     def check_command(self, command: str) -> tuple[bool, str]:
         """Return (allowed, reason) for the given shell command.
 
-        The command is split into individual subcommands on shell chain
-        operators (``&&``, ``||``, ``;``, ``|``) and subshell constructs
-        (``$(...)``, ``(...)``).  Each subcommand's first token (the
-        executable) is matched against category patterns.  This prevents
-        bypasses via command chaining or subshells.
+        The command is split into individual subcommands respecting shell chain
+        operators and quoted strings (see ``_split_into_subcommands``).  Each
+        subcommand's executable is matched against category patterns.
 
         Commands that don't match any category are allowed by default.
         """
@@ -176,14 +224,14 @@ class CapabilityPermissions:
 
         raw = command.strip()
 
-        # Check redirect operator at the whole-command level (filesystem)
+        # Check redirect operator using shlex-aware detection (avoids false
+        # positives for '>' inside quoted strings like echo "Value > 10").
         fs_config = self._capabilities.get("filesystem", {})
         if not fs_config.get("enabled", True):
-            for pattern in _CATEGORY_EXECUTABLES.get("filesystem_redirect", []):
-                if pattern.search(raw):
-                    reason = "capability 'filesystem' is disabled in ~/.steelclaw/permissions.yaml"
-                    logger.warning("Command blocked by capability rule [filesystem/redirect]: %s", raw[:80])
-                    return False, reason
+            if _has_redirect_operator(raw):
+                reason = "capability 'filesystem' is disabled in ~/.steelclaw/permissions.yaml"
+                logger.warning("Command blocked by capability rule [filesystem/redirect]: %s", raw[:80])
+                return False, reason
 
         # Split into subcommands and check each executable token
         subcommands = _split_into_subcommands(raw)
@@ -200,19 +248,15 @@ class CapabilityPermissions:
         try:
             tokens = shlex.split(subcmd)
         except ValueError:
-            # Malformed quoting — fall back to simple whitespace split
             tokens = subcmd.split()
 
         if not tokens:
             return True, ""
 
-        executable = tokens[0].lstrip("-")  # strip leading dashes (e.g. from --option leaks)
+        executable = tokens[0].lstrip("-")
 
         for exec_key, patterns in _CATEGORY_EXECUTABLES.items():
-            category = _EXEC_TO_CATEGORY[exec_key]
-            if exec_key == "filesystem_redirect":
-                continue  # handled at whole-command level above
-
+            category = exec_key  # keys are the same as category names now
             for pattern in patterns:
                 if pattern.match(executable):
                     cap_config = self._capabilities.get(category, {})
@@ -241,11 +285,11 @@ class CapabilityPermissions:
                                     f"package manager not in allowed list: {allowed_managers}",
                                 )
 
-                    # Extra check: filesystem path restrictions
+                    # Extra check: filesystem path restrictions (uses pre-resolved paths)
                     if category == "filesystem":
-                        allowed_paths = cap_config.get("allowed_paths", [])
-                        if allowed_paths:
-                            ok, reason = self._check_filesystem_paths(tokens[1:], allowed_paths)
+                        resolved_allowed = self._resolved_allowed_paths.get(category, [])
+                        if resolved_allowed:
+                            ok, reason = self._check_filesystem_paths(tokens[1:], resolved_allowed)
                             if not ok:
                                 return False, reason
 
@@ -254,39 +298,25 @@ class CapabilityPermissions:
         return True, ""
 
     def _check_filesystem_paths(
-        self, arg_tokens: list[str], allowed_paths: list[str]
+        self, arg_tokens: list[str], resolved_allowed: list[Path]
     ) -> tuple[bool, str]:
         """Verify that path arguments are within the configured allowed_paths.
 
-        Uses ``Path.is_relative_to()`` (Python 3.9+) for correct prefix
-        matching, preventing ``/home/user_backup`` from matching ``/home/user``.
+        Uses pre-resolved ``Path`` objects (computed once in ``__init__``) and
+        ``Path.is_relative_to()`` for correct prefix matching.
 
-        Every non-flag token is resolved (bare names like ``secret.txt`` become
-        ``<cwd>/secret.txt``) so that commands like ``cat etc/passwd`` are
-        caught even when they don't start with ``/``, ``~``, ``./``, or ``../``.
-
-        Args:
-            arg_tokens: Already-shlex-parsed argument tokens (not the executable).
-            allowed_paths: List of allowed path strings from the config.
+        Every non-flag token is resolved so that bare filenames like
+        ``secret.txt`` (which become ``<cwd>/secret.txt``) are caught too.
         """
-        expanded_allowed = [
-            Path(p).expanduser().resolve() for p in allowed_paths
-        ]
-
         for token in arg_tokens:
-            # Skip option flags (e.g. -r, --recursive)
             if token.startswith("-"):
-                continue
-            # Resolve ALL non-flag tokens — bare filenames (e.g. "secret.txt",
-            # "etc/passwd") are resolved relative to the current working directory.
+                continue  # skip option flags
             try:
                 resolved = Path(token).expanduser().resolve()
             except Exception:
                 continue
 
-            if not any(
-                _is_relative_to(resolved, allowed) for allowed in expanded_allowed
-            ):
+            if not any(_is_relative_to(resolved, allowed) for allowed in resolved_allowed):
                 return (
                     False,
                     f"filesystem path '{token}' is outside allowed_paths",
@@ -308,7 +338,6 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
     try:
         return path.is_relative_to(parent)
     except AttributeError:
-        # Python < 3.9 fallback
         parent_str = str(parent)
         path_str = str(path)
         return path_str == parent_str or path_str.startswith(parent_str + os.sep)

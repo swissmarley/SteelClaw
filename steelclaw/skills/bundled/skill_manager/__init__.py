@@ -65,7 +65,6 @@ async def tool_create_skill(
         tools_spec: Optional JSON array of tool specs.
     """
     # Sanitise name
-    import re
     safe_name = re.sub(r"[^a-z0-9_]", "_", name.lower().strip()).strip("_")
     if not safe_name:
         return "Error: invalid skill name"

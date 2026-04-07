@@ -19,22 +19,12 @@ logger = logging.getLogger("steelclaw.memory.fts")
 
 # DDL executed once on first connection
 _SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS fts_meta (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent_id  TEXT    NOT NULL DEFAULT '',
-    session_id TEXT   NOT NULL DEFAULT '',
-    source_type TEXT  NOT NULL DEFAULT 'message',
-    tags      TEXT    NOT NULL DEFAULT '',
-    created_at TEXT   NOT NULL
-);
-
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
     content,
     tags,
     source_type,
     agent_id      UNINDEXED,
     session_id    UNINDEXED,
-    rowid=id,
     tokenize='porter ascii'
 );
 """
