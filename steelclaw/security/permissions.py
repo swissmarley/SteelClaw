@@ -4,6 +4,10 @@ Tiers:
   - "ask":    Prompt the user via WebSocket before executing.
   - "record": Log the action but allow execution.
   - "ignore": Auto-allow silently.
+
+Extended capability permissions from ~/.steelclaw/permissions.yaml are checked
+*before* the approval store, allowing category-level (network, packages, etc.)
+blocking independent of individual command rules.
 """
 
 from __future__ import annotations
@@ -21,12 +25,20 @@ ApprovalCallback = Callable[[str], Coroutine[Any, Any, bool]]
 
 
 class PermissionManager:
-    """Evaluates command permission using the three-tier model."""
+    """Evaluates command permission using the three-tier model.
 
-    def __init__(self, settings: SecuritySettings) -> None:
+    Optionally integrates with CapabilityPermissions for category-level blocking.
+    """
+
+    def __init__(
+        self,
+        settings: SecuritySettings,
+        capability_permissions=None,  # Optional[CapabilityPermissions]
+    ) -> None:
         self._settings = settings
         self._approvals = ApprovalStore(settings.approvals_file)
         self._approval_callback: ApprovalCallback | None = None
+        self._capability_permissions = capability_permissions
 
     def set_approval_callback(self, callback: ApprovalCallback) -> None:
         """Set the callback used to prompt the user when permission is 'ask'."""
@@ -36,6 +48,12 @@ class PermissionManager:
         """Check whether a command is allowed to execute.
 
         Returns a PermissionResult with the decision and any relevant metadata.
+
+        Check order:
+        1. Blocked commands (hardcoded dangerous patterns)
+        2. Capability permissions (YAML category-level rules)
+        3. Approval store (per-command glob rules)
+        4. Default permission tier (ask / record / ignore)
         """
         # Check blocked commands first
         if self._is_blocked(command):
@@ -45,6 +63,16 @@ class PermissionManager:
                 tier="blocked",
                 reason="Command matches a blocked pattern",
             )
+
+        # Check capability-level permissions (from permissions.yaml)
+        if self._capability_permissions is not None:
+            allowed, reason = self._capability_permissions.check_command(command)
+            if not allowed:
+                return PermissionResult(
+                    allowed=False,
+                    tier="blocked",
+                    reason=reason,
+                )
 
         # Check approval store
         stored = self._approvals.check(command)
