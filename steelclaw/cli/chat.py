@@ -29,46 +29,70 @@ THINKING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇"
 TOOL_FRAMES = ["◐", "◓", "◑", "◒"]
 CONNECT_FRAMES = ["◜ ", " ◝", " ◞", "◟ "]
 
-# ── Slash commands — single source of truth ────────────────────────────────
-# Grouped: chat-native commands first, then CLI passthrough commands.
+# ── Slash commands — grouped for display, flat for autocomplete ────────────
 
+# HELP_SECTIONS drives both the /help table (with section headers) and the
+# flat SLASH_COMMANDS list used by the autocompleter.
+HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("Chat", [
+        ("/help",        "Show available commands"),
+        ("/exit",        "Exit the chat"),
+        ("/quit",        "Exit the chat"),
+        ("/clear",       "Clear conversation history"),
+        ("/new",         "Start a new conversation"),
+        ("/history",     "Show full conversation history"),
+        ("/compact",     "Show recent history (last 10 exchanges)"),
+        ("/status",      "Connection, server and session info"),
+        ("/stats",       "Show session statistics"),
+        ("/model",       "Show current model info"),
+        ("/version",     "Show SteelClaw version"),
+        ("/export",      "Export chat to file  [filename]"),
+    ]),
+    ("Server / Daemon", [
+        ("/serve",       "Start the API server in foreground"),
+        ("/start",       "Start SteelClaw as background daemon"),
+        ("/stop",        "Stop the background daemon"),
+        ("/restart",     "Restart the background daemon"),
+        ("/app",         "Manage app  [start|stop|restart|reset]"),
+    ]),
+    ("Data & Configuration", [
+        ("/config",      "View/edit configuration  [show|get <key>|set <key> <val>]"),
+        ("/migrate",     "Run database migrations"),
+        ("/sessions",    "Manage sessions  [list|reset|delete]"),
+        ("/memory",      "Manage memory  [status|search|clear|experiences]"),
+        ("/agents",      "Manage agents  [list|add|delete|status]"),
+        ("/skills",      "Manage skills  [list|install|enable|disable|configure]"),
+        ("/persona",     "Configure agent persona interactively"),
+        ("/onboard",     "Run the interactive onboarding wizard"),
+        ("/setup",       "Alias for /onboard"),
+    ]),
+    ("Scheduler", [
+        ("/scheduler",   "Manage scheduled jobs  [list|add|remove|run|set-timezone]"),
+    ]),
+    ("Security", [
+        ("/security",    "Security settings  [show|list-rules|add-rule|capabilities]"),
+        ("/sudo",        "Sudo mode  [enable|disable|whitelist list|add|remove]"),
+    ]),
+    ("Infrastructure", [
+        ("/logs",        "View daemon logs  [-f to follow]"),
+        ("/gateway",     "Manage gateway  [start|stop|restart]"),
+        ("/connectors",  "Manage connectors  [list|configure|enable|disable|status]"),
+    ]),
+    ("Info", [
+        ("/pricing",     "Show model pricing table"),
+    ]),
+]
+
+# Flat list derived from HELP_SECTIONS — used by the autocompleter.
 SLASH_COMMANDS: list[tuple[str, str]] = [
-    # ── Chat-native ────────────────────────────────────────────────────
-    ("/help",        "Show available commands"),
-    ("/exit",        "Exit the chat"),
-    ("/quit",        "Exit the chat"),
-    ("/clear",       "Clear conversation history"),
-    ("/status",      "Connection and session info"),
-    ("/history",     "Show conversation history"),
-    ("/compact",     "Show history (compact, last 10)"),
-    ("/model",       "Show current model info"),
-    ("/stats",       "Show session statistics"),
-    ("/new",         "Start a new conversation"),
-    ("/export",      "Export chat to file"),
-    # ── Server / daemon ────────────────────────────────────────────────
-    ("/serve",       "Start the API server in foreground"),
-    ("/start",       "Start SteelClaw as background daemon"),
-    ("/stop",        "Stop the background daemon"),
-    ("/restart",     "Restart the background daemon"),
-    # ── Data & config ──────────────────────────────────────────────────
-    ("/migrate",     "Run database migrations"),
-    ("/sessions",    "Manage sessions  [list|reset|delete]"),
-    ("/memory",      "Manage persistent memory  [status|search|clear]"),
-    ("/agents",      "Manage agents  [list|add|delete|status]"),
-    ("/skills",      "Manage skills  [list|install|enable|disable|configure]"),
-    ("/persona",     "Configure agent persona interactively"),
-    ("/onboard",     "Run the interactive onboarding wizard"),
-    ("/setup",       "Alias for /onboard"),
-    # ── Infrastructure ─────────────────────────────────────────────────
-    ("/logs",        "View daemon logs  [-f to follow]"),
-    ("/gateway",     "Manage gateway connectors  [start|stop|restart]"),
-    ("/connectors",  "Manage connectors  [list|configure|enable|disable|status]"),
+    entry for _, cmds in HELP_SECTIONS for entry in cmds
 ]
 
 # Commands resolved entirely within the chat loop (no subprocess).
 _CHAT_NATIVE: frozenset[str] = frozenset({
     "/help", "/exit", "/quit", "/clear", "/status",
     "/history", "/compact", "/model", "/stats", "/new", "/export",
+    "/version", "/pricing",
 })
 
 # Commands delegated to `steelclaw <subcommand> [args]` as a subprocess.
@@ -76,7 +100,27 @@ _CLI_PASSTHROUGH: frozenset[str] = frozenset({
     "/serve", "/start", "/stop", "/restart", "/migrate",
     "/sessions", "/memory", "/agents", "/skills", "/logs",
     "/gateway", "/connectors", "/persona", "/onboard", "/setup",
+    "/scheduler", "/security", "/app", "/config",
 })
+
+# Commands with custom argument mapping (not simple name→subcommand).
+_SPECIAL_CMDS: frozenset[str] = frozenset({
+    "/sudo",
+})
+
+
+def _ws_to_http_base(ws_url: str) -> str:
+    """Convert a WebSocket URL to its HTTP base (scheme + host + port, no path).
+
+    Uses urllib.parse so the scheme substitution is safe even when the
+    protocol string appears elsewhere in the URL (e.g. as part of a hostname).
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    parsed = urlparse(ws_url)
+    scheme = "https" if parsed.scheme == "wss" else "http"
+    # Keep only scheme + netloc; drop path/query/fragment
+    return urlunparse((scheme, parsed.netloc, "", "", "", ""))
 
 
 # ── prompt_toolkit autocomplete ────────────────────────────────────────────
@@ -172,12 +216,20 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
         print_banner()
 
     def _render_help() -> Panel:
-        tbl = Table(show_header=True, box=box.SIMPLE_HEAVY, padding=(0, 2))
-        tbl.add_column("Command", style="accent", min_width=20)
+        tbl = Table(show_header=True, box=box.SIMPLE_HEAVY, padding=(0, 2), show_edge=False)
+        tbl.add_column("Command", style="accent", min_width=16)
         tbl.add_column("Description", style="dim")
-        for cmd, desc in SLASH_COMMANDS:
-            tbl.add_row(cmd, desc)
-        tbl.add_row("Ctrl+C", "Exit immediately")
+
+        for i, (section_name, cmds) in enumerate(HELP_SECTIONS):
+            if i > 0:
+                tbl.add_section()
+            # Section header row
+            tbl.add_row(f"[dim italic]{section_name}[/]", "", end_section=True)
+            for cmd, desc in cmds:
+                tbl.add_row(cmd, desc)
+
+        tbl.add_section()
+        tbl.add_row("[dim]Ctrl+C[/dim]", "[dim]Exit immediately[/dim]")
         return Panel(tbl, title="[accent] Commands [/]", border_style="blue", box=box.ROUNDED)
 
     def _render_message(role: str, content: str, ts: str = "") -> Panel:
@@ -203,20 +255,100 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             padding=(0, 1),
         )
 
-    def _render_status(url: str, uid: str, connected: bool) -> Panel:
+    async def _render_status(url: str, uid: str, ws_connected: bool) -> Panel:
+        # Probe the health endpoint without blocking the event loop
+        http_base = _ws_to_http_base(url)
+        api_online = False
+        api_version = None
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient() as _client:
+                _resp = await _client.get(f"{http_base}/health", timeout=2.0)
+                if _resp.status_code == 200:
+                    api_online = True
+                    try:
+                        api_version = _resp.json().get("version")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         tbl = Table(show_header=False, box=None, padding=(0, 2))
         tbl.add_column(style="dim", min_width=14)
         tbl.add_column()
         tbl.add_row("Server", f"[accent]{url}[/]")
         tbl.add_row("User", f"[accent]{uid}[/]")
-        status_str = "[success]● Connected[/]" if connected else "[error]● Disconnected[/]"
-        tbl.add_row("Status", status_str)
+        ws_str = "[success]● Connected[/]" if ws_connected else "[error]● Disconnected[/]"
+        api_str = (
+            f"[success]● Online[/] [dim]v{api_version}[/]" if api_online and api_version
+            else "[success]● Online[/]" if api_online
+            else "[error]● Unreachable[/]"
+        )
+        tbl.add_row("WebSocket", ws_str)
+        tbl.add_row("REST API", api_str)
         tbl.add_row("Mode", "[accent]Streaming[/]")
         uptime = int(time.time() - start_time)
         mins, secs = divmod(uptime, 60)
         tbl.add_row("Uptime", f"[dim]{mins}m {secs}s[/]")
         tbl.add_row("Messages", f"[dim]{msg_count}[/]")
         return Panel(tbl, title="[accent] Status [/]", border_style="blue", box=box.ROUNDED)
+
+    def _render_version(url: str) -> Panel:
+        try:
+            from importlib.metadata import version as pkg_ver
+            v = pkg_ver("steelclaw")
+        except Exception:
+            try:
+                from steelclaw import __version__
+                v = __version__
+            except Exception:
+                v = "unknown"
+
+        tbl = Table(show_header=False, box=None, padding=(0, 2))
+        tbl.add_column(style="dim", min_width=14)
+        tbl.add_column()
+        tbl.add_row("Package", "[accent]steelclaw[/]")
+        tbl.add_row("Version", f"[bold accent]{v}[/]")
+        tbl.add_row("Interface", "[accent]WebSocket TUI[/]")
+        tbl.add_row("Server", f"[dim]{url}[/]")
+        return Panel(tbl, title="[accent] Version [/]", border_style="blue", box=box.ROUNDED)
+
+    def _render_pricing() -> Panel:
+        from steelclaw.pricing import MODEL_PRICING
+
+        tbl = Table(show_header=True, box=box.SIMPLE_HEAVY, padding=(0, 2), show_edge=False)
+        tbl.add_column("Model", style="accent", min_width=36)
+        tbl.add_column("Prompt / 1K", style="green", justify="right", min_width=14)
+        tbl.add_column("Completion / 1K", style="yellow", justify="right", min_width=16)
+
+        # Group by provider prefix
+        _providers: dict[str, list] = {}
+        for model, prices in MODEL_PRICING.items():
+            if "/" in model:
+                provider = model.split("/")[0].title()
+            elif model.startswith("claude"):
+                provider = "Anthropic"
+            elif model.startswith(("gpt", "o1", "o3")):
+                provider = "OpenAI"
+            else:
+                provider = "Other"
+            _providers.setdefault(provider, []).append((model, prices))
+
+        first = True
+        for provider, models in _providers.items():
+            if not first:
+                tbl.add_section()
+            first = False
+            tbl.add_row(f"[dim italic]{provider}[/]", "", "", end_section=True)
+            for model, prices in models:
+                short_model = model.split("/")[-1] if "/" in model else model
+                tbl.add_row(
+                    short_model,
+                    f"${prices['prompt']:.5f}",
+                    f"${prices['completion']:.5f}",
+                )
+
+        return Panel(tbl, title="[accent] Model Pricing (USD) [/]", border_style="blue", box=box.ROUNDED)
 
     def _render_stats() -> Panel:
         tbl = Table(show_header=False, box=None, padding=(0, 2))
@@ -305,7 +437,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                 continue
 
             if cmd == "/status":
-                console.print(_render_status(server_url, user_id, True))
+                console.print(await _render_status(server_url, user_id, True))
                 continue
 
             if cmd == "/stats":
@@ -324,21 +456,57 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                 if not messages:
                     console.print("[dim]  No messages yet.[/dim]")
                 else:
-                    recent = messages[-20:]  # last 10 exchanges
+                    recent = messages[-20:]  # last 10 exchanges (20 messages = 10 user+assistant pairs)
+                    console.print(f"[dim]  Showing last {len(recent)} messages[/dim]\n")
                     for m in recent:
-                        role_tag = "[cyan]You[/]" if m["role"] == "user" else "[green]SC[/]"
+                        role_tag = "[cyan]You[/]" if m["role"] == "user" else "[green]SC [/]"
                         preview = m["content"][:120].replace("\n", " ")
+                        if len(m["content"]) > 120:
+                            preview += "…"
                         ts = m.get("time", "")
-                        console.print(f"  [dim]{ts}[/] {role_tag}: {preview}")
+                        console.print(f"  [dim]{ts}[/] {role_tag}  {preview}")
                 continue
 
             if cmd == "/model":
-                console.print("[dim]  Model info is determined server-side. Check /status on the web UI.[/dim]")
+                # Fetch live LLM config from the server without blocking the event loop
+                _http_base = _ws_to_http_base(server_url)
+                try:
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient() as _client:
+                        _resp = await _client.get(f"{_http_base}/api/config/llm", timeout=3.0)
+                    if _resp.status_code == 200:
+                        _llm = _resp.json().get("llm", {})
+                        _tbl = Table(show_header=False, box=None, padding=(0, 2))
+                        _tbl.add_column(style="dim", min_width=18)
+                        _tbl.add_column()
+                        _tbl.add_row("Model", f"[bold accent]{_llm.get('default_model', '—')}[/]")
+                        _tbl.add_row("Temperature", f"[dim]{_llm.get('temperature', '—')}[/]")
+                        _tbl.add_row("Max tokens", f"[dim]{_llm.get('max_tokens', '—')}[/]")
+                        _tbl.add_row("Context msgs", f"[dim]{_llm.get('max_context_messages', '—')}[/]")
+                        _tbl.add_row("Streaming", f"[dim]{_llm.get('streaming', '—')}[/]")
+                        console.print(Panel(
+                            _tbl,
+                            title="[accent] Model [/]",
+                            border_style="blue",
+                            box=box.ROUNDED,
+                        ))
+                    else:
+                        console.print("[dim]  Could not retrieve model info (server returned non-200).[/dim]")
+                except Exception:
+                    console.print("[dim]  Model info unavailable — is the server running? Try /status[/dim]")
                 continue
 
             if cmd == "/new":
                 messages.clear()
                 console.print("[dim]  New conversation started.[/dim]\n")
+                continue
+
+            if cmd == "/version":
+                console.print(_render_version(server_url))
+                continue
+
+            if cmd == "/pricing":
+                console.print(_render_pricing())
                 continue
 
             if cmd_name == "/export":
@@ -352,6 +520,36 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                     console.print(f"[success]  ✓ Exported to {fname}[/success]")
                 except Exception as e:
                     console.print(f"[error]  ✗ Export failed: {e}[/error]")
+                continue
+
+            if cmd_name == "/sudo":
+                # Map /sudo sub-args to steelclaw security sudo-* commands
+                sudo_parts = shlex.split(cmd_parts[1]) if len(cmd_parts) > 1 else []
+                sub = sudo_parts[0].lower() if sudo_parts else ""
+
+                if sub == "enable":
+                    cli_cmd = ["steelclaw", "security", "sudo-enable", "true"]
+                elif sub == "disable":
+                    cli_cmd = ["steelclaw", "security", "sudo-enable", "false"]
+                elif sub == "whitelist":
+                    wl_action = sudo_parts[1] if len(sudo_parts) > 1 else "list"
+                    cli_cmd = ["steelclaw", "security", "sudo-whitelist", wl_action]
+                    if len(sudo_parts) > 2:
+                        cli_cmd.append(sudo_parts[2])
+                elif sub == "status" or sub == "show" or sub == "":
+                    cli_cmd = ["steelclaw", "security", "show"]
+                else:
+                    console.print(
+                        "[error]  Usage:[/error] [accent]/sudo[/accent] "
+                        "[dim]enable | disable | whitelist [list|add|remove <pattern>] | status[/dim]"
+                    )
+                    continue
+
+                console.print(f"[dim]  Running:[/dim] [accent]{' '.join(cli_cmd)}[/accent]\n")
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda c=cli_cmd: subprocess.run(c)
+                )
+                console.print()
                 continue
 
             if cmd_name in _CLI_PASSTHROUGH:

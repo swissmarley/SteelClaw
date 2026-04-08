@@ -194,6 +194,15 @@ def cmd_security(args: argparse.Namespace) -> None:
     handle_security(args)
 
 
+# ── Config ───────────────────────────────────────────────────────────────────
+
+
+def cmd_config(args: argparse.Namespace) -> None:
+    """View/edit configuration."""
+    from steelclaw.cli.config_cmd import handle_config
+    handle_config(args)
+
+
 # ── Scheduler ────────────────────────────────────────────────────────────────
 
 
@@ -366,6 +375,16 @@ def main() -> None:
     # persona
     sub.add_parser("persona", help="Configure agent persona interactively")
 
+    # config
+    config_p = sub.add_parser("config", help="View/edit configuration (dot-notation keys)")
+    config_sub = config_p.add_subparsers(dest="config_action")
+    config_sub.add_parser("show", help="Show full config.json with syntax highlighting")
+    config_get_p = config_sub.add_parser("get", help="Get a config value by key")
+    config_get_p.add_argument("key", help="Dot-notation key (e.g. agents.llm.default_model)")
+    config_set_p = config_sub.add_parser("set", help="Set a config value by key")
+    config_set_p.add_argument("key", help="Dot-notation key (e.g. agents.llm.temperature)")
+    config_set_p.add_argument("value", help="Value (JSON-parsed: 'true'/'false' for booleans, numbers as ints/floats)")
+
     # security
     security_p = sub.add_parser("security", help="Manage security settings")
     security_sub = security_p.add_subparsers(dest="security_action")
@@ -428,6 +447,7 @@ def main() -> None:
         "connectors": cmd_connectors,
         "app": cmd_app_mgmt,
         "persona": cmd_persona,
+        "config": cmd_config,
         "security": cmd_security,
         "scheduler": cmd_scheduler,
     }
