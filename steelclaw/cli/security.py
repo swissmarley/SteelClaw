@@ -177,11 +177,13 @@ def _sudo_enable(value: str) -> None:
 
     if "security" not in config:
         config["security"] = {}
-    if "sudo" not in config["security"]:
-        config["security"]["sudo"] = {}
-    config["security"]["sudo"]["enabled"] = value.lower() == "true"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, indent=2))
+    if "agents" not in config:
+        config["agents"] = {}
+    if "security" not in config["agents"]:
+        config["agents"]["security"] = {}
+    if "sudo" not in config["agents"]["security"]:
+        config["agents"]["security"]["sudo"] = {}
+    config["agents"]["security"]["sudo"]["enabled"] = value.lower() == "true"
 
     print(f"Sudo mode: {value}")
 
