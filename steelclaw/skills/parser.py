@@ -41,10 +41,10 @@ class ToolDefinition:
             if param.enum:
                 prop["enum"] = param.enum
             # OpenAI requires 'items' for array types
-            # Default to string items (most common case for tool parameters)
-            # This allows arrays like ["pkg1", "pkg2"] for package lists
+            # Default to object items to support arrays of any type
+            # (strings, integers, objects, etc.)
             if param.type == "array":
-                prop["items"] = {"type": "string"}
+                prop["items"] = {"type": "object"}
             elif param.type == "object":
                 prop["additionalProperties"] = True
             properties[param.name] = prop

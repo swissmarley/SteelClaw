@@ -241,6 +241,30 @@ class SkillGenerator:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
+def _extract_json_by_braces(text: str) -> dict | None:
+    """Extract a JSON object from text using balanced brace counting.
+
+    This handles nested objects correctly, unlike regex greedy/non-greedy matching.
+    """
+    start = None
+    depth = 0
+
+    for i, char in enumerate(text):
+        if char == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    return json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    continue
+
+    return None
+
 def _summarise_tool_calls(tool_calls: list[dict[str, Any]]) -> str:
     """Format tool calls into a compact human-readable summary."""
     lines = []
@@ -261,21 +285,18 @@ def _parse_json_response(text: str) -> dict | None:
         pass
 
     # Try extracting JSON block from markdown code fences
-    # Use greedy matching to capture nested braces correctly
-    match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
-            pass
+    # Find the first opening brace and use balanced brace counting
+    code_block_match = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.DOTALL)
+    if code_block_match:
+        block_content = code_block_match.group(1)
+        json_obj = _extract_json_by_braces(block_content)
+        if json_obj:
+            return json_obj
 
-    # Try finding raw JSON object in text
-    match2 = re.search(r"\{.*\}", text, re.DOTALL)
-    if match2:
-        try:
-            return json.loads(match2.group(0))
-        except json.JSONDecodeError:
-            pass
+    # Try finding raw JSON object in text using balanced brace counting
+    json_obj = _extract_json_by_braces(text)
+    if json_obj:
+        return json_obj
 
     return None
 

@@ -43,10 +43,26 @@ def _load_config() -> dict:
 
 
 def _save_config(config: dict) -> None:
-    """Save config to file."""
+    """Save config to file atomically.
+
+    Uses a temp file and os.replace to ensure atomic writes,
+    preventing config corruption if interrupted mid-write.
+    """
+    import os
+    import tempfile
+
     path = _get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2))
+    content = json.dumps(config, indent=2)
+
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def _get_scheduler_config() -> dict:

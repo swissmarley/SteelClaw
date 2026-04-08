@@ -114,8 +114,9 @@ async def tool_apt_install(
         apt_cmd = "apt"
 
     from steelclaw.security.sandbox import execute_command
+    # Build the apt command WITHOUT manually prepending sudo
+    # Pass sudo=True to execute_command so it properly routes through SudoManager
     command = f"{apt_cmd} install -y {' '.join(packages)}"
-
     result = await execute_command(command, timeout=600, sudo=True)
     return f"Installed system packages: {', '.join(packages)}\n{result}"
 

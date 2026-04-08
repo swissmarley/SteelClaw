@@ -51,7 +51,6 @@ def _save_config(config: dict) -> None:
     # NamedTemporaryFile in the same directory ensures os.replace is atomic
     # (same filesystem), and delete=False lets us manage the file manually.
     fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(content)

@@ -47,6 +47,25 @@ async def execute_command(
     When *sudo=True*, the command is routed through the SudoManager which
     requires explicit "YES" confirmation and writes an immutable audit log entry.
     """
+    from steelclaw.security.permissions import PermissionManager
+    from steelclaw.security.context import get_security_context
+
+    # Get session context for permission checks
+    ctx = get_security_context()
+
+    # Check capability-level permissions BEFORE routing to sudo
+    # This ensures sudo commands still respect category restrictions
+    if sudo and _permission_manager is not None:
+        pm: PermissionManager = _permission_manager
+        result = await pm.check_command(
+            command,
+            session_id=ctx.session_id,
+            platform=ctx.platform,
+            platform_chat_id=ctx.platform_chat_id,
+        )
+        if not result.allowed:
+            return f"Permission denied: {result.reason}"
+
     # Route sudo commands through the dedicated sudo manager
     if sudo:
         if _sudo_manager is None:
@@ -54,9 +73,6 @@ async def execute_command(
                 "Error: sudo support is not enabled. "
                 "Set agents.security.sudo.enabled = true in config.json."
             )
-        # Get session context for interactive sudo approval
-        from steelclaw.security.context import get_security_context
-        ctx = get_security_context()
         return await _sudo_manager.execute_sudo(
             command,
             timeout=timeout,
@@ -65,14 +81,9 @@ async def execute_command(
             platform_chat_id=ctx.platform_chat_id,
         )
 
-    from steelclaw.security.permissions import PermissionManager
-    from steelclaw.security.context import get_security_context
-
-    # Permission check
+    # Permission check for non-sudo commands
     if check_permissions and _permission_manager is not None:
         pm: PermissionManager = _permission_manager
-        # Get session context for interactive permissions
-        ctx = get_security_context()
         result = await pm.check_command(
             command,
             session_id=ctx.session_id,

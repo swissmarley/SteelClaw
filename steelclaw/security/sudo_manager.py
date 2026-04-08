@@ -89,17 +89,23 @@ class SudoManager:
                 return True
         return False
 
-    def _write_audit(self, status: str, command: str) -> None:
+    async def _write_audit(self, status: str, command: str) -> None:
         """Append an immutable audit entry to the log file."""
-        self._audit_path.parent.mkdir(parents=True, exist_ok=True)
+        import json
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "status": status,
             "command": command,
         }
-        import json
-        with open(self._audit_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        content = json.dumps(entry) + "\n"
+
+        # Use asyncio.to_thread for non-blocking file I/O
+        def _write():
+            self._audit_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._audit_path, "a", encoding="utf-8") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write)
 
     async def execute_sudo(
         self,

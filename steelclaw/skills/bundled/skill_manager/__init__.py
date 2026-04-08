@@ -146,9 +146,13 @@ async def tool_edit_skill(
         Path(_workspace_skills_dir).expanduser(),
     ):
         base = scope_dir.resolve()
-        skill_dir = base / safe_name
+        skill_dir = (base / safe_name).resolve()
         # Ensure the resolved path is actually inside the expected base (defence-in-depth)
-        if not str(skill_dir).startswith(str(base)):
+        # Use is_relative_to for robust path validation (Python 3.9+)
+        try:
+            if not skill_dir.is_relative_to(base):
+                return "Error: invalid skill path"
+        except (ValueError, RuntimeError):
             return "Error: invalid skill path"
         target = skill_dir / file
         if skill_dir.exists():
@@ -184,9 +188,13 @@ async def tool_delete_skill(
     else:
         return f"Error: scope must be 'global' or 'workspace', got '{scope}'"
 
-    skill_dir = base / safe_name
+    skill_dir = (base / safe_name).resolve()
     # Ensure the resolved path is actually inside the expected base (defence-in-depth)
-    if not str(skill_dir.resolve()).startswith(str(base)):
+    # Use is_relative_to for robust path validation (Python 3.9+)
+    try:
+        if not skill_dir.is_relative_to(base):
+            return "Error: invalid skill path"
+    except (ValueError, RuntimeError):
         return "Error: invalid skill path"
 
     if not skill_dir.exists():

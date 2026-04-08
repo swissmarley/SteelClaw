@@ -7,7 +7,7 @@ use with persistent storage, consider integrating with a database backend.
 
 from __future__ import annotations
 
-import threading
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -24,7 +24,7 @@ _session_last_access: dict[str, datetime] = {}
 _SESSION_TTL = timedelta(hours=2)
 
 # Lock protecting both _session_plans and _session_last_access
-_plans_lock = threading.Lock()
+_plans_lock = asyncio.Lock()
 
 
 def _evict_stale_sessions() -> None:
@@ -41,9 +41,9 @@ def _evict_stale_sessions() -> None:
         _session_last_access.pop(sid, None)
 
 
-def _get_session_plans(session_id: str) -> dict[str, "Plan"]:
+async def _get_session_plans(session_id: str) -> dict[str, "Plan"]:
     """Get or create the plan storage for a session, evicting stale sessions."""
-    with _plans_lock:
+    async with _plans_lock:
         _evict_stale_sessions()
         if session_id not in _session_plans:
             _session_plans[session_id] = {}
@@ -149,7 +149,7 @@ async def tool_create_plan(
         session_id=session_id,
     )
 
-    plans = _get_session_plans(session_id)
+    plans = await _get_session_plans(session_id)
     plans[plan_id] = plan
 
     return f"Created plan: {plan_id}\n\n{_format_plan(plan)}"
@@ -174,7 +174,7 @@ async def tool_update_step(
     Returns:
         Updated plan status
     """
-    plans = _get_session_plans(session_id)
+    plans = await _get_session_plans(session_id)
 
     if plan_id not in plans:
         return f"Error: Plan {plan_id} not found"
@@ -230,7 +230,7 @@ async def tool_get_plan(
     Returns:
         Plan details and step statuses
     """
-    plans = _get_session_plans(session_id)
+    plans = await _get_session_plans(session_id)
 
     if plan_id not in plans:
         return f"Error: Plan {plan_id} not found"
@@ -252,7 +252,7 @@ async def tool_list_plans(
     Returns:
         List of plans
     """
-    plans = _get_session_plans(session_id)
+    plans = await _get_session_plans(session_id)
 
     if not plans:
         return "No plans found. Use create_plan to create one."
