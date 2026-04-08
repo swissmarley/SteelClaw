@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 # Session-scoped plan storage: {session_id: {plan_id: Plan}}
