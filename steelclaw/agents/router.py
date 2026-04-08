@@ -23,7 +23,6 @@ from steelclaw.pricing import calculate_cost
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.settings import AgentSettings
 from steelclaw.skills.registry import SkillRegistry
-from steelclaw.security.context import set_security_context, clear_security_context
 
 logger = logging.getLogger("steelclaw.agents")
 

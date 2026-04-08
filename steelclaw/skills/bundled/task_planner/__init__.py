@@ -9,18 +9,35 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 # Session-scoped plan storage: {session_id: {plan_id: Plan}}
 # This prevents data leakage between different users/sessions
 _session_plans: dict[str, dict[str, "Plan"]] = {}
 
+# Track last-access time per session to enable TTL-based eviction
+_session_last_access: dict[str, datetime] = {}
+
+# Sessions unused for longer than this are evicted from memory
+_SESSION_TTL = timedelta(hours=2)
+
+
+def _evict_stale_sessions() -> None:
+    """Remove sessions that have not been accessed within the TTL window."""
+    cutoff = datetime.now() - _SESSION_TTL
+    stale = [sid for sid, ts in _session_last_access.items() if ts < cutoff]
+    for sid in stale:
+        _session_plans.pop(sid, None)
+        _session_last_access.pop(sid, None)
+
 
 def _get_session_plans(session_id: str) -> dict[str, "Plan"]:
-    """Get or create the plan storage for a session."""
+    """Get or create the plan storage for a session, evicting stale sessions."""
+    _evict_stale_sessions()
     if session_id not in _session_plans:
         _session_plans[session_id] = {}
+    _session_last_access[session_id] = datetime.now()
     return _session_plans[session_id]
 
 

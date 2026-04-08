@@ -8,10 +8,6 @@ from pathlib import Path
 
 from steelclaw.paths import PROJECT_ROOT
 
-from steelclaw.paths import PROJECT_ROOT
-
-from steelclaw.paths import PROJECT_ROOT
-
 
 def handle_scheduler(args: argparse.Namespace) -> None:
     """Handle scheduler commands."""
