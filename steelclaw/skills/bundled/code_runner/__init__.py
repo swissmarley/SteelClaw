@@ -96,12 +96,9 @@ async def tool_scaffold_project(
     try:
         base_path = Path.cwd().resolve()
         project_path = (base_path / name).resolve()
-        if not project_path.is_relative_to(base_path):
-            return f"Error: Invalid project name '{name}' (must be a relative path within the workspace)"
+        project_path.relative_to(base_path)
     except (ValueError, RuntimeError):
         return f"Error: Invalid project name '{name}' (must be a relative path within the workspace)"
-    except Exception as e:
-        return f"Error: Invalid project name '{name}': {e}"
 
     try:
         project_path.mkdir(parents=True, exist_ok=False)
@@ -116,25 +113,13 @@ async def tool_scaffold_project(
         full_path = (project_path / file_path).resolve()
         # Security: Ensure the resolved path stays within the project directory
         # This prevents path traversal attacks like "../../../etc/passwd"
-        # Use is_relative_to for robust path validation (Python 3.9+)
         try:
-            if not full_path.is_relative_to(project_path):
-                # Clean up the created directory on error
-                import shutil
-                try:
-                    # Safety check: only remove if within workspace
-                    if project_path.is_relative_to(base_path):
-                        shutil.rmtree(project_path)
-                except Exception:
-                    pass  # Ignore cleanup errors
-                return f"Error: Invalid file path '{file_path}' (outside project directory)"
+            full_path.relative_to(project_path)
         except (ValueError, RuntimeError):
             # Clean up the created directory on error
             import shutil
             try:
-                # Safety check: only remove if within workspace
-                if project_path.is_relative_to(base_path):
-                    shutil.rmtree(project_path)
+                shutil.rmtree(project_path, ignore_errors=True)
             except Exception:
                 pass  # Ignore cleanup errors
             return f"Error: Invalid file path '{file_path}' (outside project directory)"

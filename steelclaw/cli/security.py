@@ -152,9 +152,12 @@ def _set_default(permission: str) -> None:
     else:
         config = {}
 
-    if "security" not in config:
-        config["security"] = {}
-    config["security"]["default_permission"] = permission
+    # Ensure proper nesting under agents.security
+    if "agents" not in config:
+        config["agents"] = {}
+    if "security" not in config["agents"]:
+        config["agents"]["security"] = {}
+    config["agents"]["security"]["default_permission"] = permission
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2))
 
@@ -173,11 +176,13 @@ def _sudo_enable(value: str) -> None:
     else:
         config = {}
 
-    if "security" not in config:
-        config["security"] = {}
-    if "sudo" not in config["security"]:
-        config["security"]["sudo"] = {}
-    config["security"]["sudo"]["enabled"] = value.lower() == "true"
+    if "agents" not in config:
+        config["agents"] = {}
+    if "security" not in config["agents"]:
+        config["agents"]["security"] = {}
+    if "sudo" not in config["agents"]["security"]:
+        config["agents"]["security"]["sudo"] = {}
+    config["agents"]["security"]["sudo"]["enabled"] = value.lower() == "true"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2))
 
@@ -192,14 +197,16 @@ def _sudo_whitelist(action: str, pattern: str | None) -> None:
     else:
         config = {}
 
-    if "security" not in config:
-        config["security"] = {}
-    if "sudo" not in config["security"]:
-        config["security"]["sudo"] = {"enabled": False, "whitelist": []}
-    if "whitelist" not in config["security"]["sudo"]:
-        config["security"]["sudo"]["whitelist"] = []
+    if "agents" not in config:
+        config["agents"] = {}
+    if "security" not in config["agents"]:
+        config["agents"]["security"] = {}
+    if "sudo" not in config["agents"]["security"]:
+        config["agents"]["security"]["sudo"] = {"enabled": False, "whitelist": []}
+    if "whitelist" not in config["agents"]["security"]["sudo"]:
+        config["agents"]["security"]["sudo"]["whitelist"] = []
 
-    whitelist = config["security"]["sudo"]["whitelist"]
+    whitelist = config["agents"]["security"]["sudo"]["whitelist"]
 
     if action == "list":
         if whitelist:
