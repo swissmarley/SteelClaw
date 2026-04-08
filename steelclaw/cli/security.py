@@ -152,9 +152,11 @@ def _set_default(permission: str) -> None:
     else:
         config = {}
 
-    if "security" not in config:
-        config["security"] = {}
-    config["security"]["default_permission"] = permission
+    if "agents" not in config:
+        config["agents"] = {}
+    if "security" not in config["agents"]:
+        config["agents"]["security"] = {}
+    config["agents"]["security"]["default_permission"] = permission
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2))
 
