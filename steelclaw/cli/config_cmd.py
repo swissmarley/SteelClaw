@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from rich.console import Console
@@ -38,8 +40,27 @@ def _load_config() -> dict:
 
 
 def _save_config(config: dict) -> None:
+    """Write config atomically: write to a temp file then os.replace().
+
+    This prevents partial writes from corrupting config.json if the process
+    is interrupted mid-write (e.g. power loss, SIGKILL).
+    """
     path = _get_config_path()
-    path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = json.dumps(config, indent=2)
+    # NamedTemporaryFile in the same directory ensures os.replace is atomic
+    # (same filesystem), and delete=False lets us manage the file manually.
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _config_show() -> None:

@@ -109,6 +109,20 @@ _SPECIAL_CMDS: frozenset[str] = frozenset({
 })
 
 
+def _ws_to_http_base(ws_url: str) -> str:
+    """Convert a WebSocket URL to its HTTP base (scheme + host + port, no path).
+
+    Uses urllib.parse so the scheme substitution is safe even when the
+    protocol string appears elsewhere in the URL (e.g. as part of a hostname).
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    parsed = urlparse(ws_url)
+    scheme = "https" if parsed.scheme == "wss" else "http"
+    # Keep only scheme + netloc; drop path/query/fragment
+    return urlunparse((scheme, parsed.netloc, "", "", "", ""))
+
+
 # ── prompt_toolkit autocomplete ────────────────────────────────────────────
 
 def _build_prompt_session():
@@ -241,27 +255,21 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             padding=(0, 1),
         )
 
-    def _render_status(url: str, uid: str, ws_connected: bool) -> Panel:
-        # Derive the HTTP base URL from the WebSocket URL
-        http_base = url.replace("ws://", "http://").replace("wss://", "https://")
-        # Strip the WebSocket path to get the API root
-        for suffix in ("/gateway/ws", "/ws"):
-            if http_base.endswith(suffix):
-                http_base = http_base[: -len(suffix)]
-                break
-
-        # Probe the health endpoint
+    async def _render_status(url: str, uid: str, ws_connected: bool) -> Panel:
+        # Probe the health endpoint without blocking the event loop
+        http_base = _ws_to_http_base(url)
         api_online = False
         api_version = None
         try:
             import httpx as _httpx
-            resp = _httpx.get(f"{http_base}/health", timeout=2.0)
-            if resp.status_code == 200:
-                api_online = True
-                try:
-                    api_version = resp.json().get("version")
-                except Exception:
-                    pass
+            async with _httpx.AsyncClient() as _client:
+                _resp = await _client.get(f"{http_base}/health", timeout=2.0)
+                if _resp.status_code == 200:
+                    api_online = True
+                    try:
+                        api_version = _resp.json().get("version")
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -429,7 +437,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                 continue
 
             if cmd == "/status":
-                console.print(_render_status(server_url, user_id, True))
+                console.print(await _render_status(server_url, user_id, True))
                 continue
 
             if cmd == "/stats":
@@ -460,15 +468,12 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                 continue
 
             if cmd == "/model":
-                # Derive HTTP base URL and fetch live LLM config from the server
-                _http_base = server_url.replace("ws://", "http://").replace("wss://", "https://")
-                for _sfx in ("/gateway/ws", "/ws"):
-                    if _http_base.endswith(_sfx):
-                        _http_base = _http_base[: -len(_sfx)]
-                        break
+                # Fetch live LLM config from the server without blocking the event loop
+                _http_base = _ws_to_http_base(server_url)
                 try:
                     import httpx as _httpx
-                    _resp = _httpx.get(f"{_http_base}/api/config/llm", timeout=3.0)
+                    async with _httpx.AsyncClient() as _client:
+                        _resp = await _client.get(f"{_http_base}/api/config/llm", timeout=3.0)
                     if _resp.status_code == 200:
                         _llm = _resp.json().get("llm", {})
                         _tbl = Table(show_header=False, box=None, padding=(0, 2))
