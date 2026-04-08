@@ -411,21 +411,21 @@ async def remove_approval(pattern: str, request: Request) -> dict:
 def _get_capabilities_path(request: Request) -> Path:
     """Resolve the permissions.yaml path from app settings (avoids hardcoding)."""
     settings = request.app.state.settings
-    permissions_file = getattr(
-        getattr(settings.agents, "security", None), "permissions_file", None
-    ) or "~/.steelclaw/permissions.yaml"
+    permissions_file = (
+        settings.agents.security.extended_permissions.permissions_file
+    )
     return Path(permissions_file).expanduser().resolve()
 
 
 def _read_capabilities(request: Request) -> dict:
     """Read capabilities from permissions.yaml."""
+    import yaml
     caps_path = _get_capabilities_path(request)
     if caps_path.exists():
-        import yaml
         try:
             content = caps_path.read_text(encoding="utf-8")
             return yaml.safe_load(content) or {}
-        except Exception:
+        except (IOError, yaml.YAMLError):
             return {}
     return {}
 
