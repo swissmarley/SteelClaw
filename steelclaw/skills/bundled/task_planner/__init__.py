@@ -47,7 +47,7 @@ def _get_session_plans(session_id: str) -> dict[str, "Plan"]:
         _evict_stale_sessions()
         if session_id not in _session_plans:
             _session_plans[session_id] = {}
-        _session_last_access[session_id] = datetime.now()
+        _session_last_access[session_id] = datetime.now(timezone.utc)
         return _session_plans[session_id]
 
 
