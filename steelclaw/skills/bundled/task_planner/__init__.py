@@ -34,7 +34,7 @@ def _evict_stale_sessions() -> None:
     Iterates over a static copy of items to avoid RuntimeError from
     concurrent modification of the dict.
     """
-    cutoff = datetime.now() - _SESSION_TTL
+    cutoff = datetime.now(timezone.utc) - _SESSION_TTL
     stale = [sid for sid, ts in list(_session_last_access.items()) if ts < cutoff]
     for sid in stale:
         _session_plans.pop(sid, None)
