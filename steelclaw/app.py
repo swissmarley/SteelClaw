@@ -186,10 +186,6 @@ async def lifespan(app: FastAPI):
     app.state.task_engine = task_engine
     set_task_engine(task_engine)  # Make available to skills
 
-    # Connect task engine to cron_manager skill
-    from steelclaw.skills.bundled.cron_manager import set_task_engine
-    set_task_engine(task_engine)
-
     # ── Session heartbeat ───────────────────────────────────────────────
     from steelclaw.session_heartbeat import run_heartbeat
 

@@ -408,32 +408,40 @@ async def remove_approval(pattern: str, request: Request) -> dict:
 # ── Capabilities ───────────────────────────────────────────────────────────
 
 
-_CAPABILITIES_PATH = Path.home() / ".steelclaw" / "permissions.yaml"
+def _get_capabilities_path(request: Request) -> Path:
+    """Resolve the permissions.yaml path from app settings (avoids hardcoding)."""
+    settings = request.app.state.settings
+    permissions_file = (
+        settings.agents.security.extended_permissions.permissions_file
+    )
+    return Path(permissions_file).expanduser().resolve()
 
 
-def _read_capabilities() -> dict:
+def _read_capabilities(request: Request) -> dict:
     """Read capabilities from permissions.yaml."""
-    if _CAPABILITIES_PATH.exists():
-        import yaml
+    import yaml
+    caps_path = _get_capabilities_path(request)
+    if caps_path.exists():
         try:
-            content = _CAPABILITIES_PATH.read_text(encoding="utf-8")
+            content = caps_path.read_text(encoding="utf-8")
             return yaml.safe_load(content) or {}
-        except Exception:
+        except (IOError, yaml.YAMLError):
             return {}
     return {}
 
 
-def _write_capabilities(data: dict) -> None:
+def _write_capabilities(data: dict, request: Request) -> None:
     """Write capabilities to permissions.yaml."""
     import yaml
-    _CAPABILITIES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _CAPABILITIES_PATH.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
+    caps_path = _get_capabilities_path(request)
+    caps_path.parent.mkdir(parents=True, exist_ok=True)
+    caps_path.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
 
 
 @router.get("/capabilities")
 async def get_capabilities(request: Request) -> dict:
     """Get capability permissions."""
-    caps = _read_capabilities()
+    caps = _read_capabilities(request)
     return {"capabilities": caps}
 
 
@@ -441,7 +449,7 @@ async def get_capabilities(request: Request) -> dict:
 async def update_capabilities(request: Request) -> dict:
     """Update capability permissions."""
     body = await request.json()
-    _write_capabilities(body)
+    _write_capabilities(body, request)
     return {"status": "saved", "section": "capabilities"}
 
 
@@ -451,7 +459,7 @@ async def set_capability(name: str, request: Request) -> dict:
     body = await request.json()
     value = body.get("value", body.get("allowed", True))
 
-    caps = _read_capabilities()
+    caps = _read_capabilities(request)
 
     # Parse value
     if isinstance(value, str):
@@ -461,17 +469,17 @@ async def set_capability(name: str, request: Request) -> dict:
             value = False
 
     caps[name] = value
-    _write_capabilities(caps)
+    _write_capabilities(caps, request)
     return {"status": "saved", "capability": name, "value": value}
 
 
 @router.delete("/capabilities/{name:path}")
 async def delete_capability(name: str, request: Request) -> dict:
     """Delete a capability permission."""
-    caps = _read_capabilities()
+    caps = _read_capabilities(request)
     if name in caps:
         del caps[name]
-        _write_capabilities(caps)
+        _write_capabilities(caps, request)
         return {"status": "removed", "capability": name}
     raise HTTPException(404, f"Capability '{name}' not found")
 

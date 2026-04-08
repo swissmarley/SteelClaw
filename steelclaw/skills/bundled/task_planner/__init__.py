@@ -7,21 +7,48 @@ use with persistent storage, consider integrating with a database backend.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 # Session-scoped plan storage: {session_id: {plan_id: Plan}}
 # This prevents data leakage between different users/sessions
 _session_plans: dict[str, dict[str, "Plan"]] = {}
 
+# Track last-access time per session to enable TTL-based eviction
+_session_last_access: dict[str, datetime] = {}
+
+# Sessions unused for longer than this are evicted from memory
+_SESSION_TTL = timedelta(hours=2)
+
+# Lock protecting both _session_plans and _session_last_access
+_plans_lock = threading.Lock()
+
+
+def _evict_stale_sessions() -> None:
+    """Remove sessions that have not been accessed within the TTL window.
+
+    Must be called with _plans_lock held.
+    Iterates over a static copy of items to avoid RuntimeError from
+    concurrent modification of the dict.
+    """
+    cutoff = datetime.now(timezone.utc) - _SESSION_TTL
+    stale = [sid for sid, ts in list(_session_last_access.items()) if ts < cutoff]
+    for sid in stale:
+        _session_plans.pop(sid, None)
+        _session_last_access.pop(sid, None)
+
 
 def _get_session_plans(session_id: str) -> dict[str, "Plan"]:
-    """Get or create the plan storage for a session."""
-    if session_id not in _session_plans:
-        _session_plans[session_id] = {}
-    return _session_plans[session_id]
+    """Get or create the plan storage for a session, evicting stale sessions."""
+    with _plans_lock:
+        _evict_stale_sessions()
+        if session_id not in _session_plans:
+            _session_plans[session_id] = {}
+        _session_last_access[session_id] = datetime.now(timezone.utc)
+        return _session_plans[session_id]
 
 
 @dataclass
