@@ -113,10 +113,10 @@ async def tool_apt_install(
     else:
         apt_cmd = "apt"
 
-    # apt install requires sudo - this will trigger permission check
-    command = f"sudo {apt_cmd} install -y {' '.join(packages)}"
+    from steelclaw.security.sandbox import execute_command
+    command = f"{apt_cmd} install -y {' '.join(packages)}"
 
-    result = await _run_command(command, timeout=600)
+    result = await execute_command(command, timeout=600, sudo=True)
     return f"Installed system packages: {', '.join(packages)}\n{result}"
 
 
