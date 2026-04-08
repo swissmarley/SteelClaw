@@ -97,8 +97,9 @@ class SudoManager:
             "status": status,
             "command": command,
         }
+        import json
         with open(self._audit_path, "a", encoding="utf-8") as f:
-            f.write(f"{entry}\n")
+            f.write(json.dumps(entry) + "\n")
 
     async def execute_sudo(
         self,
