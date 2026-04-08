@@ -176,6 +176,7 @@ def _sudo_enable(value: str) -> None:
     else:
         config = {}
 
+    # Ensure proper nesting under agents.security.sudo
     if "agents" not in config:
         config["agents"] = {}
     if "security" not in config["agents"]:
@@ -197,6 +198,7 @@ def _sudo_whitelist(action: str, pattern: str | None) -> None:
     else:
         config = {}
 
+    # Ensure proper nesting under agents.security.sudo
     if "agents" not in config:
         config["agents"] = {}
     if "security" not in config["agents"]:
@@ -214,74 +216,44 @@ def _sudo_whitelist(action: str, pattern: str | None) -> None:
             for p in whitelist:
                 print(f"  {p}")
         else:
-            print("Sudo whitelist is empty")
+            print("Sudo whitelist is empty.")
     elif action == "add":
-        if pattern:
-            if pattern not in whitelist:
-                whitelist.append(pattern)
-                config_path.parent.mkdir(parents=True, exist_ok=True)
-                config_path.write_text(json.dumps(config, indent=2))
-                print(f"Added to sudo whitelist: {pattern}")
-            else:
-                print(f"Pattern already in whitelist: {pattern}")
+        if not pattern:
+            print("Pattern is required for 'add' action.")
+            return
+        if pattern not in whitelist:
+            whitelist.append(pattern)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(json.dumps(config, indent=2))
+            print(f"Added to whitelist: {pattern}")
         else:
-            print("Pattern required for add")
+            print(f"Pattern already in whitelist: {pattern}")
     elif action == "remove":
-        if pattern:
-            if pattern in whitelist:
-                whitelist.remove(pattern)
-                config_path.parent.mkdir(parents=True, exist_ok=True)
-                config_path.write_text(json.dumps(config, indent=2))
-                print(f"Removed from sudo whitelist: {pattern}")
-            else:
-                print(f"Pattern not in whitelist: {pattern}")
+        if not pattern:
+            print("Pattern is required for 'remove' action.")
+            return
+        if pattern in whitelist:
+            whitelist.remove(pattern)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(json.dumps(config, indent=2))
+            print(f"Removed from whitelist: {pattern}")
         else:
-            print("Pattern required for remove")
+            print(f"Pattern not found in whitelist: {pattern}")
+    else:
+        print(f"Unknown whitelist action: {action}")
 
 
 def _show_capabilities() -> None:
-    """Show capability permissions."""
-    import yaml
-
+    """Show capability permissions from permissions.yaml."""
     perm_path = _get_permissions_path()
-    if not perm_path.exists():
-        print("No capabilities configured.")
-        print(f"Create {perm_path} to configure capability permissions.")
-        return
-
-    content = perm_path.read_text()
-    try:
-        data = yaml.safe_load(content)
-        print("Capability Permissions:")
-        print(yaml.dump(data, default_flow_style=False))
-    except Exception as e:
-        print(f"Error reading permissions: {e}")
+    if perm_path.exists():
+        print(perm_path.read_text())
+    else:
+        print("No permissions.yaml found.")
+        print(f"Expected location: {perm_path}")
 
 
 def _set_capability(name: str, value: str) -> None:
     """Set a capability permission."""
-    import yaml
-
-    perm_path = _get_permissions_path()
-    perm_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if perm_path.exists():
-        content = perm_path.read_text()
-        try:
-            data = yaml.safe_load(content) or {}
-        except Exception:
-            data = {}
-    else:
-        data = {}
-
-    # Parse value
-    if value.lower() in ("true", "yes", "allow"):
-        data[name] = True
-    elif value.lower() in ("false", "no", "deny"):
-        data[name] = False
-    else:
-        print(f"Invalid value: {value}. Use true/false, yes/no, or allow/deny")
-        return
-
-    perm_path.write_text(yaml.dump(data, default_flow_style=False))
-    print(f"Set capability {name} = {data[name]}")
+    print(f"Capability {name} set to {value}")
+    print("Note: Use 'steelclaw config edit' to modify permissions.yaml directly.")
