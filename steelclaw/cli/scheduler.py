@@ -173,10 +173,44 @@ def _remove_job(job_id: str) -> None:
 
 
 def _run_job(job_id: str) -> None:
-    """Run a scheduled job immediately."""
-    print(f"Running job '{job_id}' immediately requires the server to be running.")
-    print("The job will execute on the next scheduler tick.")
-    print("Use 'steelclaw scheduler list' to check job status.")
+    """Trigger a scheduled job to run immediately via the API."""
+    import os
+
+    import requests
+
+    from steelclaw.settings import load_config
+
+    config = load_config()
+    port = config.web.port
+    base_url = f"http://127.0.0.1:{port}"
+
+    # Check if we have a server token for authentication
+    token = os.getenv("STEELCLAW_API_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    try:
+        resp = requests.post(
+            f"{base_url}/api/scheduler/jobs/{job_id}/run",
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            print(f"Job '{job_id}' triggered successfully.")
+        elif resp.status_code == 404:
+            print(f"Job '{job_id}' not found.")
+        else:
+            print(f"Failed to trigger job '{job_id}': {resp.status_code}")
+            try:
+                err = resp.json()
+                if "detail" in err:
+                    print(f"Error: {err['detail']}")
+            except Exception:
+                pass
+    except requests.exceptions.ConnectionError:
+        print(f"Could not connect to server at {base_url}.")
+        print("Make sure the server is running with 'steelclaw serve' or 'steelclaw start'.")
+    except Exception as e:
+        print(f"Error triggering job: {e}")
 
 
 def _set_timezone(timezone: str) -> None:

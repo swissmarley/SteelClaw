@@ -4,9 +4,49 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from steelclaw.paths import PROJECT_ROOT
+
+
+def _atomic_write_json(path: Path, data: dict) -> None:
+    """Write JSON data to file atomically.
+
+    Uses a temp file and os.replace to ensure atomic writes,
+    preventing data corruption if interrupted mid-write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = json.dumps(data, indent=2)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+def _atomic_write_yaml(path: Path, data: dict) -> None:
+    """Write YAML data to file atomically.
+
+    Uses a temp file and os.replace to ensure atomic writes,
+    preventing data corruption if interrupted mid-write.
+    """
+    import yaml
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = yaml.dump(data, default_flow_style=False)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def handle_security(args: argparse.Namespace) -> None:
@@ -54,10 +94,26 @@ def _load_approvals() -> dict:
 
 
 def _save_approvals(data: dict) -> None:
-    """Save approval rules to file."""
+    """Save approval rules to file atomically.
+
+    Uses a temp file and os.replace to ensure atomic writes,
+    preventing data corruption if interrupted mid-write.
+    """
+    import os
+    import tempfile
+
     path = _get_approvals_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    content = json.dumps(data, indent=2)
+
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def _show_security() -> None:
@@ -141,11 +197,14 @@ def _remove_rule(pattern: str) -> None:
 
 def _set_default(permission: str) -> None:
     """Set the default permission level."""
+    import os
+    import tempfile
+
     if permission not in ("ask", "record", "ignore"):
         print(f"Invalid permission: {permission}. Must be ask, record, or ignore.")
         return
 
-    # Update config.json
+    # Update config.json atomically
     config_path = PROJECT_ROOT / "config.json"
     if config_path.exists():
         config = json.loads(config_path.read_text())
@@ -158,14 +217,27 @@ def _set_default(permission: str) -> None:
     if "security" not in config["agents"]:
         config["agents"]["security"] = {}
     config["agents"]["security"]["default_permission"] = permission
+
+    # Atomic write
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, indent=2))
+    content = json.dumps(config, indent=2)
+    fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, config_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     print(f"Set default permission to: {permission}")
 
 
 def _sudo_enable(value: str) -> None:
     """Enable or disable sudo mode."""
+    import os
+    import tempfile
+
     if value.lower() not in ("true", "false"):
         print("Value must be 'true' or 'false'")
         return
@@ -184,14 +256,40 @@ def _sudo_enable(value: str) -> None:
     if "sudo" not in config["agents"]["security"]:
         config["agents"]["security"]["sudo"] = {}
     config["agents"]["security"]["sudo"]["enabled"] = value.lower() == "true"
+
+    # Atomic write
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, indent=2))
+    content = json.dumps(config, indent=2)
+    fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, config_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     print(f"Sudo mode: {value}")
 
 
 def _sudo_whitelist(action: str, pattern: str | None) -> None:
     """Manage sudo whitelist."""
+    import os
+    import tempfile
+
+    def _save_config_atomic(config: dict, config_path: Path) -> None:
+        """Save config atomically using temp file + os.replace."""
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        content = json.dumps(config, indent=2)
+        fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            os.replace(tmp_path, config_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
     config_path = PROJECT_ROOT / "config.json"
     if config_path.exists():
         config = json.loads(config_path.read_text())
@@ -223,8 +321,7 @@ def _sudo_whitelist(action: str, pattern: str | None) -> None:
             return
         if pattern not in whitelist:
             whitelist.append(pattern)
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            config_path.write_text(json.dumps(config, indent=2))
+            _save_config_atomic(config, config_path)
             print(f"Added to whitelist: {pattern}")
         else:
             print(f"Pattern already in whitelist: {pattern}")
@@ -234,8 +331,7 @@ def _sudo_whitelist(action: str, pattern: str | None) -> None:
             return
         if pattern in whitelist:
             whitelist.remove(pattern)
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            config_path.write_text(json.dumps(config, indent=2))
+            _save_config_atomic(config, config_path)
             print(f"Removed from whitelist: {pattern}")
         else:
             print(f"Pattern not found in whitelist: {pattern}")
@@ -253,7 +349,65 @@ def _show_capabilities() -> None:
         print(f"Expected location: {perm_path}")
 
 
+def _set_nested_value(data: dict, path: str, value) -> None:
+    """Set a nested value in a dict using dot-notation path.
+
+    Creates intermediate dicts as needed. Supports paths like
+    'capabilities.filesystem.enabled'.
+    """
+    parts = path.split(".")
+    current = data
+    for part in parts[:-1]:
+        if part not in current or not isinstance(current[part], dict):
+            current[part] = {}
+        current = current[part]
+    current[parts[-1]] = value
+
+
 def _set_capability(name: str, value: str) -> None:
-    """Set a capability permission."""
-    print(f"Capability {name} set to {value}")
-    print("Note: Use 'steelclaw config edit' to modify permissions.yaml directly.")
+    """Set a capability permission in permissions.yaml.
+
+    Supports dot-notation for nested keys (e.g., filesystem.enabled).
+    """
+    import yaml
+
+    perm_path = _get_permissions_path()
+
+    # Load existing permissions or start fresh
+    if perm_path.exists():
+        try:
+            content = perm_path.read_text(encoding="utf-8")
+            perms = yaml.safe_load(content) or {}
+        except (IOError, yaml.YAMLError) as e:
+            print(f"Error reading permissions.yaml: {e}")
+            perms = {}
+    else:
+        perms = {}
+
+    # Ensure capabilities section exists
+    if "capabilities" not in perms:
+        perms["capabilities"] = {}
+
+    # Parse value
+    try:
+        # Try to parse as JSON (handles bool, int, null)
+        parsed_value = json.loads(value)
+    except json.JSONDecodeError:
+        # Handle common string values
+        val_lower = value.lower()
+        if val_lower in ("true", "yes", "allow"):
+            parsed_value = True
+        elif val_lower in ("false", "no", "deny"):
+            parsed_value = False
+        else:
+            parsed_value = value  # Keep as string
+
+    # Set the capability using dot notation
+    _set_nested_value(perms["capabilities"], name, parsed_value)
+
+    # Write atomically
+    try:
+        _atomic_write_yaml(perm_path, perms)
+        print(f"✓ Set capability: {name} = {json.dumps(parsed_value)}")
+    except Exception as e:
+        print(f"Error saving permissions.yaml: {e}")
