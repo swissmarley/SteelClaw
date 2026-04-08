@@ -197,11 +197,14 @@ def _sudo_whitelist(action: str, pattern: str | None) -> None:
         config = {}
 
     if "security" not in config:
-        config["security"] = {}
-    if "sudo" not in config["security"]:
-        config["security"]["sudo"] = {"enabled": False, "whitelist": []}
-    if "whitelist" not in config["security"]["sudo"]:
-        config["security"]["sudo"]["whitelist"] = []
+    if "agents" not in config:
+        config["agents"] = {}
+    if "security" not in config["agents"]:
+        config["agents"]["security"] = {}
+    if "sudo" not in config["agents"]["security"]:
+        config["agents"]["security"]["sudo"] = {"enabled": False, "whitelist": []}
+    if "whitelist" not in config["agents"]["security"]["sudo"]:
+        config["agents"]["security"]["sudo"]["whitelist"] = []
 
     whitelist = config["security"]["sudo"]["whitelist"]
 
