@@ -145,7 +145,7 @@ async def tool_create_plan(
         id=plan_id,
         goal=goal,
         steps=step_objects,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
         session_id=session_id,
     )
 
@@ -201,9 +201,9 @@ async def tool_update_step(
         step.notes = notes
 
     if status == "in_progress":
-        step.started_at = datetime.now()
+        step.started_at = datetime.now(timezone.utc)
     elif status in ("completed", "failed"):
-        step.completed_at = datetime.now()
+        step.completed_at = datetime.now(timezone.utc)
 
     # Check if all steps are completed
     all_completed = all(s.status == "completed" for s in plan.steps)

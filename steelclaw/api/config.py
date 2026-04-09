@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore[assignment]
 
 router = APIRouter()
 
@@ -217,8 +225,6 @@ async def update_memory_config(request: Request) -> dict:
 @router.post("/memory/start")
 async def start_openviking_server(request: Request) -> dict:
     """Manually start OpenViking server."""
-    import asyncio
-
     settings = request.app.state.settings
     memory_settings = settings.agents.memory
 
@@ -419,13 +425,14 @@ def _get_capabilities_path(request: Request) -> Path:
 
 def _read_capabilities(request: Request) -> dict:
     """Read capabilities from permissions.yaml."""
-    import yaml
+    if _yaml is None:
+        return {}
     caps_path = _get_capabilities_path(request)
     if caps_path.exists():
         try:
             content = caps_path.read_text(encoding="utf-8")
-            return yaml.safe_load(content) or {}
-        except (IOError, yaml.YAMLError):
+            return _yaml.safe_load(content) or {}
+        except (IOError, _yaml.YAMLError):
             return {}
     return {}
 
@@ -436,13 +443,12 @@ def _write_capabilities(data: dict, request: Request) -> None:
     Uses a temp file and os.replace to ensure atomic writes, preventing
     file corruption if the process is interrupted mid-write.
     """
-    import os
-    import tempfile
-    import yaml
+    if _yaml is None:
+        raise RuntimeError("PyYAML is required to write capabilities. Install with: pip install pyyaml")
 
     caps_path = _get_capabilities_path(request)
     caps_path.parent.mkdir(parents=True, exist_ok=True)
-    content = yaml.dump(data, default_flow_style=False)
+    content = _yaml.dump(data, default_flow_style=False)
 
     fd, tmp_path = tempfile.mkstemp(dir=caps_path.parent, suffix=".tmp")
     try:

