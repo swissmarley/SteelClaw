@@ -147,7 +147,7 @@ _CATEGORY_EXECUTABLES: dict[str, list[re.Pattern]] = {
         re.compile(r"^(rm|mv|cp|cat|tee|truncate|touch|mkdir|rmdir|chmod|chown|find|locate|ls|dir)$", re.I),
     ],
     "processes": [
-        re.compile(r"^(sudo|kill|pkill|killall|systemctl|service|supervisorctl|launchctl)$", re.I),
+        re.compile(r"^(kill|pkill|killall|systemctl|service|supervisorctl|launchctl)$", re.I),
     ],
     "network": [
         re.compile(r"^(curl|wget|nc|ncat|netcat|nmap|ssh|scp|rsync|ftp|sftp|dig|host|nslookup|ping|traceroute|tracepath|mtr|ifconfig|netstat|ss)$", re.I),
