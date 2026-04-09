@@ -217,6 +217,50 @@ async def tool_search_stackoverflow(query: str, max_results: int = 5) -> str:
     return intro + results
 
 
+def _extract_by_selector(html: str, selector: str) -> str:
+    """Extract HTML content matching *selector* (CSS class or id).
+
+    Tries BeautifulSoup first for reliable parsing of complex HTML structures.
+    Falls back to a simple regex approach when BeautifulSoup is unavailable.
+    """
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        # Support plain class name (e.g. "main-content") or id (e.g. "#header")
+        if selector.startswith("#"):
+            elements = soup.find_all(id=selector[1:])
+        else:
+            # Try as CSS class first, then fall back to a broader CSS selector
+            elements = soup.find_all(class_=selector)
+            if not elements:
+                try:
+                    elements = soup.select(selector)
+                except Exception:
+                    elements = []
+        if elements:
+            return " ".join(el.get_text(separator=" ") for el in elements)
+        return html  # Selector matched nothing — return full HTML for stripping
+    except ImportError:
+        pass
+
+    # Fallback: regex-based extraction (less reliable for complex HTML)
+    import re
+
+    pattern = rf'<[^>]*class="[^"]*{re.escape(selector)}[^"]*"[^>]*>(.*?)</'
+    matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
+    if matches:
+        return " ".join(matches)
+
+    # Try as id selector
+    pattern = rf'<[^>]*id="{re.escape(selector)}"[^>]*>(.*?)</'
+    matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
+    if matches:
+        return " ".join(matches)
+
+    return html  # Fall back to full content
+
+
 async def tool_read_url(
     url: str,
     selector: str | None = None,
@@ -250,21 +294,7 @@ async def tool_read_url(
 
         # If selector is provided, try to extract that section
         if selector:
-            import re
-            # Simple regex-based extraction for common selectors
-            # This is a basic implementation - for complex selectors, consider using BeautifulSoup
-            pattern = rf'<[^>]*class="[^"]*{re.escape(selector)}[^"]*"[^>]*>(.*?)</'
-            matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
-            if matches:
-                text = " ".join(matches)
-            else:
-                # Try as ID selector
-                pattern = rf'<[^>]*id="{re.escape(selector)}"[^>]*>(.*?)</'
-                matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
-                if matches:
-                    text = " ".join(matches)
-                else:
-                    text = html  # Fall back to full content
+            text = _extract_by_selector(html, selector)
         else:
             text = html
 

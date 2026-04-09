@@ -69,6 +69,8 @@ class SudoManager:
         self._broadcaster: "PermissionBroadcaster | None" = None
         # Per-session sudo password cache: session_id → (password, expires_at)
         self._password_cache: dict[str, tuple[str, float]] = {}
+        # Per-session locks to coalesce concurrent password requests for the same session
+        self._password_locks: dict[str, asyncio.Lock] = {}
 
     def set_confirm_callback(self, callback: SudoConfirmCallback) -> None:
         """Register the async callback used to prompt the user for confirmation.
@@ -198,41 +200,60 @@ class SudoManager:
         one from the user via the broadcaster's sudo password popup.
         On success, stores the new password in the cache for *session_timeout*
         seconds (from settings).
+
+        A per-session asyncio.Lock prevents concurrent tasks from issuing
+        independent interactive prompts to the user when the cache is empty.
+        All waiters share the result from the single prompted request.
         """
-        # Check in-memory cache
+        # Fast path: check cache without acquiring the lock first.
         cached = self._password_cache.get(session_id)
         if cached:
             password, expires_at = cached
             if time.monotonic() < expires_at:
                 logger.debug("Using cached sudo password for session %s", session_id)
                 return password
-            # Expired — remove stale entry
-            del self._password_cache[session_id]
 
-        if not self._broadcaster:
-            return None
+        # Acquire (or create) the per-session lock so that only one concurrent
+        # request prompts the user while others wait for the cache to be filled.
+        if session_id not in self._password_locks:
+            self._password_locks[session_id] = asyncio.Lock()
+        lock = self._password_locks[session_id]
 
-        request_id = str(uuid.uuid4())
-        password = await self._broadcaster.request_sudo_password(
-            request_id=request_id,
-            command=f"sudo {command}",
-            timeout_seconds=timeout,
-            context="Enter your sudo password to authenticate",
-        )
+        async with lock:
+            # Re-check cache inside the lock; another waiter may have filled it.
+            cached = self._password_cache.get(session_id)
+            if cached:
+                password, expires_at = cached
+                if time.monotonic() < expires_at:
+                    logger.debug("Using cached sudo password for session %s (post-lock)", session_id)
+                    return password
+                # Expired — remove stale entry
+                del self._password_cache[session_id]
 
-        if password:
-            session_timeout = getattr(self._config, "session_timeout", 300)
-            self._password_cache[session_id] = (
-                password,
-                time.monotonic() + session_timeout,
+            if not self._broadcaster:
+                return None
+
+            request_id = str(uuid.uuid4())
+            password = await self._broadcaster.request_sudo_password(
+                request_id=request_id,
+                command=f"sudo {command}",
+                timeout_seconds=timeout,
+                context="Enter your sudo password to authenticate",
             )
-            logger.info(
-                "Sudo password cached for session %s (expires in %ds)",
-                session_id,
-                session_timeout,
-            )
 
-        return password
+            if password:
+                session_timeout = getattr(self._config, "session_timeout", 300)
+                self._password_cache[session_id] = (
+                    password,
+                    time.monotonic() + session_timeout,
+                )
+                logger.info(
+                    "Sudo password cached for session %s (expires in %ds)",
+                    session_id,
+                    session_timeout,
+                )
+
+            return password
 
     async def _run_sudo(self, command: str, timeout: int, password: Optional[str] = None) -> str:
         """Run a sudo command using exec (not shell) to prevent injection.
