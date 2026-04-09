@@ -188,6 +188,37 @@ class SudoManager:
             "Cannot execute privileged commands without user approval."
         )
 
+    def _prune_stale_password_locks(self) -> None:
+        """Remove lock entries for sessions with no valid cached password.
+
+        A lock entry is safe to remove when:
+        - The lock is not currently held (no active waiters), AND
+        - The session either has no cache entry or its cached password has expired.
+
+        This prevents unbounded growth of ``_password_locks`` in long-running
+        servers where unique session IDs accumulate over time.
+        Called opportunistically at the start of each ``_get_sudo_password`` call.
+        """
+        now = time.monotonic()
+        stale = [
+            sid
+            for sid, lock in list(self._password_locks.items())
+            if not lock.locked()
+            and (
+                sid not in self._password_cache
+                or now >= self._password_cache[sid][1]
+            )
+        ]
+        for sid in stale:
+            self._password_locks.pop(sid, None)
+            # Also evict expired cache entry while we're here.
+            cached = self._password_cache.get(sid)
+            if cached and now >= cached[1]:
+                self._password_cache.pop(sid, None)
+
+        if stale:
+            logger.debug("Pruned %d stale sudo password lock(s)", len(stale))
+
     async def _get_sudo_password(
         self,
         session_id: str,
@@ -204,7 +235,11 @@ class SudoManager:
         A per-session asyncio.Lock prevents concurrent tasks from issuing
         independent interactive prompts to the user when the cache is empty.
         All waiters share the result from the single prompted request.
+        Stale lock entries are pruned on each call to prevent memory leaks.
         """
+        # Prune locks for sessions with no valid cache entry to prevent memory leaks.
+        self._prune_stale_password_locks()
+
         # Fast path: check cache without acquiring the lock first.
         cached = self._password_cache.get(session_id)
         if cached:

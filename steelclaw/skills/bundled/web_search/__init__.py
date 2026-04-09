@@ -244,17 +244,33 @@ def _extract_by_selector(html: str, selector: str) -> str:
     except ImportError:
         pass
 
-    # Fallback: regex-based extraction (less reliable for complex HTML)
+    # Fallback: regex-based extraction (less reliable for complex HTML).
+    # Uses a named group on the opening tag so we can match the *same* tag name
+    # on the closing tag, avoiding premature termination on nested tags.
+    # Results are stripped of HTML markup so the output is plain text — consistent
+    # with the BeautifulSoup path above.
     import re
 
-    pattern = rf'<[^>]*class="[^"]*{re.escape(selector)}[^"]*"[^>]*>(.*?)</'
-    matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
+    def _regex_extract(pattern: str) -> list[str]:
+        raw_matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
+        results_text = []
+        for m in raw_matches:
+            # Strip all tags to produce plain text (match BeautifulSoup output).
+            text = re.sub(r"<[^>]+>", " ", m)
+            text = re.sub(r"\s+", " ", text).strip()
+            if text:
+                results_text.append(text)
+        return results_text
+
+    # Match by class attribute; use greedy inner content bounded by the same tag type.
+    class_pattern = rf'<(?P<tag>\w+)[^>]*class="[^"]*{re.escape(selector)}[^"]*"[^>]*>(.*?)</(?P=tag)>'
+    matches = _regex_extract(class_pattern)
     if matches:
         return " ".join(matches)
 
-    # Try as id selector
-    pattern = rf'<[^>]*id="{re.escape(selector)}"[^>]*>(.*?)</'
-    matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
+    # Try as id attribute.
+    id_pattern = rf'<(?P<tag>\w+)[^>]*id="{re.escape(selector)}"[^>]*>(.*?)</(?P=tag)>'
+    matches = _regex_extract(id_pattern)
     if matches:
         return " ".join(matches)
 

