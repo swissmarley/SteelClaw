@@ -217,9 +217,12 @@ class MultiAgentOrchestrator:
         self,
         settings: AgentSettings,
         skill_registry=None,
+        tool_registry=None,
+        skill_manager=None,
     ) -> None:
         self._settings = settings
-        self._skills = skill_registry
+        self._skills = tool_registry or skill_registry
+        self._skill_manager = skill_manager
         self._memory_retriever = None
         self._memory_ingestor = None
 
@@ -360,8 +363,9 @@ class MultiAgentOrchestrator:
 
         router = AgentRouter(
             settings=self._settings,
-            skill_registry=self._skills,
+            tool_registry=self._skills,
             agent_profile=profile,
+            skill_manager=self._skill_manager,
         )
         router.set_memory(self._memory_retriever, self._memory_ingestor)
         return router
@@ -447,8 +451,9 @@ class MultiAgentOrchestrator:
 
         sub_router = AgentRouter(
             settings=self._settings,
-            skill_registry=self._skills,
+            tool_registry=self._skills,
             agent_profile=profile,
+            skill_manager=self._skill_manager,
         )
         sub_router.set_memory(self._memory_retriever, self._memory_ingestor)
 

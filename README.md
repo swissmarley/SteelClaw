@@ -1,8 +1,8 @@
 # SteelClaw
 
-Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular skill system with 60+ bundled integrations.
+Self-hosted personal AI assistant that runs locally on your machine. Connects to any LLM (Claude, OpenAI, DeepSeek), communicates across 10+ messaging platforms, executes commands securely, and learns through a modular tool system with 60+ bundled integrations.
 
-**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display and live tool-call indicators, voice chat with streaming TTS, file upload in chat (images, PDFs, audio, DOCX, XLSX, PPTX), intelligent file & attachment handling across Telegram/Discord/Slack, 64 skill integrations with credential management, real-time web search, persistent memory (ChromaDB, OpenViking, or SQLite FTS5), hierarchical multi-agent orchestration with subagent delegation, extended system permissions with sudo support, self-improving autonomous skill creation, usage analytics, and a scheduler for proactive tasks.
+**Key highlights:** Premium glassmorphism UI, streaming LLM responses with real-time token display and live tool-call indicators, voice chat with streaming TTS, file upload in chat (images, PDFs, audio, DOCX, XLSX, PPTX), intelligent file & attachment handling across Telegram/Discord/Slack, 64 tool integrations with credential management, real-time web search, persistent memory (ChromaDB, OpenViking, or SQLite FTS5), hierarchical multi-agent orchestration with subagent delegation, extended system permissions with sudo support, self-improving autonomous tool creation, usage analytics, and a scheduler for proactive tasks.
 
 ## Quick Start
 
@@ -75,7 +75,7 @@ SteelClaw resolves all paths relative to its installation directory, so you can 
 
 **Open the Control UI dashboard:**
 
-Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. The dashboard features a premium glassmorphism design with 10 navigation pages: Chat, Settings, Sessions, Agents, Persona, Analytics, Connectors, Skills, Security, and Scheduler.
+Navigate to [http://localhost:8000/](http://localhost:8000/) in your browser. The dashboard features a premium glassmorphism design with 10 navigation pages: Chat, Settings, Sessions, Agents, Persona, Analytics, Connectors, Tools, Security, and Scheduler.
 
 **Or chat from the terminal (TUI):**
 
@@ -117,7 +117,7 @@ Prefix any CLI subcommand with `/` to run it without leaving the chat. Quoted ar
 | `/sessions` | `/sessions list` | Manage sessions |
 | `/memory` | `/memory search "error budget"` | Manage persistent memory |
 | `/agents` | `/agents list` | Manage agents |
-| `/skills` | `/skills configure github` | Manage skills |
+| `/tools` | `/tools configure github` | Manage tools |
 | `/scheduler` | `/scheduler list` | Manage scheduled jobs |
 | `/security` | `/security list-rules` | Manage security settings |
 | `/sudo` | `/sudo enable` | Sudo mode shortcuts |
@@ -154,7 +154,8 @@ Prefix any CLI subcommand with `/` to run it without leaving the chat. Quoted ar
 | `steelclaw config show\|get\|set` | View/edit `config.json` via dot-notation keys |
 | `steelclaw sessions list\|reset\|delete` | Manage sessions |
 | `steelclaw agents list\|add\|delete\|status` | Manage agents (supports `--parent`, `--system-prompt`) |
-| `steelclaw skills list\|install\|enable\|disable\|configure` | Manage skills |
+| `steelclaw tools list\|install\|enable\|disable\|configure` | Manage tools |
+| `steelclaw skills list\|view\|create\|import\|export\|generate\|enable\|disable\|test` | Manage Claude-compatible skills |
 | `steelclaw memory status\|search\|clear\|start\|stop\|migrate` | Manage persistent memory |
 | `steelclaw persona` | Configure agent persona interactively |
 | `steelclaw logs [-f] [--gateway] [--app]` | View daemon logs |
@@ -215,7 +216,7 @@ steelclaw security set-capability file_deletion allow
 
 | Method | How to Access | Description |
 |--------|--------------|-------------|
-| **Control UI** | `http://localhost:8000/` | Glassmorphism dashboard with streaming chat, voice, settings, skills, analytics |
+| **Control UI** | `http://localhost:8000/` | Glassmorphism dashboard with streaming chat, voice, settings, tools, analytics |
 | **Voice Chat** | Dashboard microphone button | Streaming voice conversation with animated waveform |
 | **TUI Chat** | `steelclaw chat` | Rich-powered interactive terminal client |
 | **Onboarding** | `steelclaw onboard` | Arrow-key guided setup wizard |
@@ -361,7 +362,7 @@ SteelClaw streams LLM responses in real time across all interfaces:
 
 ```
 { "type": "chunk",      "content": "..." }
-{ "type": "tool_start", "name": "web_search", "id": "call_abc", "skill": "Web Search", "label": "Search the web", "arguments": {...} }
+{ "type": "tool_start", "name": "web_search", "id": "call_abc", "tool": "Web Search", "label": "Search the web", "arguments": {...} }
 { "type": "tool_end",   "name": "web_search", "id": "call_abc", "duration_ms": 342 }
 { "type": "done",       "content": "...", "usage": { "model": "...", "prompt_tokens": 1200, "completion_tokens": 80 } }
 { "type": "error",      "content": "..." }
@@ -400,7 +401,7 @@ The Control UI uses a premium glassmorphism design with:
 - Animated sidebar with 10 navigation pages
 - Command palette (Ctrl/Cmd+K) for quick actions
 - Responsive layout with glass-effect cards and soft glow accents
-- Tabbed settings page: Appearance, Voice/Audio, Agent, Skills, Gateway, Scheduler
+- Tabbed settings page: Appearance, Voice/Audio, Agent, Tools, Gateway, Scheduler
 - Real-time tool-call indicators during agent execution (spinner badges with slide-in animation)
 
 ## Agent Personality & Multi-Agent
@@ -597,17 +598,17 @@ curl http://localhost:8000/api/analytics/by-model
 curl http://localhost:8000/api/analytics/export?format=csv
 ```
 
-## Skills
+## Tools
 
-Skills are modular capabilities loaded from directories. Each skill has a `SKILL.md` file defining metadata, tools, and a system prompt. SteelClaw ships with **64 bundled skills** covering productivity, development, communication, CRM, cloud storage, and more.
+Tools are modular capabilities loaded from directories. Each tool has a `SKILL.md` file defining metadata, tools, and a system prompt. SteelClaw ships with **64 bundled tools** covering productivity, development, communication, CRM, cloud storage, and more.
 
-**Default behaviour:** Core skills (no credentials needed) are enabled out of the box. Integration skills that require API keys are disabled by default — enable them from the Skills page once you've configured their credentials. Enable/disable state persists across restarts. Tools from unconfigured skills are automatically hidden from the LLM, so the agent only uses tools it can actually call.
+**Default behaviour:** Core tools (no credentials needed) are enabled out of the box. Integration tools that require API keys are disabled by default — enable them from the Tools page once you've configured their credentials. Enable/disable state persists across restarts. Tools from unconfigured tools are automatically hidden from the LLM, so the agent only uses tools it can actually call.
 
-### Bundled Skills
+### Bundled Tools
 
 **Core (no credentials needed):**
 
-| Skill | Tools | Description |
+| Tool | Tools | Description |
 |-------|-------|-------------|
 | Calculator | `evaluate`, `convert_units` | Math evaluation and unit conversion |
 | File Manager | `read_file`, `write_file`, `list_directory`, `copy_file`, `move_file`, `create_directory`, `delete_file` | Full file system operations |
@@ -628,11 +629,11 @@ Skills are modular capabilities loaded from directories. Each skill has a `SKILL
 | Docker Manager | `docker_run`, `docker_list` | Docker container management |
 | System Monitor | `monitor` | Extended system monitoring |
 | Web Scraper | `scrape` | Structured web scraping |
-| Skill Manager | `list_skills`, `create_skill`, `edit_skill`, `delete_skill`, `reload_skills` | Autonomous skill management |
+| Tool Manager | `list_skills`, `create_skill`, `edit_skill`, `delete_skill`, `reload_skills` | Autonomous tool management |
 
 **Integrations (API key required — configure via UI or CLI):**
 
-| Category | Skills |
+| Category | Tools |
 |----------|--------|
 | **Communication** | Slack, Discord, Telegram, Twilio, SendGrid, Mailchimp |
 | **Development** | GitHub, GitLab, Jira, Linear, n8n, Zapier, Make (Integromat) |
@@ -645,27 +646,27 @@ Skills are modular capabilities loaded from directories. Each skill has a `SKILL
 | **Translation** | Google Translate |
 | **Weather** | OpenWeatherMap |
 
-### Skill Credential Management
+### Tool Credential Management
 
-Configure API keys through the dashboard (Skills page > Configure button) or CLI:
+Configure API keys through the dashboard (Tools page > Configure button) or CLI:
 
 ```bash
-steelclaw skills list                    # List all skills with credential status
-steelclaw skills install ./my-skill      # Install from directory
-steelclaw skills enable my-skill         # Enable a disabled skill
-steelclaw skills disable my-skill        # Disable a skill
-steelclaw skills configure my-skill      # Set skill credentials interactively
+steelclaw tools list                    # List all tools with credential status
+steelclaw tools install ./my-skill      # Install from directory
+steelclaw tools enable my-skill         # Enable a disabled tool
+steelclaw tools disable my-skill        # Disable a tool
+steelclaw tools configure my-skill      # Set tool credentials interactively
 ```
 
-The dashboard credential modal shows each skill's required fields with secure input, saved-state indicators, and a Verify button that tests connectivity against the provider's API.
+The dashboard credential modal shows each tool's required fields with secure input, saved-state indicators, and a Verify button that tests connectivity against the provider's API.
 
-### Skill Scoping (priority order)
+### Tool Scoping (priority order)
 
 1. **Workspace** (`.steelclaw/skills/`) — project-specific, highest priority
 2. **Global** (`~/.steelclaw/skills/`) — user-wide
 3. **Bundled** (`steelclaw/skills/bundled/`) — ships with SteelClaw
 
-### Creating a Skill
+### Creating a Tool
 
 ```
 my-skill/
@@ -676,9 +677,9 @@ my-skill/
 **SKILL.md format:**
 
 ```markdown
-# My Skill
+# My Tool
 
-Description of what this skill does.
+Description of what this tool does.
 
 ## Metadata
 - version: 1.0.0
@@ -686,7 +687,7 @@ Description of what this skill does.
 - triggers: keyword1, keyword2
 
 ## System Prompt
-Instructions for the LLM when this skill is active.
+Instructions for the LLM when this tool is active.
 
 ## Tools
 
@@ -709,7 +710,7 @@ required_credentials = [
     {"key": "base_url", "label": "Service URL", "type": "text"},
 ]
 
-# Set True to prevent users from disabling this skill
+# Set True to prevent users from disabling this tool
 default_enabled = False
 
 def _config():
@@ -724,20 +725,99 @@ async def tool_my_tool(param1: str, param2: int = 10) -> str:
     return f"Result: {param1}, {param2}"
 ```
 
-**Note:** If `required_credentials` are declared but not configured by the user, the skill's tools are automatically hidden from the LLM. This prevents the agent from calling tools that would fail due to missing API keys.
+**Note:** If `required_credentials` are declared but not configured by the user, the tool's functions are automatically hidden from the LLM. This prevents the agent from calling tools that would fail due to missing API keys.
+
+## Skills
+
+Skills are Claude-compatible instruction bundles that provide contextual guidance to the agent. Unlike **tools** (which have executable Python functions), skills are pure Markdown manifests that inject system-level instructions when activated — keeping chat history clean.
+
+Skills are **100% compatible with Claude Skills format**: export from SteelClaw and import into Claude with zero modifications, and vice versa.
+
+### Skill Format
+
+```
+my-skill/
+  SKILL.md     # Skill manifest (required)
+  scripts/     # Optional helper scripts
+    run.sh
+```
+
+**SKILL.md:**
+
+```markdown
+# My Skill
+
+Brief description for agent reasoning.
+
+## Metadata
+- version: 1.0.0
+- author: username
+- triggers: keyword1, keyword2
+
+## System Prompt
+Instructions for the LLM when this skill is active.
+```
+
+### Skill Activation
+
+The agent matches skills in two ways:
+
+- **Explicit:** User references a skill directly ("Use the code-review skill")
+- **Implicit (trigger matching):** When a user's message contains a skill's trigger keywords, the skill's instructions are automatically injected as system context
+
+### Skill Management
+
+**Web UI:** Navigate to the Skills page (🧠 sidebar button) to create, import, export, generate, enable/disable, and delete skills using the Card Grid interface.
+
+**CLI:**
+
+```bash
+steelclaw skills list                    # List installed skills
+steelclaw skills view my-skill           # Show skill details + SKILL.md
+steelclaw skills create                  # Interactive creation wizard
+steelclaw skills import ./path/to/skill  # Import from .md, .zip, or directory
+steelclaw skills export my-skill         # Export as Claude-compatible zip
+steelclaw skills delete my-skill         # Delete a skill
+steelclaw skills generate "description"  # AI-generate from natural language
+steelclaw skills enable my-skill         # Enable a skill
+steelclaw skills disable my-skill        # Disable a skill
+steelclaw skills test "my message"       # Test trigger matching
+```
+
+**API:**
+
+```bash
+GET    /api/skills                        # List skills
+GET    /api/skills/{name}                 # Skill detail
+POST   /api/skills                        # Create skill
+DELETE /api/skills/{name}                 # Delete skill
+POST   /api/skills/{name}/enable          # Enable
+POST   /api/skills/{name}/disable         # Disable
+POST   /api/skills/import                 # Upload .md or .zip
+POST   /api/skills/import-path            # Import from filesystem
+GET    /api/skills/{name}/export          # Export as zip
+POST   /api/skills/generate               # AI-generate from description
+POST   /api/skills/reload                 # Hot-reload from disk
+POST   /api/skills/test                   # Test trigger matching
+```
+
+### Skill Scoping
+
+1. **Workspace** (`.claude-skills/`) — project-specific, highest priority
+2. **Global** (`~/.steelclaw/claude-skills/`) — user-wide
 
 ## Self-Improving Architecture
 
-SteelClaw can autonomously create and refine skills based on observed tool-call patterns. This feature is inspired by the Hermes Agent architecture and enables the agent to learn from experience.
+SteelClaw can autonomously create and refine tools based on observed tool-call patterns. This feature is inspired by the Hermes Agent architecture and enables the agent to learn from experience.
 
-### Autonomous Skill Creation
+### Autonomous Tool Creation
 
-After completing a task with 5+ tool calls (configurable), the agent reflects on the execution pattern and may create a reusable skill:
+After completing a task with 5+ tool calls (configurable), the agent reflects on the execution pattern and may create a reusable tool:
 
 1. **Reflection trigger** — Agent analyses recent tool calls for reusable patterns
-2. **Skill generation** — LLM generates a `SKILL.md` + `__init__.py` scaffold
-3. **Validation** — Generated skill is parsed and validated before writing
-4. **Hot-reload** — New skill is immediately available without restart
+2. **Tool generation** — LLM generates a `SKILL.md` + `__init__.py` scaffold
+3. **Validation** — Generated tool is parsed and validated before writing
+4. **Hot-reload** — New tool is immediately available without restart
 
 **Configuration:**
 
@@ -755,21 +835,21 @@ After completing a task with 5+ tool calls (configurable), the agent reflects on
 
 - `enabled`: Toggle reflection on/off (default: `true`)
 - `threshold`: Minimum tool calls before reflection triggers (default: `5`)
-- `skill_auto_create`: If `false`, reflections are only logged without writing files (safe default). Set to `true` to enable autonomous skill creation.
+- `skill_auto_create`: If `false`, reflections are only logged without writing files (safe default). Set to `true` to enable autonomous tool creation.
 
-### Skill Management Tool
+### Tool Management
 
-The bundled `skill_manager` skill provides tools for managing skills at runtime:
+The bundled `skill_manager` tool provides functions for managing tools at runtime:
 
 | Tool | Description |
 |------|-------------|
-| `list_skills` | List all available skills with their status |
-| `create_skill` | Scaffold a new skill in workspace or global directory |
-| `edit_skill` | Modify an existing skill's SKILL.md or __init__.py |
-| `delete_skill` | Remove a skill (workspace/global only, not bundled) |
-| `reload_skills` | Hot-reload all skills from disk |
+| `list_skills` | List all available tools with their status |
+| `create_skill` | Scaffold a new tool in workspace or global directory |
+| `edit_skill` | Modify an existing tool's SKILL.md or __init__.py |
+| `delete_skill` | Remove a tool (workspace/global only, not bundled) |
+| `reload_skills` | Hot-reload all tools from disk |
 
-**Note:** Bundled skills cannot be edited or deleted — only workspace and global skills are mutable.
+**Note:** Bundled tools cannot be edited or deleted — only workspace and global tools are mutable.
 
 ### Memory Nudge
 
@@ -911,7 +991,7 @@ curl http://localhost:8000/api/scheduler/jobs
 curl http://localhost:8000/api/scheduler/status
 ```
 
-Jobs can also be added programmatically via the Python API or through LLM tool calls (the `cron_manager` skill provides `schedule_task`, `list_scheduled`, and `cancel_task` tools).
+Jobs can also be added programmatically via the Python API or through LLM tool calls (the `cron_manager` tool provides `schedule_task`, `list_scheduled`, and `cancel_task` tools).
 
 ## REST API
 
@@ -944,12 +1024,12 @@ Full interactive API docs at [http://localhost:8000/docs](http://localhost:8000/
 | `/api/analytics/by-model` | GET | Usage grouped by model |
 | `/api/analytics/by-agent` | GET | Usage grouped by agent |
 | `/api/analytics/export` | GET | CSV export |
-| `/api/skills` | GET | List skills (with credential status) |
-| `/api/skills/{name}/credentials` | GET/PUT | Read/write skill credentials |
-| `/api/skills/{name}/verify` | POST | Test credential connectivity |
-| `/api/skills/{name}/enable` | POST | Enable a skill |
-| `/api/skills/{name}/disable` | POST | Disable a skill |
-| `/api/skills/reload` | POST | Hot-reload all skills |
+| `/api/tools` | GET | List tools (with credential status) |
+| `/api/tools/{name}/credentials` | GET/PUT | Read/write tool credentials |
+| `/api/tools/{name}/verify` | POST | Test credential connectivity |
+| `/api/tools/{name}/enable` | POST | Enable a tool |
+| `/api/tools/{name}/disable` | POST | Disable a tool |
+| `/api/tools/reload` | POST | Hot-reload all tools |
 | `/api/persona` | GET/POST | Read/write persona config |
 | `/api/files/upload` | POST | Upload file attachment for chat (images, docs, audio, office) |
 | `/api/voice/transcribe` | POST | Speech-to-text (Whisper) |
@@ -958,7 +1038,7 @@ Full interactive API docs at [http://localhost:8000/docs](http://localhost:8000/
 | `/api/voice/realtime-session` | POST | Create ephemeral OpenAI Realtime API session token (WebRTC) |
 | `/api/voice/status` | GET | Voice service status |
 | `/api/config/voice` | GET/PUT | Voice settings |
-| `/api/config/skills` | GET/PUT | Skill settings |
+| `/api/config/tools` | GET/PUT | Tool settings |
 | `/api/config/scheduler` | GET/PUT | Scheduler settings |
 | `/api/scheduler/jobs` | GET/DELETE | List/remove scheduled jobs |
 | `/api/scheduler/status` | GET | Scheduler engine status |
@@ -1004,7 +1084,7 @@ steelclaw/
     sessions.py       Session management CLI
     memory.py         Memory management CLI (start/stop/migrate for OpenViking)
     agents.py         Agent management CLI (parent hierarchy, subagent flags)
-    skills_cmd.py     Skill management CLI
+    skills_cmd.py     Tool management CLI
     persona.py        Persona configuration wizard
     gateway_cmd.py    Gateway connector control
     app_cmd.py        App component management
@@ -1026,11 +1106,11 @@ steelclaw/
     retrieval.py      Semantic memory retrieval
     ingestion.py      Memory ingestion pipeline
   skills/
-    loader.py         Skill loader (SKILL.md + __init__.py discovery)
+    loader.py         Tool loader (SKILL.md + __init__.py discovery)
     parser.py         SKILL.md parser
-    registry.py       Skill registry + tool routing + credential filtering
+    registry.py       Tool registry + tool routing + credential filtering
     credential_store.py Secure credential storage (config.json)
-    bundled/          64 built-in skills
+    bundled/          64 built-in tools
   security/           Approvals, permissions, sandbox
   scheduler/          APScheduler background tasks
   agents/
