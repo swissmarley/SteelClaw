@@ -228,3 +228,8 @@ class SkillRegistry:
                     matched.append(skill)
                     break
         return matched
+
+
+# Phase 1 rename: "Skills" → "Tools" in user-facing surfaces.
+# ToolRegistry is the canonical name; SkillRegistry kept as backward-compatible alias.
+ToolRegistry = SkillRegistry
