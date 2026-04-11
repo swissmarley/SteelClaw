@@ -161,3 +161,25 @@ class MemoryEntry(SQLModel, table=True):
     source_type: str = "message"  # "message" | "summary" | "fact"
     metadata_json: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
+
+
+# ── ReflectionLog ────────────────────────────────────────────────────────────
+
+
+class ReflectionLog(SQLModel, table=True):
+    """Audit log for agent self-reflections and autonomous skill creation attempts.
+
+    Created after the agent completes a task that triggered the reflection
+    threshold (default: 5+ tool calls in a single session).
+    """
+
+    __tablename__ = "reflection_logs"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    agent_id: str = Field(default="", index=True)
+    session_id: str = Field(default="", index=True)
+    tool_call_count: int = Field(default=0)
+    reflection_summary: str = ""  # what the agent reflected on
+    skill_created: Optional[str] = None  # skill name if a new skill was generated
+    skill_path: Optional[str] = None  # path to generated skill directory
+    created_at: datetime = Field(default_factory=_now)

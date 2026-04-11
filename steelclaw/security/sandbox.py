@@ -13,6 +13,8 @@ logger = logging.getLogger("steelclaw.security.sandbox")
 
 # Module-level permission manager — set during app startup
 _permission_manager = None
+# Module-level sudo manager — set during app startup when sudo is enabled
+_sudo_manager = None
 
 
 def set_permission_manager(pm: object) -> None:
@@ -20,26 +22,74 @@ def set_permission_manager(pm: object) -> None:
     _permission_manager = pm
 
 
+def set_sudo_manager(sm: object) -> None:
+    """Register the sudo manager for privileged command execution."""
+    global _sudo_manager
+    _sudo_manager = sm
+
+
 async def execute_command(
     command: str,
     timeout: int = 30,
     working_directory: str | None = None,
     check_permissions: bool = True,
+    sudo: bool = False,
 ) -> str:
     """Execute a shell command in a sandboxed subprocess.
 
     Security measures:
     - Permission check via the three-tier model
+    - Capability-level category checks (filesystem, network, etc.)
     - Timeout enforcement
     - Working directory validation
     - Output size limits
+
+    When *sudo=True*, the command is routed through the SudoManager which
+    requires explicit "YES" confirmation and writes an immutable audit log entry.
     """
     from steelclaw.security.permissions import PermissionManager
+    from steelclaw.security.context import get_security_context
 
-    # Permission check
+    # Get session context for permission checks
+    ctx = get_security_context()
+
+    # Check capability-level permissions BEFORE routing to sudo
+    # This ensures sudo commands still respect category restrictions
+    if sudo and _permission_manager is not None:
+        pm: PermissionManager = _permission_manager
+        result = await pm.check_command(
+            command,
+            session_id=ctx.session_id,
+            platform=ctx.platform,
+            platform_chat_id=ctx.platform_chat_id,
+        )
+        if not result.allowed:
+            return f"Permission denied: {result.reason}"
+
+    # Route sudo commands through the dedicated sudo manager
+    if sudo:
+        if _sudo_manager is None:
+            return (
+                "Error: sudo support is not enabled. "
+                "Set agents.security.sudo.enabled = true in config.json."
+            )
+        return await _sudo_manager.execute_sudo(
+            command,
+            timeout=timeout,
+            session_id=ctx.session_id,
+            platform=ctx.platform,
+            platform_chat_id=ctx.platform_chat_id,
+        )
+
+    # Permission check for non-sudo commands
     if check_permissions and _permission_manager is not None:
         pm: PermissionManager = _permission_manager
-        result = await pm.check_command(command)
+        result = await pm.check_command(
+            command,
+            session_id=ctx.session_id,
+            platform=ctx.platform,
+            platform_chat_id=ctx.platform_chat_id,
+        )
         if not result.allowed:
             return f"Permission denied: {result.reason}"
 

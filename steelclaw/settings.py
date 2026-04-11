@@ -55,7 +55,20 @@ class LLMSettings(BaseModel):
         "or anything that requires up-to-date information, you MUST use the web_search tool to find the "
         "latest information. Then use fetch_url to read relevant pages for details. "
         "Never say you cannot access the internet — you have web_search and fetch_url tools available. "
-        "Always search first, then answer based on what you find."
+        "Always search first, then answer based on what you find.\n\n"
+        "CRITICAL — Permission system: The platform has a built-in approval popup for sensitive actions. "
+        "NEVER ask the user for text confirmation before calling a tool (e.g. do NOT say 'Should I delete X? '). "
+        "NEVER wait for the user to say 'yes', 'confirm', or 'go ahead' before executing. "
+        "Instead, call the tool directly — the system will automatically show an approval popup to the user "
+        "if the action requires permission. Asking first and then calling the tool causes a double-confirmation "
+        "that confuses users. Execute immediately and let the permission system handle safety.\n\n"
+        "When handling complex requests:\n"
+        "1. First decompose the task into clear steps using create_plan\n"
+        "2. For unfamiliar libraries or APIs, use fetch_docs to search documentation before implementing\n"
+        "3. Verify each step before proceeding to the next\n"
+        "4. Only ask clarifying questions when truly ambiguous — make reasonable assumptions for routine sub-tasks\n"
+        "5. After successfully completing a complex task, store the experience for future reference\n"
+        "6. Use pip_install, npm_install, or apt_install to install missing packages when needed"
     )
     provider_keys: dict[str, str] = {}  # {"anthropic": "sk-...", "openai": "sk-..."}
     streaming: bool = True
@@ -102,6 +115,38 @@ class SessionLifecycleSettings(BaseModel):
     heartbeat_interval_seconds: int = 60
 
 
+class SudoSettings(BaseModel):
+    """Sudo command execution configuration (disabled by default for safety)."""
+
+    enabled: bool = False
+    whitelist: list[str] = []  # glob patterns of pre-approved sudo commands
+    audit_log: str = "~/.steelclaw/sudo_audit.log"
+    session_timeout: int = 30  # seconds before sudo session expires
+
+
+class ExtendedPermissionsSettings(BaseModel):
+    """YAML-based capability permission toggles."""
+
+    permissions_file: str = "~/.steelclaw/permissions.yaml"
+    auto_create_file: bool = True  # write default permissions.yaml if absent
+
+
+class ReflectionSettings(BaseModel):
+    """Agent self-reflection and autonomous skill creation."""
+
+    enabled: bool = False
+    threshold: int = 5  # minimum tool calls before triggering reflection
+    skill_auto_create: bool = False  # actually write generated skill files to disk
+
+
+class MemoryFTSSettings(BaseModel):
+    """SQLite FTS5 keyword-search memory layer."""
+
+    enabled: bool = False
+    db_path: str = "~/.steelclaw/memory_fts.db"
+    nudge_limit: int = 3  # number of recent memories to include in nudge prompt
+
+
 class SecuritySettings(BaseModel):
     """Execution security configuration."""
 
@@ -110,6 +155,9 @@ class SecuritySettings(BaseModel):
     sandbox_enabled: bool = True
     max_command_timeout: int = 30
     blocked_commands: list[str] = ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"]
+    permission_timeout: int = 300  # Seconds to wait for interactive permission response
+    sudo: SudoSettings = SudoSettings()
+    extended_permissions: ExtendedPermissionsSettings = ExtendedPermissionsSettings()
 
 
 class SchedulerSettings(BaseModel):
@@ -140,6 +188,7 @@ class VoiceSettings(BaseModel):
 
 class AgentSettings(BaseModel):
     default_agent: str = "general"
+    max_tool_rounds: int = 25  # Maximum tool-calling iterations per message (raised from 10 for autonomous operation)
     llm: LLMSettings = LLMSettings()
     skills: SkillSettings = SkillSettings()
     security: SecuritySettings = SecuritySettings()
@@ -147,6 +196,8 @@ class AgentSettings(BaseModel):
     voice: VoiceSettings = VoiceSettings()
     memory: MemorySettings = MemorySettings()
     session_lifecycle: SessionLifecycleSettings = SessionLifecycleSettings()
+    reflection: ReflectionSettings = ReflectionSettings()
+    memory_fts: MemoryFTSSettings = MemoryFTSSettings()
 
 
 class Settings(BaseSettings):

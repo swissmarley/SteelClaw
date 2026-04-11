@@ -185,6 +185,33 @@ def cmd_persona(args: argparse.Namespace) -> None:
     handle_persona(args)
 
 
+# ── Security ────────────────────────────────────────────────────────────────
+
+
+def cmd_security(args: argparse.Namespace) -> None:
+    """Manage security settings."""
+    from steelclaw.cli.security import handle_security
+    handle_security(args)
+
+
+# ── Config ───────────────────────────────────────────────────────────────────
+
+
+def cmd_config(args: argparse.Namespace) -> None:
+    """View/edit configuration."""
+    from steelclaw.cli.config_cmd import handle_config
+    handle_config(args)
+
+
+# ── Scheduler ────────────────────────────────────────────────────────────────
+
+
+def cmd_scheduler(args: argparse.Namespace) -> None:
+    """Manage scheduled jobs."""
+    from steelclaw.cli.scheduler import handle_scheduler
+    handle_scheduler(args)
+
+
 # ── Main parser ─────────────────────────────────────────────────────────────
 
 
@@ -268,6 +295,9 @@ def main() -> None:
     memory_migrate_p = memory_sub.add_parser("migrate", help="Migrate memories between backends")
     memory_migrate_p.add_argument("--from", "--from-backend", dest="from_backend", default="chromadb", help="Source backend (default: chromadb)")
     memory_migrate_p.add_argument("--to", dest="to_backend", default="openviking", help="Destination backend (default: openviking)")
+    memory_experiences_p = memory_sub.add_parser("experiences", help="List or search stored experiences")
+    memory_experiences_p.add_argument("--query", type=str, default=None, help="Search query for experiences")
+    memory_experiences_p.add_argument("--limit", type=int, default=10, help="Number of results")
 
     # agents
     agents_p = sub.add_parser("agents", help="Manage agents")
@@ -345,6 +375,57 @@ def main() -> None:
     # persona
     sub.add_parser("persona", help="Configure agent persona interactively")
 
+    # config
+    config_p = sub.add_parser("config", help="View/edit configuration (dot-notation keys)")
+    config_sub = config_p.add_subparsers(dest="config_action")
+    config_sub.add_parser("show", help="Show full config.json with syntax highlighting")
+    config_get_p = config_sub.add_parser("get", help="Get a config value by key")
+    config_get_p.add_argument("key", help="Dot-notation key (e.g. agents.llm.default_model)")
+    config_set_p = config_sub.add_parser("set", help="Set a config value by key")
+    config_set_p.add_argument("key", help="Dot-notation key (e.g. agents.llm.temperature)")
+    config_set_p.add_argument("value", help="Value (JSON-parsed: 'true'/'false' for booleans, numbers as ints/floats)")
+
+    # security
+    security_p = sub.add_parser("security", help="Manage security settings")
+    security_sub = security_p.add_subparsers(dest="security_action")
+    security_sub.add_parser("show", help="Show all security settings")
+    security_sub.add_parser("list-rules", help="List approval rules")
+    security_add_rule_p = security_sub.add_parser("add-rule", help="Add an approval rule")
+    security_add_rule_p.add_argument("pattern", help="Command pattern (glob)")
+    security_add_rule_p.add_argument("--permission", choices=["ask", "record", "ignore"], default="ask", help="Permission level")
+    security_add_rule_p.add_argument("--note", default=None, help="Note for this rule")
+    security_remove_rule_p = security_sub.add_parser("remove-rule", help="Remove an approval rule")
+    security_remove_rule_p.add_argument("pattern", help="Pattern to remove")
+    security_set_default_p = security_sub.add_parser("set-default", help="Set default permission level")
+    security_set_default_p.add_argument("permission", choices=["ask", "record", "ignore"], help="Default permission")
+    security_sudo_enable_p = security_sub.add_parser("sudo-enable", help="Enable or disable sudo mode")
+    security_sudo_enable_p.add_argument("value", choices=["true", "false"], help="Enable or disable")
+    security_sudo_whitelist_p = security_sub.add_parser("sudo-whitelist", help="Manage sudo whitelist")
+    security_sudo_whitelist_p.add_argument("action", choices=["list", "add", "remove"], help="Action")
+    security_sudo_whitelist_p.add_argument("pattern", nargs="?", default=None, help="Pattern to add/remove")
+    security_sub.add_parser("capabilities", help="Show capability permissions")
+    security_set_cap_p = security_sub.add_parser("set-capability", help="Set a capability permission")
+    security_set_cap_p.add_argument("name", help="Capability name")
+    security_set_cap_p.add_argument("value", choices=["true", "false", "yes", "no", "allow", "deny"], help="Permission value")
+
+    # scheduler
+    scheduler_p = sub.add_parser("scheduler", help="Manage scheduled jobs")
+    scheduler_sub = scheduler_p.add_subparsers(dest="scheduler_action")
+    scheduler_sub.add_parser("list", help="List scheduled jobs")
+    scheduler_add_p = scheduler_sub.add_parser("add", help="Add a scheduled job")
+    scheduler_add_p.add_argument("job_id", help="Job identifier")
+    scheduler_add_p.add_argument("--cron", default=None, help="Cron expression")
+    scheduler_add_p.add_argument("--interval", type=int, default=None, help="Interval in seconds")
+    scheduler_add_p.add_argument("--command", default="", help="Command to execute")
+    scheduler_remove_p = scheduler_sub.add_parser("remove", help="Remove a scheduled job")
+    scheduler_remove_p.add_argument("job_id", help="Job identifier")
+    scheduler_run_p = scheduler_sub.add_parser("run", help="Run a job immediately")
+    scheduler_run_p.add_argument("job_id", help="Job identifier")
+    scheduler_tz_p = scheduler_sub.add_parser("set-timezone", help="Set scheduler timezone")
+    scheduler_tz_p.add_argument("timezone", help="Timezone (e.g., UTC, America/New_York)")
+    scheduler_concurrent_p = scheduler_sub.add_parser("set-max-concurrent", help="Set max concurrent jobs")
+    scheduler_concurrent_p.add_argument("count", type=int, help="Maximum concurrent jobs")
+
     args = parser.parse_args()
 
     commands = {
@@ -366,6 +447,9 @@ def main() -> None:
         "connectors": cmd_connectors,
         "app": cmd_app_mgmt,
         "persona": cmd_persona,
+        "config": cmd_config,
+        "security": cmd_security,
+        "scheduler": cmd_scheduler,
     }
 
     handler = commands.get(args.command)

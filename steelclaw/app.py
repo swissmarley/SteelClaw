@@ -81,16 +81,41 @@ async def lifespan(app: FastAPI):
     app.state.skill_registry = skill_registry
 
     # ── Security ────────────────────────────────────────────────────────
+    from steelclaw.security.extended_permissions import CapabilityPermissions
     from steelclaw.security.permissions import PermissionManager
-    from steelclaw.security.sandbox import set_permission_manager
+    from steelclaw.security.sandbox import set_permission_manager, set_sudo_manager
 
     # Resolve approvals file path
     settings.agents.security.approvals_file = str(
         resolve_path(settings.agents.security.approvals_file)
     )
-    permission_manager = PermissionManager(settings.agents.security)
+
+    # Load capability permissions from ~/.steelclaw/permissions.yaml
+    ext_perm_settings = settings.agents.security.extended_permissions
+    capability_permissions = CapabilityPermissions.load(
+        path=ext_perm_settings.permissions_file,
+        auto_create=ext_perm_settings.auto_create_file,
+    )
+
+    permission_manager = PermissionManager(settings.agents.security, capability_permissions)
     set_permission_manager(permission_manager)
     app.state.permission_manager = permission_manager
+    app.state.capability_permissions = capability_permissions
+
+    # Initialise sudo manager if enabled
+    sudo_settings = settings.agents.security.sudo
+    if sudo_settings.enabled:
+        from steelclaw.security.sudo_manager import SudoManager
+        sudo_manager = SudoManager(sudo_settings)
+        set_sudo_manager(sudo_manager)
+        app.state.sudo_manager = sudo_manager
+        logger.info(
+            "Sudo support enabled (audit log: %s, whitelist: %d pattern(s))",
+            sudo_settings.audit_log,
+            len(sudo_settings.whitelist),
+        )
+    else:
+        logger.info("Sudo support disabled (set agents.security.sudo.enabled=true to enable)")
 
     # ── Memory system ────────────────────────────────────────────────────
     from steelclaw.memory.ingestion import MemoryIngestor
@@ -107,6 +132,16 @@ async def lifespan(app: FastAPI):
     app.state.memory_retriever = memory_retriever
     app.state.memory_ingestor = memory_ingestor
 
+    # ── SQLite FTS5 memory (optional fast keyword search) ────────────────
+    fts_store = None
+    fts_settings = settings.agents.memory_fts
+    if fts_settings.enabled:
+        from steelclaw.memory.sqlite_fts import FTSMemoryStore
+        fts_store = FTSMemoryStore(fts_settings.db_path)
+        await fts_store.init()
+        app.state.fts_store = fts_store
+        logger.info("SQLite FTS5 memory store enabled at %s", fts_settings.db_path)
+
     # ── Agent router (LLM-powered multi-agent orchestrator) ────────────
     from steelclaw.agents.orchestrator import MultiAgentOrchestrator
     from steelclaw.gateway.router import set_agent_router, set_memory_ingestor
@@ -116,6 +151,25 @@ async def lifespan(app: FastAPI):
         skill_registry=skill_registry,
     )
     orchestrator.set_memory(memory_retriever, memory_ingestor)
+
+    # ── Skill generator for autonomous skill creation ────────────────────
+    if settings.agents.reflection.enabled:
+        from steelclaw.skills.generator import SkillGenerator
+        from steelclaw.llm.provider import LLMProvider
+
+        _gen_provider = LLMProvider(settings.agents.llm)
+        global_dir = Path(settings.agents.skills.global_dir)
+        skill_generator = SkillGenerator(_gen_provider, global_dir, skill_registry)
+        orchestrator.set_skill_generator(skill_generator)
+        app.state.skill_generator = skill_generator
+        logger.info(
+            "Autonomous skill generator enabled (threshold=%d, auto_create=%s)",
+            settings.agents.reflection.threshold,
+            settings.agents.reflection.skill_auto_create,
+        )
+
+    # Inject skill registry into skill_manager bundled skill
+    _inject_skill_manager(skill_registry, settings.agents.skills)
     set_agent_router(orchestrator)
     set_memory_ingestor(memory_ingestor)
     app.state.agent_router = orchestrator
@@ -125,10 +179,12 @@ async def lifespan(app: FastAPI):
 
     # ── Task scheduler ──────────────────────────────────────────────────
     from steelclaw.scheduler.engine import TaskEngine
+    from steelclaw.skills.bundled.cron_manager import set_task_engine
 
     task_engine = TaskEngine(settings.agents.scheduler)
     task_engine.start()
     app.state.task_engine = task_engine
+    set_task_engine(task_engine)  # Make available to skills
 
     # ── Session heartbeat ───────────────────────────────────────────────
     from steelclaw.session_heartbeat import run_heartbeat
@@ -196,19 +252,58 @@ async def lifespan(app: FastAPI):
     set_connector_registry(registry)
     app.state.registry = registry
 
+    # ── Permission broadcaster ─────────────────────────────────────────────
+    from steelclaw.security.broadcaster import PermissionBroadcaster, set_broadcaster
+
+    permission_broadcaster = PermissionBroadcaster(
+        timeout_seconds=settings.agents.security.permission_timeout
+    )
+    permission_broadcaster.set_connector_registry(registry)
+    set_broadcaster(permission_broadcaster)
+    permission_manager.set_broadcaster(permission_broadcaster)
+    # Connect broadcaster to sudo manager for interactive sudo approval
+    sudo_manager = getattr(app.state, "sudo_manager", None)
+    if sudo_manager:
+        sudo_manager.set_broadcaster(permission_broadcaster)
+    app.state.permission_broadcaster = permission_broadcaster
+
     logger.info("SteelClaw started on %s:%s", settings.server.host, settings.server.port)
     yield
 
     # ── Shutdown ────────────────────────────────────────────────────────
     task_engine.stop()
     await registry.stop_all()
+
+    # Drain in-progress reflection background tasks before closing resources
+    # so that skill-file writes and ReflectionLog entries can complete cleanly.
+    from steelclaw.agents.router import drain_background_tasks
+    await drain_background_tasks(timeout=10.0)
+
     await dispose_engine()
 
     # Stop OpenViking server if we started it
     if hasattr(app.state, "openviking_manager") and app.state.openviking_manager:
         await app.state.openviking_manager.stop()
 
+    # Close FTS5 memory store
+    if hasattr(app.state, "fts_store") and app.state.fts_store:
+        await app.state.fts_store.close()
+
     logger.info("SteelClaw shut down")
+
+
+def _inject_skill_manager(skill_registry, skill_settings) -> None:
+    """Inject the live skill registry into the skill_manager bundled skill."""
+    try:
+        from steelclaw.skills.bundled.skill_manager import _set_registry
+        _set_registry(
+            skill_registry,
+            global_dir=skill_settings.global_dir,
+            workspace_dir=skill_settings.workspace_dir,
+        )
+        logger.debug("Skill manager registry injected")
+    except Exception as exc:
+        logger.debug("Could not inject skill manager registry: %s", exc)
 
 
 async def _ensure_main_agent(settings: Settings) -> None:

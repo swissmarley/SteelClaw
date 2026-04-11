@@ -128,3 +128,94 @@ class BaseConnector(ABC):
     async def dispatch(self, message: InboundMessage) -> None:
         """Forward a normalised inbound message to the central handler."""
         await self._handler(message)
+
+    async def send_permission_request(self, chat_id: str, request_data: dict) -> None:
+        """Send an interactive permission request to the user.
+
+        Platforms with native buttons (Telegram, Discord, Slack) should override
+        this to send actionable UI elements. Default implementation sends a
+        formatted text message.
+
+        Args:
+            chat_id: The chat ID to send the request to
+            request_data: Dictionary containing request details:
+                - request_id: Unique identifier
+                - command: The command needing approval
+                - tool_name: Name of the tool
+                - skill_name: Optional skill name
+                - timeout_seconds: Request timeout
+                - context: Optional context
+                - options: List of options (approve_once, approve_session, deny)
+        """
+        # Default implementation: send formatted text message
+        command = request_data.get("command", "unknown command")
+        timeout = request_data.get("timeout_seconds", 300)
+        lines = [
+            "🔒 **Permission Request**",
+            f"Command: `{command}`",
+            f"Timeout: {timeout}s",
+            "",
+            "Reply with:",
+            "• `approve` — approve once",
+            "• `session` — approve for this session",
+            "• `deny` — reject",
+        ]
+        if request_data.get("context"):
+            lines.insert(2, f"Context: {request_data['context']}")
+
+        from steelclaw.schemas.messages import OutboundMessage
+
+        message = OutboundMessage(
+            platform=self.platform_name,
+            platform_chat_id=chat_id,
+            content="\n".join(lines),
+        )
+        await self.send(message)
+
+    async def send_permission_resolved(self, resolved_data: dict) -> None:
+        """Notify this connector that a permission request has been resolved.
+
+        Called by the broadcaster after any channel (web, Telegram, etc.)
+        resolves a permission request. Subclasses may override to update
+        native UI (e.g. edit an inline-keyboard message in Telegram).
+        The default implementation is a no-op.
+
+        Args:
+            resolved_data: Dict from ResolvedRequest.to_dict() containing
+                request_id, decision, resolved_by, original_command.
+        """
+        pass
+
+    async def _on_permission_response(
+        self, request_id: str, decision: str, user_id: str
+    ) -> None:
+        """Called by subclasses when a user responds to a permission request.
+
+        This method forwards the response to the permission broadcaster.
+        """
+        from steelclaw.security.broadcaster import get_broadcaster
+        from steelclaw.security.permission_models import PermissionDecision, PermissionResponse
+
+        broadcaster = get_broadcaster()
+        if not broadcaster:
+            logger.warning(
+                "No broadcaster set; cannot process permission response for %s",
+                request_id,
+            )
+            return
+
+        # Convert decision string to enum
+        try:
+            decision_enum = PermissionDecision(decision)
+        except ValueError:
+            logger.warning("Invalid permission decision: %s", decision)
+            return
+
+        response = PermissionResponse(
+            request_id=request_id,
+            decision=decision_enum,
+            user_id=user_id,
+            platform=self.platform_name,
+        )
+
+        await broadcaster.resolve_request(response)

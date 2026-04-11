@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore[assignment]
 
 router = APIRouter()
 
@@ -217,8 +225,6 @@ async def update_memory_config(request: Request) -> dict:
 @router.post("/memory/start")
 async def start_openviking_server(request: Request) -> dict:
     """Manually start OpenViking server."""
-    import asyncio
-
     settings = request.app.state.settings
     memory_settings = settings.agents.memory
 
@@ -403,6 +409,135 @@ async def remove_approval(pattern: str, request: Request) -> dict:
     if pm.approvals.remove_rule(pattern):
         return {"status": "removed"}
     raise HTTPException(404, "Rule not found")
+
+
+# ── Capabilities ───────────────────────────────────────────────────────────
+
+
+def _get_capabilities_path(request: Request) -> Path:
+    """Resolve the permissions.yaml path from app settings (avoids hardcoding)."""
+    settings = request.app.state.settings
+    permissions_file = (
+        settings.agents.security.extended_permissions.permissions_file
+    )
+    return Path(permissions_file).expanduser().resolve()
+
+
+def _read_capabilities(request: Request) -> dict:
+    """Read capabilities from permissions.yaml."""
+    if _yaml is None:
+        return {}
+    caps_path = _get_capabilities_path(request)
+    if caps_path.exists():
+        try:
+            content = caps_path.read_text(encoding="utf-8")
+            return _yaml.safe_load(content) or {}
+        except (IOError, _yaml.YAMLError):
+            return {}
+    return {}
+
+
+def _write_capabilities(data: dict, request: Request) -> None:
+    """Write capabilities to permissions.yaml atomically.
+
+    Uses a temp file and os.replace to ensure atomic writes, preventing
+    file corruption if the process is interrupted mid-write.
+    """
+    if _yaml is None:
+        raise RuntimeError("PyYAML is required to write capabilities. Install with: pip install pyyaml")
+
+    caps_path = _get_capabilities_path(request)
+    caps_path.parent.mkdir(parents=True, exist_ok=True)
+    content = _yaml.dump(data, default_flow_style=False)
+
+    fd, tmp_path = tempfile.mkstemp(dir=caps_path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp_path, caps_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.get("/capabilities")
+async def get_capabilities(request: Request) -> dict:
+    """Get capability permissions."""
+    caps = _read_capabilities(request)
+    return {"capabilities": caps}
+
+
+@router.put("/capabilities")
+async def update_capabilities(request: Request) -> dict:
+    """Update capability permissions."""
+    body = await request.json()
+    _write_capabilities(body, request)
+    return {"status": "saved", "section": "capabilities"}
+
+
+def _set_nested_value(data: dict, path: str, value) -> dict:
+    """Set a nested value in a dict using dot-notation path.
+
+    Creates intermediate dicts as needed. Supports paths like
+    'capabilities.filesystem.enabled'.
+    """
+    parts = path.split(".")
+    current = data
+    for part in parts[:-1]:
+        if part not in current or not isinstance(current[part], dict):
+            current[part] = {}
+        current = current[part]
+    current[parts[-1]] = value
+    return data
+
+
+@router.post("/capabilities/{name:path}")
+async def set_capability(name: str, request: Request) -> dict:
+    """Set a single capability permission (supports nested keys like filesystem.enabled)."""
+    body = await request.json()
+    value = body.get("value", body.get("allowed", True))
+
+    caps = _read_capabilities(request)
+
+    # Parse value
+    if isinstance(value, str):
+        if value.lower() in ("true", "yes", "allow", "1"):
+            value = True
+        elif value.lower() in ("false", "no", "deny", "0"):
+            value = False
+
+    # Handle nested keys using dot notation (e.g., "filesystem.enabled")
+    _set_nested_value(caps, name, value)
+    _write_capabilities(caps, request)
+    return {"status": "saved", "capability": name, "value": value}
+
+
+def _delete_nested_value(data: dict, path: str) -> bool:
+    """Delete a nested value from a dict using dot-notation path.
+
+    Returns True if the key was found and deleted, False otherwise.
+    """
+    parts = path.split(".")
+    current = data
+    for part in parts[:-1]:
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+
+    if isinstance(current, dict) and parts[-1] in current:
+        del current[parts[-1]]
+        return True
+    return False
+
+
+@router.delete("/capabilities/{name:path}")
+async def delete_capability(name: str, request: Request) -> dict:
+    """Delete a capability permission (supports nested keys)."""
+    caps = _read_capabilities(request)
+    if _delete_nested_value(caps, name):
+        _write_capabilities(caps, request)
+        return {"status": "removed", "capability": name}
+    raise HTTPException(404, f"Capability '{name}' not found")
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────

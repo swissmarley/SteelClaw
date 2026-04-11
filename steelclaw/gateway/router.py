@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -15,6 +16,8 @@ from steelclaw.db.models import Message as DBMessage, Session as DBSession
 from steelclaw.gateway.command_handler import dispatch_command
 from steelclaw.gateway.session_manager import SessionManager
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
+from steelclaw.security.broadcaster import get_broadcaster, set_broadcaster, PermissionBroadcaster
+from steelclaw.security.permission_models import PermissionDecision, PermissionResponse
 from steelclaw.settings import GatewaySettings, Settings
 
 logger = logging.getLogger("steelclaw.gateway.router")
@@ -310,6 +313,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     _ws_connections[conn_id] = websocket
     logger.info("WebSocket connected: %s", conn_id)
 
+    # Ensure broadcaster has access to WS connections
+    broadcaster = get_broadcaster()
+    if broadcaster:
+        broadcaster.set_ws_connections_getter(lambda: set(_ws_connections.values()))
+
     try:
         while True:
             raw = await websocket.receive_text()
@@ -318,7 +326,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             except json.JSONDecodeError:
                 data = {"content": raw}
 
-            # Check if client supports streaming
+            # ── Priority messages: handle immediately, do NOT spawn tasks ────
+            # These must be processed right away so they can unblock a waiting
+            # agent (which is running in a background task).
+            if data.get("type") == "permission_response":
+                await _handle_permission_response(websocket, data)
+                continue
+
+            if data.get("type") == "sudo_password_response":
+                await _handle_sudo_password_response(websocket, data)
+                continue
+
+            # ── Chat messages: spawn a background task ───────────────────────
+            # Running the agent in-line would block receive_text() for the
+            # entire duration of the LLM call, making it impossible to receive
+            # permission_response / sudo_password_response messages mid-stream.
             stream_mode = data.get("stream", False)
 
             # Resolve file attachments from upload IDs
@@ -346,38 +368,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 is_mention=False,
             )
 
-            if stream_mode:
-                # Streaming mode — send incremental chunks
-                try:
-                    async for db in get_async_session():
-                        settings = websocket.app.state.settings
-                        async for event in process_message_streaming(
-                            inbound, settings.gateway, db
-                        ):
-                            await websocket.send_text(json.dumps(event))
-                except Exception:
-                    logger.exception("Error in streaming WebSocket message")
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "content": "I encountered an internal error. Please try again.",
-                    }))
-            else:
-                # Legacy non-streaming mode — full response at once
-                outbound = None
-                try:
-                    async for db in get_async_session():
-                        settings = websocket.app.state.settings
-                        outbound = await process_message(inbound, settings.gateway, db)
-                except Exception:
-                    logger.exception("Error processing WebSocket message")
-                    outbound = OutboundMessage(
-                        platform="websocket",
-                        platform_chat_id=conn_id,
-                        content="I encountered an internal error. Please try again.",
-                    )
+            # Snapshot the app settings reference for the task closure
+            app_settings = websocket.app.state.settings
 
-                if outbound:
-                    await websocket.send_text(json.dumps({"content": outbound.content}))
+            if stream_mode:
+                asyncio.create_task(
+                    _ws_stream_task(websocket, inbound, app_settings),
+                    name=f"ws-stream-{conn_id}",
+                )
+            else:
+                asyncio.create_task(
+                    _ws_nonstream_task(websocket, inbound, app_settings),
+                    name=f"ws-chat-{conn_id}",
+                )
 
     except WebSocketDisconnect:
         # Mark the WebSocket session as closed
@@ -399,9 +402,145 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         logger.info("WebSocket disconnected: %s", conn_id)
 
 
+async def _ws_stream_task(websocket: WebSocket, inbound: InboundMessage, settings) -> None:
+    """Background task: run the streaming agent and forward chunks to the WebSocket."""
+    try:
+        async for db in get_async_session():
+            async for event in process_message_streaming(
+                inbound, settings.gateway, db
+            ):
+                try:
+                    await websocket.send_text(json.dumps(event))
+                except Exception:
+                    return  # WebSocket closed mid-stream
+    except Exception:
+        logger.exception("Error in streaming WebSocket task")
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "content": "I encountered an internal error. Please try again.",
+            }))
+        except Exception:
+            pass
+
+
+async def _ws_nonstream_task(websocket: WebSocket, inbound: InboundMessage, settings) -> None:
+    """Background task: run the non-streaming agent and send the full response."""
+    outbound = None
+    try:
+        async for db in get_async_session():
+            outbound = await process_message(inbound, settings.gateway, db)
+    except Exception:
+        logger.exception("Error processing WebSocket message")
+        outbound = OutboundMessage(
+            platform="websocket",
+            platform_chat_id=inbound.platform_chat_id,
+            content="I encountered an internal error. Please try again.",
+        )
+
+    if outbound:
+        try:
+            await websocket.send_text(json.dumps({"content": outbound.content}))
+        except Exception:
+            pass
+
+
+async def _handle_permission_response(websocket: WebSocket, data: dict) -> None:
+    """Handle permission_response message from WebSocket client."""
+    logger.info("Received permission_response: %s", data)
+    broadcaster = get_broadcaster()
+    if not broadcaster:
+        logger.warning("No broadcaster available for permission response")
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": "Permission system not initialized",
+        }))
+        return
+
+    request_id = data.get("data", {}).get("request_id") or data.get("request_id")
+    decision_str = data.get("data", {}).get("decision") or data.get("decision")
+    user_id = data.get("data", {}).get("user_id") or data.get("user_id", "unknown")
+
+    if not request_id or not decision_str:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": "Missing request_id or decision",
+        }))
+        return
+
+    try:
+        decision = PermissionDecision(decision_str)
+    except ValueError:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": f"Invalid decision: {decision_str}",
+        }))
+        return
+
+    response = PermissionResponse(
+        request_id=request_id,
+        decision=decision,
+        user_id=user_id,
+        platform="websocket",
+    )
+
+    # Try to resolve the request
+    resolved = await broadcaster.resolve_request(response)
+    if resolved:
+        await websocket.send_text(json.dumps({
+            "type": "permission_response_ack",
+            "data": {"request_id": request_id, "success": True},
+        }))
+    else:
+        await websocket.send_text(json.dumps({
+            "type": "permission_response_ack",
+            "data": {"request_id": request_id, "success": False, "reason": "Already resolved or unknown request"},
+        }))
+
+
+async def _handle_sudo_password_response(websocket: WebSocket, data: dict) -> None:
+    """Handle sudo_password_response message from WebSocket client."""
+    logger.info("Received sudo_password_response")
+    broadcaster = get_broadcaster()
+    if not broadcaster:
+        return
+
+    payload = data.get("data", data)
+    request_id = payload.get("request_id")
+    # password is None when the user cancelled the modal
+    password = payload.get("password")
+
+    if not request_id:
+        return
+
+    resolved = await broadcaster.resolve_sudo_password(request_id, password)
+    await websocket.send_text(json.dumps({
+        "type": "sudo_password_response_ack",
+        "data": {"request_id": request_id, "success": resolved},
+    }))
+
+
 def get_ws_connections() -> dict[str, WebSocket]:
     """Expose active WS connections for the approval callback."""
     return _ws_connections
+
+
+def init_broadcaster() -> None:
+    """Initialize the permission broadcaster.
+
+    Called during app startup to create the broadcaster instance.
+    """
+    broadcaster = PermissionBroadcaster()
+    set_broadcaster(broadcaster)
+
+
+def broadcast_permission_request(request_data: dict) -> None:
+    """Broadcast a permission request to all connected WebSocket clients.
+
+    This is a convenience function for broadcasting permission requests
+    from other parts of the codebase.
+    """
+    # Note: The broadcaster's WS getter already references _ws_connections directly
 
 
 # ── Webhook receiver ────────────────────────────────────────────────────────

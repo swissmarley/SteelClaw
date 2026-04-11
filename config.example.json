@@ -80,7 +80,17 @@
       "default_permission": "ask",
       "sandbox_enabled": true,
       "max_command_timeout": 30,
-      "blocked_commands": ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"]
+      "blocked_commands": ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"],
+      "sudo": {
+        "enabled": false,
+        "whitelist": [],
+        "audit_log": "~/.steelclaw/sudo_audit.log",
+        "session_timeout": 30
+      },
+      "extended_permissions": {
+        "permissions_file": "~/.steelclaw/permissions.yaml",
+        "auto_create_file": true
+      }
     },
     "scheduler": {
       "enabled": true,
@@ -105,6 +115,16 @@
       "openviking_auto_start": true,
       "openviking_port": 1933,
       "openviking_log_level": "info"
+    },
+    "reflection": {
+      "enabled": false,
+      "threshold": 5,
+      "skill_auto_create": false
+    },
+    "memory_fts": {
+      "enabled": false,
+      "db_path": "~/.steelclaw/memory_fts.db",
+      "nudge_limit": 3
     }
   }
 }
