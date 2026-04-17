@@ -18,7 +18,8 @@ Users can approve once, approve for session, or deny. First response wins.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Coroutine, Optional
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from steelclaw.security.approvals import ApprovalStore
 from steelclaw.security.permission_models import (

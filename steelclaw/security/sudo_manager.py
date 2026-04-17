@@ -19,7 +19,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 from steelclaw.security.permission_models import (
     PermissionDecision,
@@ -224,7 +225,7 @@ class SudoManager:
         session_id: str,
         command: str,
         timeout: int,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return a valid sudo password, using the session cache when still fresh.
 
         If the cached password has expired (or was never set), requests a new
@@ -290,7 +291,7 @@ class SudoManager:
 
             return password
 
-    async def _run_sudo(self, command: str, timeout: int, password: Optional[str] = None) -> str:
+    async def _run_sudo(self, command: str, timeout: int, password: str | None = None) -> str:
         """Run a sudo command using exec (not shell) to prevent injection.
 
         The command is parsed with ``shlex.split()`` and passed as an argument
@@ -308,7 +309,7 @@ class SudoManager:
             return f"Error: Could not parse sudo command: {e}"
 
         sudo_args = ["sudo"]
-        stdin_data: Optional[bytes] = None
+        stdin_data: bytes | None = None
         if password is not None:
             sudo_args.extend(["-S", "-p", ""])  # -S reads from stdin, -p "" suppresses prompt
             stdin_data = (password + "\n").encode()

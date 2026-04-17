@@ -1,4 +1,4 @@
-"""Agent router — LLM-powered agent with tool calling, skills, and persistent context."""
+"""Agent router — LLM-powered agent with tool calling, tools, and persistent context."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import time
 from collections.abc import AsyncIterator
 from copy import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +22,7 @@ from steelclaw.llm.provider import LLMProvider, LLMResponse, StreamChunk, ToolCa
 from steelclaw.pricing import calculate_cost
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.settings import AgentSettings
-from steelclaw.skills.registry import SkillRegistry
+from steelclaw.skills.registry import ToolRegistry
 
 logger = logging.getLogger("steelclaw.agents")
 
@@ -103,15 +103,17 @@ class AgentRouter:
     def __init__(
         self,
         settings: AgentSettings,
-        skill_registry: SkillRegistry | None = None,
+        tool_registry: ToolRegistry | None = None,
         agent_profile=None,  # Optional[AgentProfile] — uses DB-stored model/prompt/persona
+        skill_manager=None,  # Optional[SkillManager] — Phase 2 skills context injection
     ) -> None:
         self._settings = settings
         self._profile = agent_profile
-        self._skills = skill_registry
+        self._tool_registry = tool_registry
+        self._skill_manager = skill_manager
         self._memory_retriever = None
         self._memory_ingestor = None
-        self._skill_generator = None  # Optional[SkillGenerator] — set via set_skill_generator()
+        self._tool_generator = None  # Optional[SkillGenerator] — set via set_tool_generator()
         # Tracks live background reflection tasks so they are not garbage-collected
         # mid-execution and can be awaited during graceful shutdown.
         self._background_tasks: set[asyncio.Task] = set()
@@ -134,9 +136,9 @@ class AgentRouter:
         self._memory_retriever = retriever
         self._memory_ingestor = ingestor
 
-    def set_skill_generator(self, generator) -> None:
-        """Inject the skill generator for autonomous skill creation."""
-        self._skill_generator = generator
+    def set_tool_generator(self, generator) -> None:
+        """Inject the tool generator for autonomous tool creation."""
+        self._tool_generator = generator
 
     async def route(
         self,
@@ -212,8 +214,13 @@ class AgentRouter:
         """Run the agentic loop. Returns (response_text, accumulated_usage)."""
 
         # Build context with optional memory injection
-        skill_context = self._skills.get_combined_system_context() if self._skills else None
-        tools_schema = self._skills.get_all_tools_schema() if self._skills else []
+        tool_context = self._tool_registry.get_combined_system_context() if self._tool_registry else None
+        # Inject skill context (Phase 2 — trigger-matched skills)
+        if self._skill_manager and message.content:
+            skill_context = self._skill_manager.get_combined_system_context()
+            if skill_context:
+                tool_context = f"{tool_context}\n\n---\n\n{skill_context}" if tool_context else skill_context
+        tools_schema = self._tool_registry.get_all_tools_schema() if self._tool_registry else []
 
         # Prepend extra tools (e.g. delegate_to_subagent from the orchestrator)
         if extra_tools:
@@ -236,21 +243,42 @@ class AgentRouter:
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
 
-        # Build persona prompt — use agent profile if available, else global persona file
-        if self._profile is not None and (self._profile.persona_json or self._profile.system_prompt):
+        # Build persona prompt — use agent profile's persona_json if set,
+        # otherwise fall back to file-based persona (~/.steelclaw/persona.json)
+        persona_prompt = ""
+        if self._profile is not None and self._profile.persona_json:
             from steelclaw.agents.persona import build_persona_prompt
             persona_prompt = build_persona_prompt(self._profile)
-            effective_system = self._profile.system_prompt or self._settings.llm.system_prompt
-        else:
+        if not persona_prompt:
             persona_prompt = build_persona_system_prompt()
-            effective_system = self._settings.llm.system_prompt
+
+        # Inject user facts from DB into persona prompt
+        if db is not None and session is not None:
+            from sqlalchemy import select as sa_select
+            from steelclaw.agents.persona import format_user_facts
+            from steelclaw.db.models import UserFact
+            user_id = getattr(session, "user_id", None)
+            if user_id:
+                facts_result = await db.execute(
+                    sa_select(UserFact).where(UserFact.user_id == user_id).limit(20)
+                )
+                facts = [{"fact_key": f.fact_key, "fact_value": f.fact_value}
+                         for f in facts_result.scalars().all()]
+                facts_block = format_user_facts(facts)
+                if facts_block:
+                    persona_prompt = f"{persona_prompt}\n\n{facts_block}" if persona_prompt else facts_block
+
+        effective_system = (
+            self._profile.system_prompt if self._profile is not None and self._profile.system_prompt
+            else self._settings.llm.system_prompt
+        )
 
         if db is not None:
             messages = await self._context.build(
                 session=session,
                 db=db,
                 persona_prompt=persona_prompt,
-                skill_context=skill_context,
+                skill_context=tool_context,
                 memory_context=memory_context,
                 current_message=message.content,
                 attachments=message.attachments,
@@ -258,8 +286,8 @@ class AgentRouter:
         else:
             # Fallback: no DB, just persona + system + current message
             system = f"{persona_prompt}\n\n{effective_system}"
-            if skill_context:
-                system = f"{system}\n\n{skill_context}"
+            if tool_context:
+                system = f"{system}\n\n{tool_context}"
             if memory_context:
                 system = f"{system}\n\n{memory_context}"
             messages = [
@@ -334,7 +362,7 @@ class AgentRouter:
 
             # Execute each tool call and add results
             for tc in response.tool_calls:
-                skill_obj = self._skills.get_skill_for_tool(tc.name) if self._skills else None
+                skill_obj = self._tool_registry.get_skill_for_tool(tc.name) if self._tool_registry else None
                 skill_name = skill_obj.name if skill_obj else None
                 skill_label = skill_obj.metadata.description if skill_obj else None
                 if on_tool_event:
@@ -402,7 +430,7 @@ class AgentRouter:
             return
         if len(tool_calls_log) < reflection_settings.threshold:
             return
-        if self._skill_generator is None:
+        if self._tool_generator is None:
             return
 
         logger.info(
@@ -414,7 +442,7 @@ class AgentRouter:
 
         async def _reflect():
             try:
-                result = await self._skill_generator.reflect_and_create(
+                result = await self._tool_generator.reflect_and_create(
                     tool_calls_log=tool_calls_log,
                     task_context=task_context,
                     skill_auto_create=reflection_settings.skill_auto_create,
@@ -442,11 +470,11 @@ class AgentRouter:
         2. Fill remaining slots with core skills (shell, web_search, notes, etc.)
         3. Fill any remaining slots from the rest in order
         """
-        if not self._skills:
+        if not self._tool_registry:
             return all_tools[:MAX_TOOLS]
 
         # Get names of skills whose triggers match the message
-        matched_skills = self._skills.find_skills_by_trigger(message_content)
+        matched_skills = self._tool_registry.find_skills_by_trigger(message_content)
         matched_skill_names = {s.name for s in matched_skills}
 
         # Core skills that should always be included
@@ -457,7 +485,7 @@ class AgentRouter:
 
         # Build tool name → skill name index
         tool_to_skill: dict[str, str] = {}
-        for skill_name, skill in self._skills.skills.items():
+        for skill_name, skill in self._tool_registry.skills.items():
             for tool in skill.tools:
                 tool_to_skill[tool.name] = skill_name
 
@@ -533,8 +561,13 @@ class AgentRouter:
         """Streaming agentic loop. Yields events as chunks arrive."""
 
         # Build context (same as non-streaming)
-        skill_context = self._skills.get_combined_system_context() if self._skills else None
-        tools_schema = self._skills.get_all_tools_schema() if self._skills else []
+        tool_context = self._tool_registry.get_combined_system_context() if self._tool_registry else None
+        # Inject skill context (Phase 2 — trigger-matched skills)
+        if self._skill_manager and message.content:
+            skill_context = self._skill_manager.get_combined_system_context()
+            if skill_context:
+                tool_context = f"{tool_context}\n\n---\n\n{skill_context}" if tool_context else skill_context
+        tools_schema = self._tool_registry.get_all_tools_schema() if self._tool_registry else []
 
         # Prepend extra tools (e.g. delegate_to_subagent from the orchestrator)
         if extra_tools:
@@ -553,29 +586,50 @@ class AgentRouter:
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
 
-        # Build persona prompt — use agent profile if available, else global persona file
-        if self._profile is not None and (self._profile.persona_json or self._profile.system_prompt):
+        # Build persona prompt — use agent profile's persona_json if set,
+        # otherwise fall back to file-based persona (~/.steelclaw/persona.json)
+        persona_prompt = ""
+        if self._profile is not None and self._profile.persona_json:
             from steelclaw.agents.persona import build_persona_prompt
             persona_prompt = build_persona_prompt(self._profile)
-            effective_system = self._profile.system_prompt or self._settings.llm.system_prompt
-        else:
+        if not persona_prompt:
             persona_prompt = build_persona_system_prompt()
-            effective_system = self._settings.llm.system_prompt
+
+        # Inject user facts from DB into persona prompt
+        if db is not None and session is not None:
+            from sqlalchemy import select as sa_select
+            from steelclaw.agents.persona import format_user_facts
+            from steelclaw.db.models import UserFact
+            user_id = getattr(session, "user_id", None)
+            if user_id:
+                facts_result = await db.execute(
+                    sa_select(UserFact).where(UserFact.user_id == user_id).limit(20)
+                )
+                facts = [{"fact_key": f.fact_key, "fact_value": f.fact_value}
+                         for f in facts_result.scalars().all()]
+                facts_block = format_user_facts(facts)
+                if facts_block:
+                    persona_prompt = f"{persona_prompt}\n\n{facts_block}" if persona_prompt else facts_block
+
+        effective_system = (
+            self._profile.system_prompt if self._profile is not None and self._profile.system_prompt
+            else self._settings.llm.system_prompt
+        )
 
         if db is not None:
             messages = await self._context.build(
                 session=session,
                 db=db,
                 persona_prompt=persona_prompt,
-                skill_context=skill_context,
+                skill_context=tool_context,
                 memory_context=memory_context,
                 current_message=message.content,
                 attachments=message.attachments,
             )
         else:
             system = f"{persona_prompt}\n\n{effective_system}"
-            if skill_context:
-                system = f"{system}\n\n{skill_context}"
+            if tool_context:
+                system = f"{system}\n\n{tool_context}"
             if memory_context:
                 system = f"{system}\n\n{memory_context}"
             messages = [
@@ -663,7 +717,7 @@ class AgentRouter:
 
             for tc in tool_calls:
                 # Resolve skill name and human-readable label for this tool
-                skill_obj = self._skills.get_skill_for_tool(tc.name) if self._skills else None
+                skill_obj = self._tool_registry.get_skill_for_tool(tc.name) if self._tool_registry else None
                 skill_name = skill_obj.name if skill_obj else None
                 skill_label = skill_obj.metadata.description if skill_obj else None
                 yield {
@@ -704,11 +758,11 @@ class AgentRouter:
 
     async def _execute_tool_call(self, tc: ToolCall) -> str:
         """Execute a single tool call via the skill registry."""
-        if self._skills is None:
+        if self._tool_registry is None:
             return f"Error: No skill registry available to execute tool '{tc.name}'"
 
         logger.info("Executing tool: %s(%s)", tc.name, json.dumps(tc.arguments)[:200])
-        result = await self._skills.execute_tool(tc.name, tc.arguments)
+        result = await self._tool_registry.execute_tool(tc.name, tc.arguments)
         if result is None:
             result = f"Tool '{tc.name}' returned no output."
         logger.debug("Tool result for %s: %s", tc.name, str(result)[:200])

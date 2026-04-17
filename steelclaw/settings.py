@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any
 
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
@@ -31,7 +31,7 @@ class ConnectorConfig(BaseModel):
 
 class GatewaySettings(BaseModel):
     mention_keywords: list[str] = ["@steelclaw", "@sc"]
-    dm_allowlist_enabled: bool = True
+    dm_allowlist_enabled: bool = False
     connectors: dict[str, ConnectorConfig] = {}
 
 
@@ -75,16 +75,41 @@ class LLMSettings(BaseModel):
     timeout: int = 120
 
 
-class SkillSettings(BaseModel):
-    """Skill system configuration."""
+class ToolSettings(BaseModel):
+    """Tool system configuration."""
 
     bundled_dir: str = "steelclaw/skills/bundled"
     global_dir: str = "~/.steelclaw/skills"
     workspace_dir: str = ".steelclaw/skills"
     enabled: bool = True
+    disabled_tools: list[str] = []
+    enabled_tools: list[str] = []  # tools user explicitly enabled (overrides auto-disable)
+    tool_configs: dict[str, dict[str, str]] = {}  # per-tool credentials/settings
+
+    # Deprecated aliases — config.json may still use old names
     disabled_skills: list[str] = []
-    enabled_skills: list[str] = []  # skills user explicitly enabled (overrides auto-disable)
-    skill_configs: dict[str, dict[str, str]] = {}  # per-skill credentials/settings
+    enabled_skills: list[str] = []
+    skill_configs: dict[str, dict[str, str]] = {}
+
+    def model_post_init(self, __context) -> None:
+        """Migrate deprecated field names to new names at load time."""
+        if self.disabled_skills and not self.disabled_tools:
+            self.disabled_tools = list(self.disabled_skills)
+        if self.enabled_skills and not self.enabled_tools:
+            self.enabled_tools = list(self.enabled_skills)
+        if self.skill_configs and not self.tool_configs:
+            self.tool_configs = dict(self.skill_configs)
+
+
+class SkillSettings(BaseModel):
+    """Skills system configuration (Claude-compatible skills)."""
+
+    bundled_dir: str = "steelclaw/skills/bundled"
+    global_dir: str = "~/.steelclaw/claude-skills"
+    workspace_dir: str = ".steelclaw/skills"
+    enabled: bool = True
+    disabled_skills: list[str] = []
+    enabled_skills: list[str] = []
 
 
 class MemorySettings(BaseModel):
@@ -132,11 +157,12 @@ class ExtendedPermissionsSettings(BaseModel):
 
 
 class ReflectionSettings(BaseModel):
-    """Agent self-reflection and autonomous skill creation."""
+    """Agent self-reflection and autonomous tool creation."""
 
     enabled: bool = False
     threshold: int = 5  # minimum tool calls before triggering reflection
-    skill_auto_create: bool = False  # actually write generated skill files to disk
+    tool_auto_create: bool = False  # actually write generated tool files to disk
+    skill_auto_create: bool = False  # deprecated alias for tool_auto_create
 
 
 class MemoryFTSSettings(BaseModel):
@@ -190,7 +216,8 @@ class AgentSettings(BaseModel):
     default_agent: str = "general"
     max_tool_rounds: int = 25  # Maximum tool-calling iterations per message (raised from 10 for autonomous operation)
     llm: LLMSettings = LLMSettings()
-    skills: SkillSettings = SkillSettings()
+    tools: ToolSettings = ToolSettings()
+    skills: SkillSettings = SkillSettings()  # Phase 2: Claude-compatible skills
     security: SecuritySettings = SecuritySettings()
     scheduler: SchedulerSettings = SchedulerSettings()
     voice: VoiceSettings = VoiceSettings()
@@ -214,12 +241,12 @@ class Settings(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: Type[BaseSettings],
+        settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
         from steelclaw.paths import PROJECT_ROOT
 
         sources = [init_settings, env_settings]

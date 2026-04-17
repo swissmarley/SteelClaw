@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
 
 from steelclaw.settings import SkillSettings
 from steelclaw.skills.credential_store import get_credential
@@ -17,12 +16,12 @@ class SkillRegistry:
 
     def __init__(self, settings: SkillSettings) -> None:
         self._settings = settings
-        self._skills: Dict[str, Skill] = {}  # active skills only
-        self._all_skills: Dict[str, Skill] = {}  # all discovered skills
+        self._skills: dict[str, Skill] = {}  # active skills only
+        self._all_skills: dict[str, Skill] = {}  # all discovered skills
         self._disabled: set[str] = set(settings.disabled_skills)
         self._explicitly_enabled: set[str] = set(settings.enabled_skills)
         # Map tool_name → skill for fast lookup during tool call routing
-        self._tool_index: Dict[str, Skill] = {}
+        self._tool_index: dict[str, Skill] = {}
 
     def load_all(self) -> None:
         """Discover and load all skills from configured directories.
@@ -138,11 +137,11 @@ class SkillRegistry:
         return await skill.execute_tool(tool_name, arguments)
 
     @property
-    def skills(self) -> Dict[str, Skill]:
+    def skills(self) -> dict[str, Skill]:
         return dict(self._skills)
 
     @property
-    def all_skills(self) -> Dict[str, Skill]:
+    def all_skills(self) -> dict[str, Skill]:
         """All discovered skills including disabled ones."""
         return dict(self._all_skills)
 
@@ -228,3 +227,8 @@ class SkillRegistry:
                     matched.append(skill)
                     break
         return matched
+
+
+# Phase 1 rename: "Skills" → "Tools" in user-facing surfaces.
+# ToolRegistry is the canonical name; SkillRegistry kept as backward-compatible alias.
+ToolRegistry = SkillRegistry

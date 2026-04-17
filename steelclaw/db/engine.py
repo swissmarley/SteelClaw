@@ -171,7 +171,7 @@ async def run_migrations() -> None:
         alembic_command.upgrade(alembic_cfg, "head")
 
     # Alembic manages its own async internally via env.py
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _run_upgrade)
     logger.info("Database migrations applied")
 

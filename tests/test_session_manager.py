@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from steelclaw.db.models import AllowlistEntry
-from steelclaw.gateway.session_manager import SessionManager
+from steelclaw.gateway.session_manager import AllowlistError, SessionManager
 from steelclaw.schemas.messages import InboundMessage
 from steelclaw.settings import GatewaySettings
 
@@ -95,8 +95,8 @@ async def test_group_keyword_activation(db_session):
 @pytest.mark.asyncio
 async def test_allowlist_blocks_non_allowed(db_session):
     sm = SessionManager(GatewaySettings(dm_allowlist_enabled=True))
-    session = await sm.resolve(_dm(), db_session)
-    assert session is None
+    with pytest.raises(AllowlistError):
+        await sm.resolve(_dm(), db_session)
 
 
 @pytest.mark.asyncio

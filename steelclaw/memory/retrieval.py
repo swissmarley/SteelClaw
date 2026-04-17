@@ -101,12 +101,13 @@ class MemoryRetriever:
             )
 
             experiences = []
-            if results and results.get("documents"):
-                for i, doc in enumerate(results["documents"][0]):
-                    if doc:
-                        metadata = results.get("metadatas", [[]])[0]
-                        meta = metadata[i] if i < len(metadata) else {}
-                        experiences.append((doc, meta))
+            for doc in results:
+                # Filter out very distant matches
+                if doc.get("distance", 1.0) > 0.8:
+                    continue
+                text = doc.get("document", "")
+                if text:
+                    experiences.append((text, doc.get("metadata", {})))
 
             if experiences:
                 logger.debug(

@@ -6,8 +6,9 @@ import importlib
 import importlib.util
 import logging
 import sys
+from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, Optional
+from typing import Any
 
 from steelclaw.skills.parser import SkillMetadata, ToolDefinition, parse_skill_file
 
@@ -150,7 +151,7 @@ def discover_skills(
 
     Priority: workspace > global > bundled (workspace overrides same-named skills).
     """
-    skills_by_name: Dict[str, Skill] = {}
+    skills_by_name: dict[str, Skill] = {}
 
     # Load in priority order: bundled first, workspace last (overrides)
     for scope, dir_path in [
