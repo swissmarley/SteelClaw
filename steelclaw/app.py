@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -85,10 +86,12 @@ async def lifespan(app: FastAPI):
     from steelclaw.skills.skill_manager import SkillManager
 
     skill_settings = settings.agents.skills
+    skill_settings.bundled_dir = str(resolve_path(skill_settings.bundled_dir))
     skill_settings.global_dir = str(resolve_path(skill_settings.global_dir))
     skill_settings.workspace_dir = str(resolve_path(skill_settings.workspace_dir))
 
     skill_manager = SkillManager(
+        bundled_dir=skill_settings.bundled_dir,
         global_dir=skill_settings.global_dir,
         workspace_dir=skill_settings.workspace_dir,
         enabled=skill_settings.enabled,
@@ -188,8 +191,8 @@ async def lifespan(app: FastAPI):
             settings.agents.reflection.tool_auto_create,
         )
 
-    # Inject tool registry into skill_manager bundled tool
-    _inject_skill_manager(tool_registry, settings.agents.tools)
+    # Inject tool registry + skill manager into skill_manager bundled tool
+    _inject_skill_manager(tool_registry, settings.agents.tools, skill_manager)
     set_agent_router(orchestrator)
     set_memory_ingestor(memory_ingestor)
     app.state.agent_router = orchestrator
@@ -199,12 +202,19 @@ async def lifespan(app: FastAPI):
 
     # ── Task scheduler ──────────────────────────────────────────────────
     from steelclaw.scheduler.engine import TaskEngine
-    from steelclaw.skills.bundled.cron_manager import set_task_engine
 
     task_engine = TaskEngine(settings.agents.scheduler)
     task_engine.start()
     app.state.task_engine = task_engine
-    set_task_engine(task_engine)  # Make available to skills
+
+    # Inject into the dynamically-loaded cron_manager module (same pattern
+    # as skill_manager — the loader registers it as steelclaw_skill_cron_manager)
+    _cron_mod = sys.modules.get("steelclaw_skill_cron_manager")
+    if _cron_mod and hasattr(_cron_mod, "set_task_engine"):
+        _cron_mod.set_task_engine(task_engine)
+    else:
+        from steelclaw.skills.bundled.cron_manager import set_task_engine
+        set_task_engine(task_engine)
 
     # ── Session heartbeat ───────────────────────────────────────────────
     from steelclaw.session_heartbeat import run_heartbeat
@@ -312,15 +322,34 @@ async def lifespan(app: FastAPI):
     logger.info("SteelClaw shut down")
 
 
-def _inject_skill_manager(tool_registry, tool_settings) -> None:
-    """Inject the live tool registry into the skill_manager bundled tool."""
+def _inject_skill_manager(tool_registry, tool_settings, skill_manager=None) -> None:
+    """Inject the live tool registry and skill manager into the skill_manager bundled tool.
+
+    The dynamic skill loader registers the module under the name
+    ``steelclaw_skill_skill_manager`` in ``sys.modules``, which is a
+    *different* object from the package-path import
+    ``steelclaw.skills.bundled.skill_manager``.  We must inject into the
+    dynamically-loaded instance so that the actual tool executors see the
+    registry.
+    """
     try:
-        from steelclaw.skills.bundled.skill_manager import _set_registry
-        _set_registry(
-            tool_registry,
-            global_dir=tool_settings.global_dir,
-            workspace_dir=tool_settings.workspace_dir,
-        )
+        module = sys.modules.get("steelclaw_skill_skill_manager")
+        if module is None:
+            # Fallback: maybe the loader hasn't run yet or used a different name
+            from steelclaw.skills.bundled.skill_manager import _set_registry
+            _set_registry(
+                tool_registry,
+                global_dir=tool_settings.global_dir,
+                workspace_dir=tool_settings.workspace_dir,
+                skill_manager=skill_manager,
+            )
+        else:
+            module._set_registry(
+                tool_registry,
+                global_dir=tool_settings.global_dir,
+                workspace_dir=tool_settings.workspace_dir,
+                skill_manager=skill_manager,
+            )
         logger.debug("Tool manager registry injected")
     except Exception as exc:
         logger.debug("Could not inject skill manager registry: %s", exc)
@@ -380,6 +409,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
 
     from steelclaw.api.agents import router as agents_router
+    from steelclaw.api.allowlist import router as allowlist_router
     from steelclaw.api.analytics import router as analytics_router
     from steelclaw.api.config import router as config_router
     from steelclaw.api.health import router as health_router
@@ -403,6 +433,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(skills_new_router, prefix="/api/skills", tags=["skills"])
     app.include_router(scheduler_router, prefix="/api/scheduler", tags=["scheduler"])
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
+    app.include_router(allowlist_router, prefix="/api/allowlist", tags=["allowlist"])
     app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
     app.include_router(persona_router, prefix="/api/persona", tags=["persona"])
     app.include_router(files_router, prefix="/api/files", tags=["files"])

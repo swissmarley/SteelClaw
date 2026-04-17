@@ -7,7 +7,8 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 logger = logging.getLogger("steelclaw.scheduler.triggers")
 

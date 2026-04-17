@@ -1,9 +1,16 @@
-"""SQLModel table definitions for SteelClaw persistent storage."""
+"""SQLModel table definitions for SteelClaw persistent storage.
+
+Python 3.14 note: PEP 649 changes annotation evaluation, breaking
+SQLAlchemy's class-registry resolution for generic relationship types
+(e.g. ``list["X"]``).  We use ``sa_relationship`` with explicit
+``argument`` strings to bypass annotation-based resolution entirely.
+"""
 
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List, Optional
+from typing import Optional
 
+from sqlalchemy.orm import relationship as sa_relationship
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -25,8 +32,12 @@ class User(SQLModel, table=True):
     display_name: str = ""
     created_at: datetime = Field(default_factory=_now)
 
-    platform_identities: List["PlatformIdentity"] = Relationship(back_populates="user")
-    sessions: List["Session"] = Relationship(back_populates="user")
+    platform_identities: list = Relationship(
+        sa_relationship=sa_relationship("PlatformIdentity", back_populates="user")
+    )
+    sessions: list = Relationship(
+        sa_relationship=sa_relationship("Session", back_populates="user")
+    )
 
 
 # ── PlatformIdentity ────────────────────────────────────────────────────────
@@ -42,7 +53,9 @@ class PlatformIdentity(SQLModel, table=True):
     platform_username: Optional[str] = None
     is_allowed: bool = Field(default=False)
 
-    user: Optional["User"] = Relationship(back_populates="platform_identities")
+    user = Relationship(
+        sa_relationship=sa_relationship("User", back_populates="platform_identities")
+    )
 
 
 # ── Session ─────────────────────────────────────────────────────────────────
@@ -64,8 +77,12 @@ class Session(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
-    messages: List["Message"] = Relationship(back_populates="session")
-    user: Optional["User"] = Relationship(back_populates="sessions")
+    messages: list = Relationship(
+        sa_relationship=sa_relationship("Message", back_populates="session")
+    )
+    user = Relationship(
+        sa_relationship=sa_relationship("User", back_populates="sessions")
+    )
 
     @property
     def is_active(self) -> bool:
@@ -96,7 +113,9 @@ class Message(SQLModel, table=True):
     cost_usd: Optional[float] = None
     created_at: datetime = Field(default_factory=_now)
 
-    session: Optional["Session"] = Relationship(back_populates="messages")
+    session = Relationship(
+        sa_relationship=sa_relationship("Session", back_populates="messages")
+    )
 
 
 # ── AllowlistEntry ──────────────────────────────────────────────────────────

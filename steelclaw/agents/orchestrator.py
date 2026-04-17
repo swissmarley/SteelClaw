@@ -6,7 +6,6 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Dict, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -355,7 +354,7 @@ class MultiAgentOrchestrator:
 
     async def _build_main_router(self, db: AsyncSession | None) -> AgentRouter:
         """Construct an AgentRouter for the main agent profile."""
-        profile: Optional[AgentProfile] = None
+        profile: AgentProfile | None = None
         if db is not None:
             stmt = select(AgentProfile).where(AgentProfile.is_main.is_(True))
             result = await db.execute(stmt)
@@ -431,7 +430,7 @@ class MultiAgentOrchestrator:
             AgentProfile.is_active.is_(True),
         )
         result = await db.execute(stmt)
-        profile: Optional[AgentProfile] = result.scalar_one_or_none()
+        profile: AgentProfile | None = result.scalar_one_or_none()
 
         if profile is None:
             # Give useful feedback: list what agents ARE available
@@ -574,7 +573,7 @@ class MultiAgentOrchestrator:
 
         stmt = select(AgentProfile).where(AgentProfile.name == agent_name)
         result = await db.execute(stmt)
-        agent: Optional[AgentProfile] = result.scalar_one_or_none()
+        agent: AgentProfile | None = result.scalar_one_or_none()
 
         if agent is None:
             return f"Error: sub-agent '{agent_name}' not found."
@@ -625,7 +624,7 @@ class MultiAgentOrchestrator:
 
         stmt = select(AgentProfile).where(AgentProfile.name == agent_name)
         result = await db.execute(stmt)
-        agent: Optional[AgentProfile] = result.scalar_one_or_none()
+        agent: AgentProfile | None = result.scalar_one_or_none()
 
         if agent is None:
             return f"Error: sub-agent '{agent_name}' not found."

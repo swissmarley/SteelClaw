@@ -10,7 +10,7 @@ import time
 from collections.abc import AsyncIterator
 from copy import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -243,21 +243,42 @@ class AgentRouter:
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
 
-        # Build persona prompt — use agent profile if available, else global persona file
-        if self._profile is not None and (self._profile.persona_json or self._profile.system_prompt):
+        # Build persona prompt — use agent profile's persona_json if set,
+        # otherwise fall back to file-based persona (~/.steelclaw/persona.json)
+        persona_prompt = ""
+        if self._profile is not None and self._profile.persona_json:
             from steelclaw.agents.persona import build_persona_prompt
             persona_prompt = build_persona_prompt(self._profile)
-            effective_system = self._profile.system_prompt or self._settings.llm.system_prompt
-        else:
+        if not persona_prompt:
             persona_prompt = build_persona_system_prompt()
-            effective_system = self._settings.llm.system_prompt
+
+        # Inject user facts from DB into persona prompt
+        if db is not None and session is not None:
+            from sqlalchemy import select as sa_select
+            from steelclaw.agents.persona import format_user_facts
+            from steelclaw.db.models import UserFact
+            user_id = getattr(session, "user_id", None)
+            if user_id:
+                facts_result = await db.execute(
+                    sa_select(UserFact).where(UserFact.user_id == user_id).limit(20)
+                )
+                facts = [{"fact_key": f.fact_key, "fact_value": f.fact_value}
+                         for f in facts_result.scalars().all()]
+                facts_block = format_user_facts(facts)
+                if facts_block:
+                    persona_prompt = f"{persona_prompt}\n\n{facts_block}" if persona_prompt else facts_block
+
+        effective_system = (
+            self._profile.system_prompt if self._profile is not None and self._profile.system_prompt
+            else self._settings.llm.system_prompt
+        )
 
         if db is not None:
             messages = await self._context.build(
                 session=session,
                 db=db,
                 persona_prompt=persona_prompt,
-                tool_context=tool_context,
+                skill_context=tool_context,
                 memory_context=memory_context,
                 current_message=message.content,
                 attachments=message.attachments,
@@ -565,21 +586,42 @@ class AgentRouter:
             )
             memory_context = self._memory_retriever.format_for_prompt(memories)
 
-        # Build persona prompt — use agent profile if available, else global persona file
-        if self._profile is not None and (self._profile.persona_json or self._profile.system_prompt):
+        # Build persona prompt — use agent profile's persona_json if set,
+        # otherwise fall back to file-based persona (~/.steelclaw/persona.json)
+        persona_prompt = ""
+        if self._profile is not None and self._profile.persona_json:
             from steelclaw.agents.persona import build_persona_prompt
             persona_prompt = build_persona_prompt(self._profile)
-            effective_system = self._profile.system_prompt or self._settings.llm.system_prompt
-        else:
+        if not persona_prompt:
             persona_prompt = build_persona_system_prompt()
-            effective_system = self._settings.llm.system_prompt
+
+        # Inject user facts from DB into persona prompt
+        if db is not None and session is not None:
+            from sqlalchemy import select as sa_select
+            from steelclaw.agents.persona import format_user_facts
+            from steelclaw.db.models import UserFact
+            user_id = getattr(session, "user_id", None)
+            if user_id:
+                facts_result = await db.execute(
+                    sa_select(UserFact).where(UserFact.user_id == user_id).limit(20)
+                )
+                facts = [{"fact_key": f.fact_key, "fact_value": f.fact_value}
+                         for f in facts_result.scalars().all()]
+                facts_block = format_user_facts(facts)
+                if facts_block:
+                    persona_prompt = f"{persona_prompt}\n\n{facts_block}" if persona_prompt else facts_block
+
+        effective_system = (
+            self._profile.system_prompt if self._profile is not None and self._profile.system_prompt
+            else self._settings.llm.system_prompt
+        )
 
         if db is not None:
             messages = await self._context.build(
                 session=session,
                 db=db,
                 persona_prompt=persona_prompt,
-                tool_context=tool_context,
+                skill_context=tool_context,
                 memory_context=memory_context,
                 current_message=message.content,
                 attachments=message.attachments,

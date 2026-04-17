@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any
 
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
@@ -31,7 +31,7 @@ class ConnectorConfig(BaseModel):
 
 class GatewaySettings(BaseModel):
     mention_keywords: list[str] = ["@steelclaw", "@sc"]
-    dm_allowlist_enabled: bool = True
+    dm_allowlist_enabled: bool = False
     connectors: dict[str, ConnectorConfig] = {}
 
 
@@ -104,8 +104,9 @@ class ToolSettings(BaseModel):
 class SkillSettings(BaseModel):
     """Skills system configuration (Claude-compatible skills)."""
 
+    bundled_dir: str = "steelclaw/skills/bundled"
     global_dir: str = "~/.steelclaw/claude-skills"
-    workspace_dir: str = ".claude-skills"
+    workspace_dir: str = ".steelclaw/skills"
     enabled: bool = True
     disabled_skills: list[str] = []
     enabled_skills: list[str] = []
@@ -240,12 +241,12 @@ class Settings(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: Type[BaseSettings],
+        settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
         from steelclaw.paths import PROJECT_ROOT
 
         sources = [init_settings, env_settings]

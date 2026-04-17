@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from steelclaw.settings import LLMSettings
 
@@ -43,7 +44,7 @@ class LLMProvider:
         temperature = temperature if temperature is not None else self._settings.temperature
         max_tokens = max_tokens or self._settings.max_tokens
 
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
@@ -77,7 +78,7 @@ class LLMProvider:
         temperature = temperature if temperature is not None else self._settings.temperature
         max_tokens = max_tokens or self._settings.max_tokens
 
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,

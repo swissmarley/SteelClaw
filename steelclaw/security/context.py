@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger("steelclaw.security.context")
 
@@ -19,9 +18,9 @@ logger = logging.getLogger("steelclaw.security.context")
 class SecurityContext:
     """Holds context for permission checks."""
 
-    session_id: Optional[str] = None
-    platform: Optional[str] = None
-    platform_chat_id: Optional[str] = None
+    session_id: str | None = None
+    platform: str | None = None
+    platform_chat_id: str | None = None
 
 
 # Context variable that propagates across async call boundaries
@@ -37,9 +36,9 @@ def get_security_context() -> SecurityContext:
 
 
 def set_security_context(
-    session_id: Optional[str] = None,
-    platform: Optional[str] = None,
-    platform_chat_id: Optional[str] = None,
+    session_id: str | None = None,
+    platform: str | None = None,
+    platform_chat_id: str | None = None,
 ) -> None:
     """Set the security context for the current async task."""
     ctx = SecurityContext(

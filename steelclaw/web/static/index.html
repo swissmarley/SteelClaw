@@ -2286,7 +2286,7 @@ async function checkMemoryServer() {
   indicator.style.color = 'var(--yellow)';
   try {
     const data = await api('/config/memory');
-    const status = data.memory?.server_status || 'unknown';
+    const status = data.server_status || 'unknown';
     indicator.textContent = status === 'running' ? 'Running' : status === 'unhealthy' ? 'Unhealthy' : status === 'not_reachable' ? 'Not Reachable' : status;
     indicator.style.color = status === 'running' ? 'var(--green)' : 'var(--red)';
   } catch (e) {
@@ -2741,17 +2741,14 @@ async function viewSkillDetail(name) {
   }
 }
 
-async function exportSkill(name) {
-  try {
-    const result = await api(`/skills/${encodeURIComponent(name)}/export`);
-    // Trigger download
-    const a = document.createElement('a');
-    a.href = result.path;
-    a.download = result.filename || `${name}.zip`;
-    toast(`Skill '${name}' exported`);
-  } catch(e) {
-    toast('Export failed: ' + (e.message||e));
-  }
+function exportSkill(name) {
+  // The export endpoint returns a zip file directly — open as download
+  const a = document.createElement('a');
+  a.href = `/api/skills/${encodeURIComponent(name)}/export`;
+  a.download = `${name}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function deleteSkill(name) {
@@ -2858,7 +2855,8 @@ async function submitSkillGenerate() {
   if (!desc) { toast('Description is required'); return; }
   try {
     const result = await api('/skills/generate', {method:'POST', body:JSON.stringify({description:desc})});
-    toast(`Skill '${result.skill}' generated`);
+    const note = result.note ? ` (${result.note})` : '';
+    toast(`Skill '${result.skill}' generated via ${result.method || 'AI'}${note}`);
     closeModal();
     loaders.skills();
   } catch(e) {

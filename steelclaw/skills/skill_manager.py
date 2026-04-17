@@ -6,8 +6,9 @@ manifests that provide instructions and context to the agent without
 executable tool functions.
 
 Skills are stored in configurable directories:
-  - global_dir:   ~/.steelclaw/claude-skills  (user-installed skills)
-  - workspace_dir: .claude-skills              (project-specific skills)
+  - bundled_dir:   steelclaw/skills/bundled  (built-in integrations)
+  - global_dir:    ~/.steelclaw/skills       (user-installed skills)
+  - workspace_dir: .steelclaw/skills         (project-specific skills)
 
 Each skill is a folder containing at least a SKILL.md file. Skills are
 100% compatible with Claude Skills format — exported skills import directly
@@ -21,7 +22,6 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from steelclaw.skills.loader import Skill, load_skill_from_directory
 from steelclaw.skills.parser import SkillMetadata, parse_skill_file, parse_skill_md
@@ -38,19 +38,21 @@ class SkillManager:
 
     def __init__(
         self,
-        global_dir: str = "~/.steelclaw/claude-skills",
-        workspace_dir: str = ".claude-skills",
+        bundled_dir: str = "steelclaw/skills/bundled",
+        global_dir: str = "~/.steelclaw/skills",
+        workspace_dir: str = ".steelclaw/skills",
         enabled: bool = True,
         disabled_skills: list[str] | None = None,
         enabled_skills: list[str] | None = None,
     ) -> None:
+        self._bundled_dir = Path(bundled_dir).resolve()
         self._global_dir = Path(global_dir).expanduser().resolve()
         self._workspace_dir = Path(workspace_dir).resolve()
         self._enabled = enabled
         self._disabled: set[str] = set(disabled_skills or [])
         self._explicitly_enabled: set[str] = set(enabled_skills or [])
-        self._skills: Dict[str, Skill] = {}  # active skills
-        self._all_skills: Dict[str, Skill] = {}  # all discovered (including disabled)
+        self._skills: dict[str, Skill] = {}  # active skills
+        self._all_skills: dict[str, Skill] = {}  # all discovered (including disabled)
 
     @property
     def global_dir(self) -> Path:
@@ -59,6 +61,10 @@ class SkillManager:
     @property
     def workspace_dir(self) -> Path:
         return self._workspace_dir
+
+    @property
+    def bundled_dir(self) -> Path:
+        return self._bundled_dir
 
     def load_all(self) -> None:
         """Discover and load all skills from configured directories."""
@@ -69,10 +75,11 @@ class SkillManager:
         self._skills.clear()
         self._all_skills.clear()
 
-        skills_by_name: Dict[str, Skill] = {}
+        skills_by_name: dict[str, Skill] = {}
 
-        # Load in priority order: global first, workspace overrides
+        # Load in priority order: bundled first, global overrides, workspace overrides bundled+global
         for scope, dir_path in [
+            ("bundled", self._bundled_dir),
             ("global", self._global_dir),
             ("workspace", self._workspace_dir),
         ]:
@@ -82,6 +89,9 @@ class SkillManager:
 
             for child in sorted(dir_path.iterdir()):
                 if child.is_dir() and not child.name.startswith("."):
+                    # Phase 1 tools have __init__.py executors — skip them
+                    if (child / "__init__.py").exists():
+                        continue
                     skill = load_skill_from_directory(child, scope)
                     if skill:
                         if skill.name in skills_by_name:
@@ -115,12 +125,12 @@ class SkillManager:
         return self._all_skills.get(name)
 
     @property
-    def skills(self) -> Dict[str, Skill]:
+    def skills(self) -> dict[str, Skill]:
         """Active skills (enabled and configured)."""
         return dict(self._skills)
 
     @property
-    def all_skills(self) -> Dict[str, Skill]:
+    def all_skills(self) -> dict[str, Skill]:
         """All discovered skills including disabled."""
         return dict(self._all_skills)
 
@@ -464,4 +474,6 @@ Respond with ONLY a JSON object:
         """Get the directory path for a skill name in the given scope."""
         if scope == "workspace":
             return self._workspace_dir / name
+        if scope == "bundled":
+            return self._bundled_dir / name
         return self._global_dir / name

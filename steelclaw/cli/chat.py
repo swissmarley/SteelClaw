@@ -374,7 +374,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
             prompt_text = HTML("<ansicyan><b>❯</b></ansicyan> ")
             return await pt_session.prompt_async(prompt_text)
         # Non-interactive fallback
-        return await asyncio.get_event_loop().run_in_executor(
+        return await asyncio.get_running_loop().run_in_executor(
             None, lambda: console.input("[bold cyan]❯[/bold cyan] ")
         )
 
@@ -546,7 +546,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                     continue
 
                 console.print(f"[dim]  Running:[/dim] [accent]{' '.join(cli_cmd)}[/accent]\n")
-                await asyncio.get_event_loop().run_in_executor(
+                await asyncio.get_running_loop().run_in_executor(
                     None, lambda c=cli_cmd: subprocess.run(c)
                 )
                 console.print()
@@ -558,7 +558,7 @@ async def _chat_loop(server_url: str, user_id: str) -> None:
                 extra = shlex.split(cmd_parts[1]) if len(cmd_parts) > 1 else []
                 cli_cmd = ["steelclaw", subcmd] + extra
                 console.print(f"[dim]  Running:[/dim] [accent]{' '.join(cli_cmd)}[/accent]\n")
-                await asyncio.get_event_loop().run_in_executor(
+                await asyncio.get_running_loop().run_in_executor(
                     None, lambda c=cli_cmd: subprocess.run(c)
                 )
                 console.print()

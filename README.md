@@ -8,6 +8,8 @@ Self-hosted personal AI assistant that runs locally on your machine. Connects to
 
 ### 1. Install
 
+**Requires Python 3.11–3.14.**
+
 ```bash
 git clone https://github.com/swissmarley/SteelClaw.git
 cd SteelClaw

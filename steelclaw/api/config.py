@@ -191,8 +191,7 @@ async def get_memory_config(request: Request) -> dict:
     data = _read_config()
     memory = data.get("agents", {}).get("memory", {})
 
-    # Check OpenViking server status if backend is openviking
-    server_status = None
+    # Check memory backend status
     backend = memory.get("backend", "chromadb")
     if backend == "openviking":
         import httpx
@@ -205,6 +204,10 @@ async def get_memory_config(request: Request) -> dict:
                 server_status = f"unhealthy ({resp.status_code})"
         except Exception:
             server_status = "not_reachable"
+    elif backend == "chromadb":
+        server_status = "running"  # ChromaDB is embedded, no server to check
+    else:
+        server_status = "unknown"
 
     return {
         "memory": memory,

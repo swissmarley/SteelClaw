@@ -11,17 +11,20 @@ from typing import Any
 
 logger = logging.getLogger("steelclaw.skills.skill_manager")
 
-# ── Module-level registry reference (injected by app.py) ─────────────────────
+# ── Module-level registry references (injected by app.py) ────────────────────
 
-_skill_registry = None
+_skill_registry = None          # ToolRegistry (Phase 1 — bundled tools)
+_skill_manager = None           # SkillManager (Phase 2 — instruction skills)
 _global_skills_dir: str = "~/.steelclaw/skills"
 _workspace_skills_dir: str = ".steelclaw/skills"
 
 
-def _set_registry(registry, global_dir: str = "", workspace_dir: str = "") -> None:
-    """Called by app startup to inject the live skill registry."""
-    global _skill_registry, _global_skills_dir, _workspace_skills_dir
+def _set_registry(registry, global_dir: str = "", workspace_dir: str = "", skill_manager=None) -> None:
+    """Called by app startup to inject the live registries."""
+    global _skill_registry, _skill_manager, _global_skills_dir, _workspace_skills_dir
     _skill_registry = registry
+    if skill_manager is not None:
+        _skill_manager = skill_manager
     if global_dir:
         _global_skills_dir = global_dir
     if workspace_dir:
@@ -32,24 +35,53 @@ def _set_registry(registry, global_dir: str = "", workspace_dir: str = "") -> No
 
 
 async def tool_list_skills() -> str:
-    """List all currently loaded skills with metadata."""
-    if _skill_registry is None:
-        return "Error: skill registry not available"
+    """List all currently loaded skills and tools with metadata.
 
-    skills = _skill_registry.list_skills()
-    if not skills:
-        return "No skills currently loaded."
+    Shows Phase 2 skills (instruction-based) first, then Phase 1 tools
+    (bundled integrations with executors) so the user can distinguish them.
+    """
+    sections = []
 
-    rows = []
-    for skill in skills:
-        meta = skill.metadata
-        enabled = "enabled" if skill.default_enabled else "disabled"
-        rows.append(
-            f"- **{meta.name}** [{skill.scope}] [{enabled}]\n"
-            f"  {meta.description or '(no description)'}"
-        )
+    # ── Phase 2: Instruction skills (SkillManager) ──
+    if _skill_manager is not None:
+        phase2 = list(_skill_manager.all_skills.values())
+        if phase2:
+            rows = []
+            for skill in phase2:
+                meta = skill.metadata
+                active = skill.name in _skill_manager.skills
+                status = "active" if active else "disabled"
+                triggers = ", ".join(meta.triggers) if meta.triggers else ""
+                trigger_info = f" (triggers: {triggers})" if triggers else ""
+                rows.append(
+                    f"- **{meta.name}** [{skill.scope}] [{status}]{trigger_info}\n"
+                    f"  {meta.description or '(no description)'}"
+                )
+            sections.append(f"## Skills ({len(phase2)})\n\n" + "\n".join(rows))
+        else:
+            sections.append("## Skills\n\nNo instruction skills installed.")
+    else:
+        sections.append("## Skills\n\nSkill manager not available.")
 
-    return f"## Loaded Skills ({len(skills)})\n\n" + "\n".join(rows)
+    # ── Phase 1: Bundled tools (ToolRegistry) ──
+    if _skill_registry is not None:
+        tools = list(_skill_registry.all_skills.values())
+        if tools:
+            rows = []
+            for tool in tools:
+                meta = tool.metadata
+                active = tool.name in _skill_registry.skills
+                status = "active" if active else "disabled"
+                tool_count = len(tool.tools)
+                rows.append(
+                    f"- **{meta.name}** [{tool.scope}] [{status}] ({tool_count} tool{'s' if tool_count != 1 else ''})\n"
+                    f"  {meta.description or '(no description)'}"
+                )
+            sections.append(f"## Tools ({len(tools)})\n\n" + "\n".join(rows))
+    else:
+        sections.append("## Tools\n\nTool registry not available.")
+
+    return "\n\n".join(sections)
 
 
 async def tool_create_skill(
@@ -208,16 +240,26 @@ async def tool_delete_skill(
 
 
 async def tool_reload_skills() -> str:
-    """Reload the skill registry from all discovery paths."""
+    """Reload both the tool registry and skill manager from all discovery paths."""
     if _skill_registry is None:
         return "Error: skill registry not available"
 
     try:
         _skill_registry.load_all()
-        skills = _skill_registry.list_skills()
-        return f"Skills reloaded. {len(skills)} skill(s) now active."
+        tool_count = len(_skill_registry.skills)
+
+        skill_count = 0
+        if _skill_manager is not None:
+            _skill_manager.load_all()
+            skill_count = len(_skill_manager.skills)
+
+        return (
+            f"Reloaded successfully.\n"
+            f"- {tool_count} tool(s) active\n"
+            f"- {skill_count} skill(s) active"
+        )
     except Exception as exc:
-        return f"Error reloading skills: {exc}"
+        return f"Error reloading: {exc}"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

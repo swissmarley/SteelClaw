@@ -7,12 +7,14 @@ separate from the Tools system (formerly Skills, renamed in Phase 1).
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
-from typing import Optional
-
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger("steelclaw.api.skills")
 
 router = APIRouter()
 
@@ -191,17 +193,16 @@ async def import_skill_from_path(request: Request) -> dict:
 
 
 @router.get("/{skill_name}/export")
-async def export_skill(skill_name: str, request: Request) -> dict:
-    """Export a skill as a zip archive."""
+async def export_skill(skill_name: str, request: Request):
+    """Export a skill as a downloadable zip archive."""
     manager = _get_manager(request)
     try:
         zip_path = manager.export_skill(skill_name)
-        return {
-            "status": "exported",
-            "skill": skill_name,
-            "path": str(zip_path),
-            "filename": f"{skill_name}.zip",
-        }
+        return FileResponse(
+            path=str(zip_path),
+            filename=f"{skill_name}.zip",
+            media_type="application/zip",
+        )
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -221,20 +222,27 @@ async def generate_skill(body: SkillGenerate, request: Request) -> dict:
             from steelclaw.llm.provider import LLMProvider
             settings = request.app.state.settings
             llm_provider = LLMProvider(settings.agents.llm)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Could not create LLM provider for skill generation: %s", exc)
             llm_provider = None
 
+    generation_method = "template"
     if llm_provider is not None:
         try:
             skill = await manager.generate_skill_async(body.description, llm_provider)
-            return {"status": "generated", "skill": skill.name}
-        except Exception:
-            pass
+            return {"status": "generated", "skill": skill.name, "method": "ai"}
+        except Exception as exc:
+            logger.warning("LLM skill generation failed, falling back to template: %s", exc)
 
     # Fallback: template-based generation
     try:
         skill = manager.generate_skill(body.description)
-        return {"status": "generated", "skill": skill.name}
+        return {
+            "status": "generated",
+            "skill": skill.name,
+            "method": "template",
+            "note": "Generated from template. Edit the skill to customise the system prompt.",
+        }
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -287,7 +295,7 @@ def _get_manager(request: Request):
     return manager
 
 
-def _persist_skill_toggle(name: str, enable: Optional[bool]) -> None:
+def _persist_skill_toggle(name: str, enable: bool | None) -> None:
     """Save skill enable/disable state to config.json."""
     from steelclaw.api.config import _read_config, _write_config
 

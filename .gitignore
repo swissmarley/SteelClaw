@@ -50,3 +50,7 @@ coverage.xml
 # Misc
 *.log
 *.tmp
+
+# Obsidian
+.obsidian
+graphify-out
