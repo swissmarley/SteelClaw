@@ -14,6 +14,10 @@ from steelclaw.settings import GatewaySettings
 logger = logging.getLogger("steelclaw.gateway.sessions")
 
 
+class AllowlistError(Exception):
+    """Raised when a DM is blocked by the allowlist."""
+
+
 class SessionManager:
     def __init__(self, settings: GatewaySettings) -> None:
         self._settings = settings
@@ -41,7 +45,10 @@ class SessionManager:
                     msg.platform,
                     msg.platform_user_id,
                 )
-                return None
+                raise AllowlistError(
+                    f"User {msg.platform}/{msg.platform_user_id} is not on the DM allowlist. "
+                    "Ask an admin to add you, or disable the DM allowlist in Gateway settings."
+                )
 
         return await self._resolve_dm_session(msg, db)
 

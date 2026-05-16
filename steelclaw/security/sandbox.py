@@ -7,7 +7,6 @@ import logging
 import os
 import shlex
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("steelclaw.security.sandbox")
 

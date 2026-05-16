@@ -10,7 +10,7 @@
   },
   "gateway": {
     "mention_keywords": ["@steelclaw", "@sc"],
-    "dm_allowlist_enabled": true,
+    "dm_allowlist_enabled": false,
     "connectors": {
       "telegram": {
         "enabled": false,
@@ -71,7 +71,7 @@
     },
     "skills": {
       "bundled_dir": "steelclaw/skills/bundled",
-      "global_dir": "~/.steelclaw/skills",
+      "global_dir": "~/.steelclaw/claude-skills",
       "workspace_dir": ".steelclaw/skills",
       "enabled": true
     },

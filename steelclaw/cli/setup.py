@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
 # Model lists grouped by provider
@@ -98,7 +98,7 @@ def run_setup(reset: bool = False) -> None:
         "Your settings will be saved to [bold]config.json[/bold].[/dim]\n"
     )
 
-    config: Dict[str, Any] = {
+    config: dict[str, Any] = {
         "database": {"url": "sqlite+aiosqlite:///./data/steelclaw.db", "echo": False},
         "server": {"host": "0.0.0.0", "port": 8000, "log_level": "info"},
         "gateway": {"mention_keywords": ["@steelclaw", "@sc"], "dm_allowlist_enabled": False, "connectors": {}},
@@ -113,7 +113,7 @@ def run_setup(reset: bool = False) -> None:
         },
     }
 
-    llm_config: Dict[str, Any] = {
+    llm_config: dict[str, Any] = {
         "temperature": 0.7,
         "max_tokens": 4096,
         "max_context_messages": 50,
@@ -229,11 +229,32 @@ def run_setup(reset: bool = False) -> None:
         "Matrix": ("matrix", "Matrix Access Token"),
     }
 
+    # Platform-specific extra fields beyond the main token
+    platform_extras = {
+        "Slack": [
+            ("app_token", "Slack App-Level Token (xapp-..., for Socket Mode)"),
+        ],
+        "WhatsApp": [
+            ("phone_number_id", "WhatsApp Phone Number ID (from Meta dashboard)"),
+        ],
+        "Matrix": [
+            ("homeserver", "Matrix Homeserver URL (e.g. https://matrix.org)"),
+            ("user_id", "Matrix User ID (e.g. @bot:matrix.org)"),
+        ],
+    }
+
     for platform in (platforms or []):
         key, prompt = platform_key_map[platform]
         token = questionary.password(f"{prompt}:").ask()
         if token:
-            connector_cfg: Dict[str, Any] = {"enabled": True, "token": token}
+            connector_cfg: dict[str, Any] = {"enabled": True, "token": token}
+
+            # Prompt for platform-specific extra fields
+            for extra_key, extra_prompt in platform_extras.get(platform, []):
+                extra_val = questionary.password(f"{extra_prompt}:").ask()
+                if extra_val:
+                    connector_cfg[extra_key] = extra_val
+
             config["gateway"]["connectors"][key] = connector_cfg
             console.print(f"[green]{platform} enabled.[/green]")
 
@@ -259,8 +280,59 @@ def run_setup(reset: bool = False) -> None:
     # ── Step 5: Memory ───────────────────────────────────────────────
     console.print(Panel("[bold]Step 5:[/bold] Memory & Analytics", border_style="cyan", box=box.ROUNDED))
 
-    memory_enabled = questionary.confirm("Enable persistent memory (ChromaDB)?", default=True).ask()
+    memory_enabled = questionary.confirm("Enable persistent memory?", default=True).ask()
     config["agents"]["memory"]["enabled"] = memory_enabled
+
+    if memory_enabled:
+        backend = questionary.select(
+            "Choose memory backend:",
+            choices=[
+                "ChromaDB (local, embedded vector store)",
+                "OpenViking (server-based context store)",
+            ],
+            default="ChromaDB (local, embedded vector store)",
+        ).ask()
+
+        if backend and "OpenViking" in backend:
+            config["agents"]["memory"]["backend"] = "openviking"
+
+            ov_url = questionary.text(
+                "OpenViking server URL:",
+                default="http://localhost:1933",
+            ).ask()
+            if ov_url:
+                config["agents"]["memory"]["openviking_server_url"] = ov_url
+
+            ov_workspace = questionary.text(
+                "OpenViking workspace:",
+                default="steelclaw",
+            ).ask()
+            if ov_workspace:
+                config["agents"]["memory"]["openviking_workspace"] = ov_workspace
+
+            ov_tier = questionary.select(
+                "Context tier:",
+                choices=["L0 (full detail)", "L1 (balanced)", "L2 (summary only)"],
+                default="L1 (balanced)",
+            ).ask()
+            if ov_tier:
+                config["agents"]["memory"]["openviking_context_tier"] = ov_tier.split(" ")[0]
+
+            ov_auto = questionary.confirm(
+                "Auto-start OpenViking server when SteelClaw starts?",
+                default=True,
+            ).ask()
+            config["agents"]["memory"]["openviking_auto_start"] = ov_auto
+
+            if ov_auto:
+                ov_port = questionary.text(
+                    "OpenViking server port:",
+                    default="1933",
+                ).ask()
+                if ov_port:
+                    config["agents"]["memory"]["openviking_port"] = int(ov_port)
+        else:
+            config["agents"]["memory"]["backend"] = "chromadb"
 
     console.print("[green]Memory configured.[/green]\n")
 
@@ -276,7 +348,8 @@ def run_setup(reset: bool = False) -> None:
     connectors = [k for k, v in config["gateway"]["connectors"].items() if v.get("enabled")]
     summary.add_row("Platforms", ", ".join(connectors) if connectors else "WebSocket only")
     summary.add_row("Security", config["agents"]["security"]["default_permission"])
-    summary.add_row("Memory", "Enabled" if memory_enabled else "Disabled")
+    memory_backend = config["agents"]["memory"].get("backend", "chromadb")
+    summary.add_row("Memory", f"{'Enabled' if memory_enabled else 'Disabled'} ({memory_backend})")
     console.print(summary)
     console.print()
 

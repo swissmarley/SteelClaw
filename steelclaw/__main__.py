@@ -108,12 +108,18 @@ def cmd_agents(args: argparse.Namespace) -> None:
     handle_agents(args)
 
 
-# ── Skills ──────────────────────────────────────────────────────────────────
+# ── Tools ──────────────────────────────────────────────────────────────────
+
+
+def cmd_tools(args: argparse.Namespace) -> None:
+    """Manage tools."""
+    from steelclaw.cli.tools_cmd import handle_tools
+    handle_tools(args)
 
 
 def cmd_skills(args: argparse.Namespace) -> None:
-    """Manage skills."""
-    from steelclaw.cli.skills_cmd import handle_skills
+    """Manage Claude-compatible skills (Phase 2)."""
+    from steelclaw.cli.skills_new_cmd import handle_skills
     handle_skills(args)
 
 
@@ -313,23 +319,46 @@ def main() -> None:
     agents_delete_p.add_argument("name", help="Agent name to delete")
     agents_sub.add_parser("status", help="Show agent status")
 
-    # skills
-    skills_p = sub.add_parser("skills", help="Manage skills")
+    # tools
+    tools_p = sub.add_parser("tools", help="Manage tools")
+    tools_sub = tools_p.add_subparsers(dest="tools_action")
+    tools_sub.add_parser("list", help="List installed tools")
+    tools_install_p = tools_sub.add_parser("install", help="Install a tool")
+    tools_install_p.add_argument("path", help="Path to tool directory")
+    tools_enable_p = tools_sub.add_parser("enable", help="Enable a tool")
+    tools_enable_p.add_argument("name", help="Tool name")
+    tools_disable_p = tools_sub.add_parser("disable", help="Disable a tool")
+    tools_disable_p.add_argument("name", help="Tool name")
+    tools_configure_p = tools_sub.add_parser(
+        "configure",
+        help="Configure tool credentials (interactive menu if no name given)",
+    )
+    tools_configure_p.add_argument(
+        "name", nargs="?", default=None, help="Tool name (omit for interactive menu)"
+    )
+
+    # skills (Phase 2 — Claude-compatible skills)
+    skills_p = sub.add_parser("skills", help="Manage Claude-compatible skills")
     skills_sub = skills_p.add_subparsers(dest="skills_action")
     skills_sub.add_parser("list", help="List installed skills")
-    skills_install_p = skills_sub.add_parser("install", help="Install a skill")
-    skills_install_p.add_argument("path", help="Path to skill directory")
+    skills_view_p = skills_sub.add_parser("view", help="Show skill details")
+    skills_view_p.add_argument("name", help="Skill name")
+    skills_sub.add_parser("create", help="Create a new skill (interactive wizard)")
+    skills_import_p = skills_sub.add_parser("import", help="Import a skill from file or directory")
+    skills_import_p.add_argument("path", help="Path to SKILL.md, .zip, or skill directory")
+    skills_export_p = skills_sub.add_parser("export", help="Export a skill as zip")
+    skills_export_p.add_argument("name", help="Skill name")
+    skills_export_p.add_argument("--output", "-o", default=None, help="Output path")
+    skills_delete_p = skills_sub.add_parser("delete", help="Delete a skill")
+    skills_delete_p.add_argument("name", help="Skill name")
+    skills_gen_p = skills_sub.add_parser("generate", help="AI-generate a skill from description")
+    skills_gen_p.add_argument("description", help="What the skill should do")
     skills_enable_p = skills_sub.add_parser("enable", help="Enable a skill")
     skills_enable_p.add_argument("name", help="Skill name")
     skills_disable_p = skills_sub.add_parser("disable", help="Disable a skill")
     skills_disable_p.add_argument("name", help="Skill name")
-    skills_configure_p = skills_sub.add_parser(
-        "configure",
-        help="Configure skill credentials (interactive menu if no name given)",
-    )
-    skills_configure_p.add_argument(
-        "name", nargs="?", default=None, help="Skill name (omit for interactive menu)"
-    )
+    skills_test_p = skills_sub.add_parser("test", help="Test trigger matching")
+    skills_test_p.add_argument("message", help="Message to test against triggers")
 
     # logs
     logs_p = sub.add_parser("logs", help="View daemon logs")
@@ -441,6 +470,7 @@ def main() -> None:
         "memory": cmd_memory,
         "agents": cmd_agents,
         "skills": cmd_skills,
+        "tools": cmd_tools,
         "logs": cmd_logs,
         "migrate": cmd_migrate,
         "gateway": cmd_gateway,

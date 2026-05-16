@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Callable, Coroutine, Dict, Optional
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -25,8 +26,8 @@ class TaskEngine:
     def __init__(self, settings: SchedulerSettings) -> None:
         self._settings = settings
         self._scheduler: AsyncIOScheduler | None = None
-        self._task_registry: Dict[str, Dict[str, Any]] = {}
-        self._active_triggers: Dict[str, Any] = {}  # event-based triggers
+        self._task_registry: dict[str, dict[str, Any]] = {}
+        self._active_triggers: dict[str, Any] = {}  # event-based triggers
 
     def start(self) -> None:
         if not self._settings.enabled:

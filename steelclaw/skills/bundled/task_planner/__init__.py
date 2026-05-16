@@ -111,7 +111,7 @@ def _format_plan(plan: Plan) -> str:
 
 async def tool_create_plan(
     goal: str,
-    steps: list[dict],
+    steps: list[dict] | str,
     session_id: str = "default",
 ) -> str:
     """Create a structured plan from a goal.
@@ -124,10 +124,28 @@ async def tool_create_plan(
     Returns:
         Plan ID and formatted plan
     """
+    # LLMs may send steps as a JSON string — parse it
+    if isinstance(steps, str):
+        import json
+        try:
+            steps = json.loads(steps)
+        except (json.JSONDecodeError, TypeError):
+            # Treat as a single-step plan with the string as description
+            steps = [{"description": steps}]
+
+    if not isinstance(steps, list):
+        steps = [{"description": str(steps)}]
+
     plan_id = _generate_id()
     step_objects = []
 
     for i, step_data in enumerate(steps):
+        # Handle plain strings (e.g. ["step 1", "step 2"])
+        if isinstance(step_data, str):
+            step_data = {"description": step_data}
+        if not isinstance(step_data, dict):
+            step_data = {"description": str(step_data)}
+
         step_id = step_data.get("id", f"step_{i + 1}")
         if step_id.startswith("step_"):
             # Auto-generate short IDs

@@ -20,7 +20,7 @@ Create a structured plan from a goal with ordered steps.
 
 **Parameters:**
 - `goal` (string, required): The high-level goal to accomplish
-- `steps` (array, required): List of step objects with description, parallel flag, and depends_on
+- `steps` (array[object], required): List of step objects with keys: description (string), parallel (boolean), depends_on (array of step IDs)
 
 ### update_step
 Update a step's status in an active plan.

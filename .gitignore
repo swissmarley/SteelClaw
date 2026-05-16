@@ -44,6 +44,13 @@ htmlcov/
 .coverage
 coverage.xml
 
+# macOS resource fork files
+._*
+
 # Misc
 *.log
 *.tmp
+
+# Obsidian
+.obsidian
+graphify-out

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from steelclaw.db.engine import get_async_session
 from steelclaw.db.models import Message as DBMessage, Session as DBSession
 from steelclaw.gateway.command_handler import dispatch_command
-from steelclaw.gateway.session_manager import SessionManager
+from steelclaw.gateway.session_manager import AllowlistError, SessionManager
 from steelclaw.schemas.messages import InboundMessage, OutboundMessage
 from steelclaw.security.broadcaster import get_broadcaster, set_broadcaster, PermissionBroadcaster
 from steelclaw.security.permission_models import PermissionDecision, PermissionResponse
@@ -76,7 +76,15 @@ async def process_message(
     """
     sm = _get_session_manager(settings)
 
-    session = await sm.resolve(inbound, db)
+    try:
+        session = await sm.resolve(inbound, db)
+    except AllowlistError as exc:
+        return OutboundMessage(
+            platform=inbound.platform,
+            platform_chat_id=inbound.platform_chat_id,
+            content=str(exc),
+        )
+
     if session is None:
         return None
 
@@ -199,7 +207,12 @@ async def process_message_streaming(
     once the stream completes.
     """
     sm = _get_session_manager(settings)
-    session = await sm.resolve(inbound, db)
+    try:
+        session = await sm.resolve(inbound, db)
+    except AllowlistError as exc:
+        yield {"type": "error", "content": str(exc)}
+        return
+
     if session is None:
         yield {"type": "error", "content": "Could not resolve session."}
         return

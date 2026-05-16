@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Optional, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from steelclaw.security.permission_models import (
     PermissionDecision,
@@ -38,12 +39,12 @@ class PermissionBroadcaster:
         self._pending_requests: dict[str, PermissionRequest] = {}
         self._pending_responses: dict[str, asyncio.Event] = {}
         self._resolved_requests: dict[str, ResolvedRequest] = {}
-        self._connector_registry: Optional["ConnectorRegistry"] = None
+        self._connector_registry: "ConnectorRegistry | None" = None
         # Function to get WebSocket connections dynamically
-        self._get_ws_connections: Optional[Callable[[], set]] = None
+        self._get_ws_connections: Callable[[], set] | None = None
         # Sudo password request tracking
         self._sudo_password_events: dict[str, asyncio.Event] = {}
-        self._sudo_password_results: dict[str, Optional[str]] = {}
+        self._sudo_password_results: dict[str, str | None] = {}
 
     def set_ws_connections_getter(self, getter: Callable[[], set]) -> None:
         """Set function to get WebSocket connections. Called from gateway/router.py."""
@@ -235,9 +236,9 @@ class PermissionBroadcaster:
         self,
         request_id: str,
         command: str,
-        timeout_seconds: Optional[int] = None,
-        context: Optional[str] = None,
-    ) -> Optional[str]:
+        timeout_seconds: int | None = None,
+        context: str | None = None,
+    ) -> str | None:
         """Request a sudo password from the user via a UI popup.
 
         Broadcasts a sudo_password_request message to all connected WebSocket
@@ -287,7 +288,7 @@ class PermissionBroadcaster:
 
         return self._sudo_password_results.pop(request_id, None)
 
-    async def resolve_sudo_password(self, request_id: str, password: Optional[str]) -> bool:
+    async def resolve_sudo_password(self, request_id: str, password: str | None) -> bool:
         """Resolve a pending sudo password request.
 
         Called from the WebSocket handler when the user submits or cancels
@@ -328,10 +329,10 @@ class PermissionBroadcaster:
 
 
 # Global broadcaster instance
-_broadcaster: Optional[PermissionBroadcaster] = None
+_broadcaster: PermissionBroadcaster | None = None
 
 
-def get_broadcaster() -> Optional[PermissionBroadcaster]:
+def get_broadcaster() -> PermissionBroadcaster | None:
     """Get the global broadcaster instance."""
     return _broadcaster
 

@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger("steelclaw.security.approvals")
 

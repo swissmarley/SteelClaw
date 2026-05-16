@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -21,28 +19,28 @@ class AgentCreate(BaseModel):
     name: str
     display_name: str = ""
     system_prompt: str = ""
-    model_override: Optional[str] = None
-    temperature_override: Optional[float] = None
-    persona_json: Optional[str] = None
-    parent_agent_id: Optional[str] = None
+    model_override: str | None = None
+    temperature_override: float | None = None
+    persona_json: str | None = None
+    parent_agent_id: str | None = None
 
 
 class AgentUpdate(BaseModel):
-    display_name: Optional[str] = None
-    system_prompt: Optional[str] = None
-    model_override: Optional[str] = None
-    temperature_override: Optional[float] = None
-    is_active: Optional[bool] = None
-    parent_agent_id: Optional[str] = None
+    display_name: str | None = None
+    system_prompt: str | None = None
+    model_override: str | None = None
+    temperature_override: float | None = None
+    is_active: bool | None = None
+    parent_agent_id: str | None = None
 
 
 class PersonaUpdate(BaseModel):
-    agent_name: Optional[str] = None
-    user_name: Optional[str] = None
-    tone: Optional[str] = None
-    style: Optional[str] = None
-    goals: Optional[list[str]] = None
-    system_prompt_extension: Optional[str] = None
+    agent_name: str | None = None
+    user_name: str | None = None
+    tone: str | None = None
+    style: str | None = None
+    goals: list[str] | None = None
+    system_prompt_extension: str | None = None
 
 
 @router.get("")

@@ -5,8 +5,6 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
@@ -29,8 +27,8 @@ def _parse_date(value: str | None, default: datetime) -> datetime:
 
 @router.get("/summary")
 async def analytics_summary(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     db: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """Summary cards: total tokens, cost, sessions, messages."""
@@ -76,8 +74,8 @@ async def analytics_summary(
 
 @router.get("/usage-over-time")
 async def usage_over_time(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     granularity: str = Query("day", pattern="^(day|hour)$"),
     db: AsyncSession = Depends(get_async_session),
 ) -> list[dict]:
@@ -126,8 +124,8 @@ async def usage_over_time(
 
 @router.get("/by-model")
 async def usage_by_model(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     db: AsyncSession = Depends(get_async_session),
 ) -> list[dict]:
     now = datetime.now(timezone.utc)
@@ -167,8 +165,8 @@ async def usage_by_model(
 
 @router.get("/by-agent")
 async def usage_by_agent(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     db: AsyncSession = Depends(get_async_session),
 ) -> list[dict]:
     now = datetime.now(timezone.utc)
@@ -206,8 +204,8 @@ async def usage_by_agent(
 
 @router.get("/session-histogram")
 async def session_histogram(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     db: AsyncSession = Depends(get_async_session),
 ) -> list[dict]:
     """Distribution of messages per session."""
@@ -254,8 +252,8 @@ async def session_histogram(
 
 @router.get("/export")
 async def export_csv(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     db: AsyncSession = Depends(get_async_session),
 ) -> StreamingResponse:
     """Export message data as CSV."""

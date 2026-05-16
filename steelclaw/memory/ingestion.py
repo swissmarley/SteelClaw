@@ -22,8 +22,15 @@ logger = logging.getLogger("steelclaw.memory")
 class MemoryIngestor:
     """Ingests message pairs into the vector store for later retrieval."""
 
+    # How many messages to accumulate before auto-committing an OpenViking
+    # session.  Committing triggers background extraction so memories become
+    # searchable.  A low number (3-5) means memories appear quickly; a higher
+    # number reduces server load.
+    _COMMIT_INTERVAL = 3
+
     def __init__(self, vector_store: "VectorStore | VikingStore") -> None:
         self._store = vector_store
+        self._msg_count = 0  # messages since last commit
 
     async def ingest_exchange(
         self,
@@ -67,6 +74,21 @@ class MemoryIngestor:
             db.add(entry)
 
         logger.debug("Ingested memory: %s (session=%s)", doc_id, session_id)
+
+        # Auto-commit OpenViking session so memories become searchable
+        self._maybe_commit()
+
+    def _maybe_commit(self) -> None:
+        """Commit the OpenViking session periodically so memories are indexed."""
+        self._msg_count += 1
+        if self._msg_count >= self._COMMIT_INTERVAL:
+            self._msg_count = 0
+            if hasattr(self._store, "commit_session"):
+                try:
+                    self._store.commit_session()
+                    logger.debug("Auto-committed OpenViking session")
+                except Exception:
+                    logger.debug("OpenViking auto-commit failed (non-critical)", exc_info=True)
 
     async def ingest_experience(
         self,
@@ -152,4 +174,12 @@ class MemoryIngestor:
             outcome,
             tags,
         )
+
+        # Experiences are high-value — commit immediately
+        if hasattr(self._store, "commit_session"):
+            try:
+                self._store.commit_session()
+            except Exception:
+                logger.debug("OpenViking commit after experience failed", exc_info=True)
+
         return doc_id

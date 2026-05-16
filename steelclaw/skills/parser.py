@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("steelclaw.skills.parser")
 
@@ -30,28 +30,35 @@ class ToolDefinition:
 
     def to_openai_tool(self) -> dict:
         """Convert to OpenAI-compatible tool schema for LiteLLM."""
-        properties: Dict[str, Any] = {}
-        required_params: List[str] = []
+        properties: dict[str, Any] = {}
+        required_params: list[str] = []
 
         for param in self.parameters:
-            prop: Dict[str, Any] = {
+            prop: dict[str, Any] = {
                 "type": param.type,
                 "description": param.description,
             }
             if param.enum:
                 prop["enum"] = param.enum
-            # OpenAI requires 'items' for array types
-            # Default to string items (most common case for tool parameters)
-            # This allows arrays like ["pkg1", "pkg2"] for package lists
-            if param.type == "array":
-                prop["items"] = {"type": "string"}
+            # OpenAI requires 'items' for array types.
+            # Support "array[object]" and "array[<type>]" syntax from SKILL.md;
+            # plain "array" defaults to string items.
+            if param.type.startswith("array"):
+                inner = "string"
+                if "[" in param.type:
+                    inner = param.type.split("[", 1)[1].rstrip("]").strip() or "string"
+                    prop["type"] = "array"  # normalise back
+                if inner == "object":
+                    prop["items"] = {"type": "object", "additionalProperties": True}
+                else:
+                    prop["items"] = {"type": inner}
             elif param.type == "object":
                 prop["additionalProperties"] = True
             properties[param.name] = prop
             if param.required:
                 required_params.append(param.name)
 
-        schema: Dict[str, Any] = {
+        schema: dict[str, Any] = {
             "type": "function",
             "function": {
                 "name": self.name,
@@ -120,9 +127,9 @@ def parse_skill_md(content: str, fallback_name: str = "unknown") -> SkillMetadat
         metadata.name = lines[0][2:].strip()
 
     # Split into sections by H2 headers
-    sections: Dict[str, List[str]] = {}
+    sections: dict[str, list[str]] = {}
     current_section = "description"
-    section_lines: List[str] = []
+    section_lines: list[str] = []
 
     for line in lines[1:]:
         if line.startswith("## "):
@@ -167,8 +174,8 @@ def parse_skill_md(content: str, fallback_name: str = "unknown") -> SkillMetadat
 def _parse_tools_section(lines: list[str]) -> list[ToolDefinition]:
     """Parse the ## Tools section into ToolDefinition objects."""
     tools: list[ToolDefinition] = []
-    current_tool: Optional[ToolDefinition] = None
-    current_desc_lines: List[str] = []
+    current_tool: ToolDefinition | None = None
+    current_desc_lines: list[str] = []
     in_parameters = False
 
     for line in lines:

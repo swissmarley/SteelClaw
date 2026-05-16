@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 import uuid
 
 
@@ -39,9 +38,9 @@ class PermissionRequest:
     platform_chat_id: str
     timeout_seconds: int
     created_at: datetime
-    skill_name: Optional[str] = None
+    skill_name: str | None = None
     status: PermissionRequestStatus = PermissionRequestStatus.PENDING
-    context: Optional[str] = None
+    context: str | None = None
 
     @classmethod
     def create(
@@ -52,8 +51,8 @@ class PermissionRequest:
         platform: str,
         platform_chat_id: str,
         timeout_seconds: int = 300,
-        skill_name: Optional[str] = None,
-        context: Optional[str] = None,
+        skill_name: str | None = None,
+        context: str | None = None,
     ) -> "PermissionRequest":
         """Factory method to create a new permission request."""
         return cls(

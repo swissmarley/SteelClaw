@@ -7,11 +7,11 @@ name = "steelclaw"
 version = "0.3.0"
 description = "Self-hosted personal AI assistant — autonomous agent for digital environments"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.11"  # Python 3.14 compatible (PEP 649 annotations, deprecated typing module removed)
 dependencies = [
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
-    "sqlmodel>=0.0.8",
+    "sqlmodel>=0.0.27",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.17",
     "alembic>=1.12",

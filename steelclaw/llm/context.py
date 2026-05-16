@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -163,7 +163,7 @@ class ContextBuilder:
         """Build the assistant message that contains tool calls."""
         # Use None (not "") for content when there are tool calls — required by OpenAI spec
         # and needed for correct LiteLLM transformation to Anthropic/other provider formats.
-        msg: Dict[str, Any] = {"role": "assistant", "content": content if content else None}
+        msg: dict[str, Any] = {"role": "assistant", "content": content if content else None}
         msg["tool_calls"] = [
             {
                 "id": tc.id,

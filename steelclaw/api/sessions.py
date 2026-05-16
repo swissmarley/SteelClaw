@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, select
@@ -24,8 +22,8 @@ class StatusUpdate(BaseModel):
 async def list_sessions(
     limit: int = 50,
     offset: int = 0,
-    status: Optional[str] = None,
-    platform: Optional[str] = None,
+    status: str | None = None,
+    platform: str | None = None,
     db: AsyncSession = Depends(get_async_session),
 ) -> list[dict]:
     stmt = select(DBSession).order_by(DBSession.updated_at.desc()).offset(offset).limit(limit)
